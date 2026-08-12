@@ -1,0 +1,1361 @@
+[
+  {
+    "workload": "lookup_heavy",
+    "solution": "sorted+binary_lookup+dense_walk",
+    "description": {
+      "storage": "dense_sorted",
+      "lookup": "binary",
+      "walk": "dense",
+      "auxiliary": "none",
+      "capacity": "final_count",
+      "maintenance": "append_above_max"
+    },
+    "predicted": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "value": 4200,
+        "reason": "borne de recherche dichotomique"
+      },
+      "probes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "aucun probing"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "value": 4200,
+        "reason": "un acc\u00e8s par comparaison au plus"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 1064,
+        "reason": "tableaux pr\u00e9allou\u00e9s de cl\u00e9s et valeurs"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "deux tableaux denses"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 2660,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 4202,
+      "probes": 0,
+      "sequential_reads": 2660,
+      "random_accesses": 4202,
+      "slots_visited": 0,
+      "base_writes": 1084,
+      "auxiliary_writes": 0,
+      "reserved_cells": 1064,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "predicted": 4200,
+        "observed": 4202,
+        "difference": 2,
+        "status": "bound_violated"
+      },
+      "probes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 2660,
+        "observed": 2660,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "predicted": 4200,
+        "observed": 4202,
+        "difference": 2,
+        "status": "bound_violated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 1064,
+        "observed": 1064,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 5777.2,
+        "observed_cost": 5778.4,
+        "predicted_selected": false,
+        "observed_selected": true
+      },
+      "cache_rich": {
+        "predicted_cost": 1643.264,
+        "observed_cost": 1643.7640000000001,
+        "predicted_selected": false,
+        "observed_selected": true
+      }
+    },
+    "checksum": 103577828,
+    "wall_ns": 1412570
+  },
+  {
+    "workload": "lookup_heavy",
+    "solution": "hash+linear_probe+slot_scan",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "slots",
+      "auxiliary": "none",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "primary_only"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 4096,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "scan de slots s\u00e9par\u00e9"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 10240,
+        "reason": "tous les slots sont parcourus"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 8257,
+      "probes": 8257,
+      "sequential_reads": 0,
+      "random_accesses": 8257,
+      "slots_visited": 10240,
+      "base_writes": 1084,
+      "auxiliary_writes": 0,
+      "reserved_cells": 4096,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 10240,
+        "observed": 10240,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 4096,
+        "observed": 4096,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 11984.912,
+        "observed_cost": 17594.4,
+        "predicted_selected": false,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 3813.1922,
+        "observed_cost": 6127.106,
+        "predicted_selected": false,
+        "observed_selected": false
+      }
+    },
+    "checksum": 103577828,
+    "wall_ns": 4040740
+  },
+  {
+    "workload": "lookup_heavy",
+    "solution": "hash+linear_probe+dense_view",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "dense",
+      "auxiliary": "dense_view_with_slot_position",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "mirror_values"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 1245.14,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 6676,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 4,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 2660,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 8257,
+      "probes": 8257,
+      "sequential_reads": 2660,
+      "random_accesses": 8257,
+      "slots_visited": 0,
+      "base_writes": 1084,
+      "auxiliary_writes": 1084,
+      "reserved_cells": 6676,
+      "allocations": 4
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 2660,
+        "observed": 2660,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 1245.14,
+        "observed": 8257,
+        "difference": 7011.86,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 6676,
+        "observed": 6676,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 4,
+        "observed": 4,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 5403.112,
+        "observed_cost": 11012.6,
+        "predicted_selected": true,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 1227.5722,
+        "observed_cost": 3541.4860000000003,
+        "predicted_selected": true,
+        "observed_selected": false
+      }
+    },
+    "checksum": 103577828,
+    "wall_ns": 3231412
+  },
+  {
+    "workload": "walk_heavy",
+    "solution": "sorted+binary_lookup+dense_walk",
+    "description": {
+      "storage": "dense_sorted",
+      "lookup": "binary",
+      "walk": "dense",
+      "auxiliary": "none",
+      "capacity": "final_count",
+      "maintenance": "append_above_max"
+    },
+    "predicted": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "value": 700,
+        "reason": "borne de recherche dichotomique"
+      },
+      "probes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "aucun probing"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "value": 700,
+        "reason": "un acc\u00e8s par comparaison au plus"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 1064,
+        "reason": "tableaux pr\u00e9allou\u00e9s de cl\u00e9s et valeurs"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "deux tableaux denses"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 53200,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 701,
+      "probes": 0,
+      "sequential_reads": 53200,
+      "random_accesses": 701,
+      "slots_visited": 0,
+      "base_writes": 1084,
+      "auxiliary_writes": 0,
+      "reserved_cells": 1064,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "predicted": 700,
+        "observed": 701,
+        "difference": 1,
+        "status": "bound_violated"
+      },
+      "probes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 53200,
+        "observed": 53200,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "predicted": 700,
+        "observed": 701,
+        "difference": 1,
+        "status": "bound_violated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 1064,
+        "observed": 1064,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 54217.2,
+        "observed_cost": 54217.8,
+        "predicted_selected": true,
+        "observed_selected": true
+      },
+      "cache_rich": {
+        "predicted_cost": 5822.264,
+        "observed_cost": 5822.514,
+        "predicted_selected": true,
+        "observed_selected": true
+      }
+    },
+    "checksum": 1809687376,
+    "wall_ns": 6183560
+  },
+  {
+    "workload": "walk_heavy",
+    "solution": "hash+linear_probe+slot_scan",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "slots",
+      "auxiliary": "none",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "primary_only"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 4096,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "scan de slots s\u00e9par\u00e9"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 204800,
+        "reason": "tous les slots sont parcourus"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 5283,
+      "probes": 5283,
+      "sequential_reads": 0,
+      "random_accesses": 5283,
+      "slots_visited": 204800,
+      "base_writes": 1084,
+      "auxiliary_writes": 0,
+      "reserved_cells": 4096,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 204800,
+        "observed": 204800,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 4096,
+        "observed": 4096,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 206215.784,
+        "observed_cost": 209775.2,
+        "predicted_selected": false,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 62045.4269,
+        "observed_cost": 63513.686,
+        "predicted_selected": false,
+        "observed_selected": false
+      }
+    },
+    "checksum": 1809687376,
+    "wall_ns": 24338147
+  },
+  {
+    "workload": "walk_heavy",
+    "solution": "hash+linear_probe+dense_view",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "dense",
+      "auxiliary": "dense_view_with_slot_position",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "mirror_values"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 833.73,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 6676,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 4,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 53200,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 1084,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 5283,
+      "probes": 5283,
+      "sequential_reads": 53200,
+      "random_accesses": 5283,
+      "slots_visited": 0,
+      "base_writes": 1084,
+      "auxiliary_writes": 1084,
+      "reserved_cells": 6676,
+      "allocations": 4
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 53200,
+        "observed": 53200,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 833.73,
+        "observed": 5283,
+        "difference": 4449.27,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 1084,
+        "observed": 1084,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 6676,
+        "observed": 6676,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 4,
+        "observed": 4,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 55613.984,
+        "observed_cost": 59173.4,
+        "predicted_selected": false,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 6145.8069,
+        "observed_cost": 7614.066,
+        "predicted_selected": false,
+        "observed_selected": false
+      }
+    },
+    "checksum": 1809687376,
+    "wall_ns": 7803930
+  },
+  {
+    "workload": "update_heavy",
+    "solution": "sorted+binary_lookup+dense_walk",
+    "description": {
+      "storage": "dense_sorted",
+      "lookup": "binary",
+      "walk": "dense",
+      "auxiliary": "none",
+      "capacity": "final_count",
+      "maintenance": "append_above_max"
+    },
+    "predicted": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "value": 2500,
+        "reason": "borne de recherche dichotomique"
+      },
+      "probes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "aucun probing"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "value": 2500,
+        "reason": "un acc\u00e8s par comparaison au plus"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 1224,
+        "reason": "tableaux pr\u00e9allou\u00e9s de cl\u00e9s et valeurs"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "deux tableaux denses"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 6120,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1424,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 2501,
+      "probes": 0,
+      "sequential_reads": 6120,
+      "random_accesses": 2501,
+      "slots_visited": 0,
+      "base_writes": 1424,
+      "auxiliary_writes": 0,
+      "reserved_cells": 1224,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "upper_bound",
+        "predicted": 2500,
+        "observed": 2501,
+        "difference": 1,
+        "status": "bound_violated"
+      },
+      "probes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 6120,
+        "observed": 6120,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "upper_bound",
+        "predicted": 2500,
+        "observed": 2501,
+        "difference": 1,
+        "status": "bound_violated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1424,
+        "observed": 1424,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 1224,
+        "observed": 1224,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 8395.2,
+        "observed_cost": 8395.8,
+        "predicted_selected": true,
+        "observed_selected": true
+      },
+      "cache_rich": {
+        "predicted_cost": 1666.424,
+        "observed_cost": 1666.674,
+        "predicted_selected": true,
+        "observed_selected": true
+      }
+    },
+    "checksum": 241055056,
+    "wall_ns": 1411498
+  },
+  {
+    "workload": "update_heavy",
+    "solution": "hash+linear_probe+slot_scan",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "slots",
+      "auxiliary": "none",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "primary_only"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 4096,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 2,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "scan de slots s\u00e9par\u00e9"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 20480,
+        "reason": "tous les slots sont parcourus"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1424,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 8299,
+      "probes": 8299,
+      "sequential_reads": 0,
+      "random_accesses": 8299,
+      "slots_visited": 20480,
+      "base_writes": 1424,
+      "auxiliary_writes": 0,
+      "reserved_cells": 4096,
+      "allocations": 2
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 20480,
+        "observed": 20480,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1424,
+        "observed": 1424,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 4096,
+        "observed": 4096,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 2,
+        "observed": 2,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 22384.144,
+        "observed_cost": 28038.0,
+        "predicted_selected": false,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 6982.7504,
+        "observed_cost": 9314.966,
+        "predicted_selected": false,
+        "observed_selected": false
+      }
+    },
+    "checksum": 241055056,
+    "wall_ns": 5166021
+  },
+  {
+    "workload": "update_heavy",
+    "solution": "hash+linear_probe+dense_view",
+    "description": {
+      "storage": "open_addressed",
+      "lookup": "linear_probe",
+      "walk": "dense",
+      "auxiliary": "dense_view_with_slot_position",
+      "capacity": "power_of_two_below_half_full",
+      "maintenance": "mirror_values"
+    },
+    "predicted": {
+      "probes": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "hachage uniforme, linear probing, alpha final"
+      },
+      "comparisons": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "une comparaison par probe"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "value": 1231.68,
+        "reason": "un acc\u00e8s de slot par probe"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "value": 6756,
+        "reason": "cl\u00e9s+valeurs, plus positions et vue si pr\u00e9sentes"
+      },
+      "allocations": {
+        "kind": "exact",
+        "value": 4,
+        "reason": "nombre de tableaux d\u00e9clar\u00e9s"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "value": 6120,
+        "reason": "les parcours suivent les insertions"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "value": 0,
+        "reason": "pas de scan sparse"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "value": 1424,
+        "reason": "construction, updates de valeur, insertions cl\u00e9+valeur"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "value": 1424,
+        "reason": "maintenance d\u00e9clar\u00e9e de la vue et des positions"
+      }
+    },
+    "observed": {
+      "comparisons": 8299,
+      "probes": 8299,
+      "sequential_reads": 6120,
+      "random_accesses": 8299,
+      "slots_visited": 0,
+      "base_writes": 1424,
+      "auxiliary_writes": 1424,
+      "reserved_cells": 6756,
+      "allocations": 4
+    },
+    "comparison": {
+      "comparisons": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "probes": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "sequential_reads": {
+        "kind": "exact",
+        "predicted": 6120,
+        "observed": 6120,
+        "difference": 0,
+        "status": "equal"
+      },
+      "random_accesses": {
+        "kind": "estimate",
+        "predicted": 1231.68,
+        "observed": 8299,
+        "difference": 7067.32,
+        "status": "estimated"
+      },
+      "slots_visited": {
+        "kind": "exact",
+        "predicted": 0,
+        "observed": 0,
+        "difference": 0,
+        "status": "equal"
+      },
+      "base_writes": {
+        "kind": "exact",
+        "predicted": 1424,
+        "observed": 1424,
+        "difference": 0,
+        "status": "equal"
+      },
+      "auxiliary_writes": {
+        "kind": "exact",
+        "predicted": 1424,
+        "observed": 1424,
+        "difference": 0,
+        "status": "equal"
+      },
+      "reserved_cells": {
+        "kind": "exact",
+        "predicted": 6756,
+        "observed": 6756,
+        "difference": 0,
+        "status": "equal"
+      },
+      "allocations": {
+        "kind": "exact",
+        "predicted": 4,
+        "observed": 4,
+        "difference": 0,
+        "status": "equal"
+      }
+    },
+    "platform_costs": {
+      "compact": {
+        "predicted_cost": 9298.344000000001,
+        "observed_cost": 14952.2,
+        "predicted_selected": false,
+        "observed_selected": false
+      },
+      "cache_rich": {
+        "predicted_cost": 1739.2104,
+        "observed_cost": 4071.4260000000004,
+        "predicted_selected": false,
+        "observed_selected": false
+      }
+    },
+    "checksum": 241055056,
+    "wall_ns": 3977943
+  }
+]

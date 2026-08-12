@@ -217,3 +217,61 @@ aucune dépendance externe. Reproduction : `python3 poc3.py`.
 
 Inventaire POC 4 : `poc4.py` (~290 lignes), `poc4_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc4.py`.
+
+## POC 5 — modèle indépendant de l'implémentation
+
+### Confirmed
+
+- Le chemin analytique part uniquement de descriptions structurelles et du
+  résumé des workloads. Il ne reçoit ni les clés concrètes ni la fonction de
+  hachage exécutée. Les trois implémentations instrumentées n'appellent aucune
+  formule de `analyze()` ; les calculs de capacité et les algorithmes y sont
+  dupliqués localement. Les deux chemins peuvent donc diverger réellement.
+- Les propriétés déclarées exactes sont toutes retrouvées par l'exécution pour
+  les neuf couples solution/workload : lectures séquentielles, slots visités,
+  écritures primaires et auxiliaires, cellules réservées et allocations. Les
+  checksums des trois implémentations concordent dans chaque workload
+  (`poc5_measurements.json`).
+- Les erreurs sont localisables par dimension et niveau de confiance avant
+  toute pondération plateforme. Le modèle plateforme synthétique n'est appliqué
+  qu'après cette comparaison.
+- Une prédiction algorithmique doit donc conserver son statut : valeur exacte,
+  borne à vérifier, ou estimation conditionnelle accompagnée de l'hypothèse
+  nécessaire. Ces catégories ne sont pas interchangeables même si elles portent
+  toutes un nombre.
+- L'écart de probing est expliqué par une hypothèse manquante : l'analyse suppose
+  un hachage uniforme, alors que l'exécution utilise des clés multiples de 64
+  avec une capacité puissance de deux. Les probes observés valent 8 257 contre
+  1 245,14 estimés sur `lookup_heavy`, 5 283 contre 833,73 sur `walk_heavy`, et
+  8 299 contre 1 231,68 sur `update_heavy`.
+- Cet écart algorithmique peut changer la décision ultérieure : pour
+  `lookup_heavy`, les deux profils choisissent `hash+dense_view` depuis le
+  vecteur prédit, mais `sorted` depuis le vecteur observé pondéré. Cela ne
+  constitue toujours pas une validation physique des profils.
+
+### Disproved
+
+- La borne analytique de comparaison binaire utilisée est fausse : elle prévoit
+  4 200/700/2 500 comparaisons selon le workload, contre 4 202/701/2 501
+  observées. Certaines recherches sur 512 éléments nécessitent une itération
+  de dichotomie supplémentaire avant la comparaison finale. La formule est
+  conservée telle quelle afin de rendre la réfutation visible.
+- L'estimation de probing fondée seulement sur le facteur de charge ne prédit
+  pas cette distribution de clés. Comparaisons et accès aléatoires, dérivés du
+  même nombre de probes estimé, héritent du même écart. Le modèle n'a pas été
+  ajusté après mesure pour le faire disparaître.
+- `vector_equal: true` dans les POC précédents ne suffisait donc pas à démontrer
+  une capacité de prédiction indépendante : les chemins découplés du POC 5
+  exposent deux divergences que leur proximité masquait.
+
+### Unknown
+
+- La généralisation des estimations à d'autres distributions de clés, fonctions
+  de hachage, facteurs de charge et politiques de resize reste inconnue.
+- On ne sait pas encore quel niveau de granularité déclarative suffirait pour
+  analyser des implémentations externes plus complexes sans recopier leur code.
+- Le calibrage physique des dimensions et les caractéristiques supplémentaires
+  requises par une plateforme réelle restent inconnus.
+
+Inventaire POC 5 : `poc5.py` (~415 lignes), `poc5_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc5.py`.
