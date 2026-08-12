@@ -1,0 +1,204 @@
+{
+  "sparse_memory": {
+    "selected": "retained_handoff+compact_block64_dispatch+running_reduction",
+    "compositions": {
+      "fused_handoff+per_record_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 512,
+          "retained_writes": 0,
+          "retained_reads": 0,
+          "aggregate_updates": 512,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 1
+        },
+        "admissible": true,
+        "cost": 21913.62
+      },
+      "fused_handoff+per_record_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 512,
+          "retained_writes": 0,
+          "retained_reads": 0,
+          "aggregate_updates": 0,
+          "output_writes": 512,
+          "reduction_reads": 512,
+          "reduction_calls": 1,
+          "peak_temp_records": 512
+        },
+        "admissible": true,
+        "cost": 17837.84
+      },
+      "retained_handoff+per_record_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 512,
+          "retained_writes": 512,
+          "retained_reads": 512,
+          "aggregate_updates": 512,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 513
+        },
+        "admissible": true,
+        "cost": 23203.86
+      },
+      "retained_handoff+per_record_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 512,
+          "retained_writes": 512,
+          "retained_reads": 512,
+          "aggregate_updates": 0,
+          "output_writes": 512,
+          "reduction_reads": 512,
+          "reduction_calls": 1,
+          "peak_temp_records": 1024
+        },
+        "admissible": false,
+        "cost": 19128.08
+      },
+      "retained_handoff+compact_block64_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 8,
+          "retained_writes": 512,
+          "retained_reads": 512,
+          "aggregate_updates": 512,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 576
+        },
+        "admissible": true,
+        "cost": 8085.12
+      },
+      "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 1024,
+          "transform_dispatches": 8,
+          "retained_writes": 512,
+          "retained_reads": 512,
+          "aggregate_updates": 0,
+          "output_writes": 512,
+          "reduction_reads": 512,
+          "reduction_calls": 1,
+          "peak_temp_records": 1024
+        },
+        "admissible": false,
+        "cost": 4008.08
+      }
+    }
+  },
+  "dense_throughput": {
+    "selected": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+    "compositions": {
+      "fused_handoff+per_record_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 3584,
+          "retained_writes": 0,
+          "retained_reads": 0,
+          "aggregate_updates": 3584,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 1
+        },
+        "admissible": true,
+        "cost": 172441.62
+      },
+      "fused_handoff+per_record_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 3584,
+          "retained_writes": 0,
+          "retained_reads": 0,
+          "aggregate_updates": 0,
+          "output_writes": 3584,
+          "reduction_reads": 3584,
+          "reduction_calls": 1,
+          "peak_temp_records": 3584
+        },
+        "admissible": true,
+        "cost": 143851.28
+      },
+      "retained_handoff+per_record_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 3584,
+          "retained_writes": 3584,
+          "retained_reads": 3584,
+          "aggregate_updates": 3584,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 3585
+        },
+        "admissible": true,
+        "cost": 181473.3
+      },
+      "retained_handoff+per_record_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 3584,
+          "retained_writes": 3584,
+          "retained_reads": 3584,
+          "aggregate_updates": 0,
+          "output_writes": 3584,
+          "reduction_reads": 3584,
+          "reduction_calls": 1,
+          "peak_temp_records": 7168
+        },
+        "admissible": true,
+        "cost": 152882.96
+      },
+      "retained_handoff+compact_block64_dispatch+running_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 56,
+          "retained_writes": 3584,
+          "retained_reads": 3584,
+          "aggregate_updates": 3584,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "reduction_calls": 0,
+          "peak_temp_records": 3648
+        },
+        "admissible": true,
+        "cost": 75634.56
+      },
+      "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+        "features": {
+          "filter_tests": 4096,
+          "transform_work": 28672,
+          "transform_dispatches": 56,
+          "retained_writes": 3584,
+          "retained_reads": 3584,
+          "aggregate_updates": 0,
+          "output_writes": 3584,
+          "reduction_reads": 3584,
+          "reduction_calls": 1,
+          "peak_temp_records": 7168
+        },
+        "admissible": true,
+        "cost": 47042.96
+      }
+    }
+  }
+}

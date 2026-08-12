@@ -592,3 +592,80 @@ aucune dépendance externe. Reproduction : `python3 poc9.py`.
 
 Inventaire POC 10 : `poc10.py` (~405 lignes), `poc10_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc10.py`.
+
+## POC 11 — extraction depuis des implémentations existantes
+
+### Confirmed
+
+- Deux programmes ordinaires ont été écrits et vérifiés avant toute extraction :
+  A traite et agrège chaque survivant immédiatement, B sélectionne, transforme
+  par blocs de 64 puis réduit un buffer. Ils produisent les mêmes résultats
+  (`sparse`: 512/2 325 550 ; `dense`: 3 584/1 727 749 065). Leur gel est attesté
+  dans `poc11_fixtures.json` par les SHA-256
+  `30b1f876…2772` (A) et `37ae2958…e2c6` (B), encore vérifiés à chaque exécution.
+- L'analyse manuelle postérieure n'a pas conservé les fonctions comme
+  frontières. Elle extrait trois rôles communs : passage fusionné ou retenu des
+  survivants, dispatch individuel ou par bloc compact, réduction courante ou
+  différée. Par exemple, `run()` de A contient trois mécanismes, tandis que le
+  passage retenu de B traverse `select()` et `run()`
+  (`poc11_extraction.json`).
+- Ces rôles génèrent six compositions admissibles, et non deux candidats A/B.
+  La contrainte observée `compact_block64_dispatch` exige un passage retenu ;
+  les deux réductions exigent ici une somme associative. Provenance issue des
+  sources et relations ajoutées par l'analyste sont conservées séparément.
+- Avant l'écriture de C, la recherche exhaustive sélectionne pour
+  `sparse_memory` la composition nouvelle
+  `retained_handoff + compact_block64_dispatch + running_reduction`. Elle
+  combine passage/dispatch extraits de B et réduction extraite de A. Son
+  implémentation C produit ensuite les mêmes checksums, sans reconstruire
+  l'architecture complète d'aucune source.
+- Sous la limite temporaire de 600, C a un pic prédit et observé de 576 ; B est
+  inadmissible à 1 024, et A reste admissible mais supporte 512 dispatches et
+  512 mises à jour d'agrégat. Le modèle sélectionne donc C (8 085,12 unités
+  synthétiques). Sur `dense_throughput`, avec assez de mémoire, B reste retenue
+  (47 042,96) devant C (75 634,56). L'oracle instrumenté confirme les deux
+  classements (`poc11_measurements.json`).
+- Les vecteurs prédits et observés sont égaux pour A, B et C dans les deux
+  scénarios, et les implémentations n'appellent pas `vector()`. L'observation
+  utilise néanmoins des adaptateurs propres à chaque source : elle vérifie les
+  caractéristiques extraites dans cette expérience déterministe, sans prouver
+  qu'une extraction ou une instrumentation générale serait immédiate.
+- La granularité est utile dans ce cas étroit : elle est plus basse que les
+  architectures A/B, plus haute que les instructions, porte des propriétés
+  calculables et permet une recombinaison sous précondition explicite.
+
+### Disproved
+
+- Les frontières de fonctions ne constituent pas une granularité suffisante :
+  elles auraient laissé A et B presque monolithiques et auraient masqué les
+  rôles partagés ou recombinables.
+- Les mécanismes extraits ne sont pas librement indépendants. Le dispatch par
+  blocs observé ne peut pas être associé au passage fusionné sans inventer un
+  autre mécanisme de buffering absent des sources.
+- L'architecture bufferisée complète de B n'est pas nécessaire pour bénéficier
+  de ses blocs compacts : C conserve ces blocs mais remplace son buffer de
+  sorties et sa réduction différée par la réduction courante extraite de A.
+
+### Unknown
+
+- Rien ne démontre que la granularité extraite soit unique ou canonique :
+  plusieurs découpages sémantiques plausibles pourraient décrire les mêmes
+  sources tout en préservant, ou non, les conséquences nécessaires au choix.
+- L'extraction reste entièrement manuelle ; son automatisation, son ambiguïté
+  lorsque plusieurs granularités sont plausibles et son passage à un code plus
+  gros restent inconnus.
+- On ne sait pas si les mêmes rôles seraient reconnaissables lorsque les effets
+  sont dispersés entre modules, masqués par un framework ou couplés à des états
+  externes.
+- La provenance et les licences de connaissances issues de code tiers,
+  l'analyse de vrais frameworks et la calibration sur plateformes physiques
+  ne sont pas traitées.
+- L'égalité exacte des vecteurs ne teste ni des effets runtime non observés ni
+  la fiabilité de propriétés approximatives ; les poids plateforme sont
+  synthétiques.
+
+Inventaire POC 11 : `poc11_source_a.py` (38 lignes), `poc11_source_b.py`
+(45), `poc11_source_c.py` (43), `poc11.py` (~300),
+`poc11_fixtures.json`, `poc11_extraction.json`, `poc11_predictions.json` et
+`poc11_measurements.json`. Aucune dépendance externe. Reproduction complète :
+`python3 poc11.py` ; prédiction seule : `python3 poc11.py --predict-only`.

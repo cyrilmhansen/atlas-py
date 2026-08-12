@@ -1,0 +1,8 @@
+{
+  "poc11_source_a.py": "30b1f876ca245d1a75c086961c20c0c2efba9b6b3aab87117712e2f6e6042772",
+  "poc11_source_b.py": "37ae2958c01d5205b3bb7a3b7db3452ca3792d606bafba7e9d119fa2b57be2c6",
+  "functional_results": {
+    "sparse": {"accepted": 512, "checksum": 2325550},
+    "dense": {"accepted": 3584, "checksum": 1727749065}
+  }
+}

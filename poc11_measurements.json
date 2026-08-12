@@ -1,0 +1,470 @@
+{
+  "frozen_hashes": {
+    "poc11_source_a.py": "30b1f876ca245d1a75c086961c20c0c2efba9b6b3aab87117712e2f6e6042772",
+    "poc11_source_b.py": "37ae2958c01d5205b3bb7a3b7db3452ca3792d606bafba7e9d119fa2b57be2c6"
+  },
+  "fixture_equivalence": {
+    "sparse": {
+      "accepted": 512,
+      "checksum": 2325550
+    },
+    "dense": {
+      "accepted": 3584,
+      "checksum": 1727749065
+    }
+  },
+  "source_compositions": {
+    "A": "fused_handoff+per_record_dispatch+running_reduction",
+    "B": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+    "C": "retained_handoff+compact_block64_dispatch+running_reduction"
+  },
+  "composition_count": 6,
+  "scenarios": {
+    "sparse_memory": {
+      "workload": {
+        "count": 4096,
+        "accepted": 512,
+        "effort": 2,
+        "memory_limit": 600,
+        "mode": "sparse"
+      },
+      "model_selected": "retained_handoff+compact_block64_dispatch+running_reduction",
+      "oracle_best_source": "C",
+      "selection_verified": true,
+      "executed_sources": {
+        "A": {
+          "composition": "fused_handoff+per_record_dispatch+running_reduction",
+          "result": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 21913.62,
+          "observed_cost": 21913.62,
+          "admissible": true,
+          "wall_time_ns_secondary": 1984943
+        },
+        "B": {
+          "composition": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+          "result": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 0,
+            "output_writes": 512,
+            "reduction_reads": 512,
+            "reduction_calls": 1,
+            "peak_temp_records": 1024
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 0,
+            "output_writes": 512,
+            "reduction_reads": 512,
+            "reduction_calls": 1,
+            "peak_temp_records": 1024
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 4008.08,
+          "observed_cost": 4008.08,
+          "admissible": false,
+          "wall_time_ns_secondary": 3589984
+        },
+        "C": {
+          "composition": "retained_handoff+compact_block64_dispatch+running_reduction",
+          "result": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 576
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 576
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 8085.12,
+          "observed_cost": 8085.12,
+          "admissible": true,
+          "wall_time_ns_secondary": 1020004
+        }
+      },
+      "generated_space": {
+        "fused_handoff+per_record_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "admissible": true,
+          "cost": 21913.62
+        },
+        "fused_handoff+per_record_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 0,
+            "output_writes": 512,
+            "reduction_reads": 512,
+            "reduction_calls": 1,
+            "peak_temp_records": 512
+          },
+          "admissible": true,
+          "cost": 17837.84
+        },
+        "retained_handoff+per_record_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 513
+          },
+          "admissible": true,
+          "cost": 23203.86
+        },
+        "retained_handoff+per_record_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 512,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 0,
+            "output_writes": 512,
+            "reduction_reads": 512,
+            "reduction_calls": 1,
+            "peak_temp_records": 1024
+          },
+          "admissible": false,
+          "cost": 19128.08
+        },
+        "retained_handoff+compact_block64_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 512,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 576
+          },
+          "admissible": true,
+          "cost": 8085.12
+        },
+        "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 1024,
+            "transform_dispatches": 8,
+            "retained_writes": 512,
+            "retained_reads": 512,
+            "aggregate_updates": 0,
+            "output_writes": 512,
+            "reduction_reads": 512,
+            "reduction_calls": 1,
+            "peak_temp_records": 1024
+          },
+          "admissible": false,
+          "cost": 4008.08
+        }
+      }
+    },
+    "dense_throughput": {
+      "workload": {
+        "count": 4096,
+        "accepted": 3584,
+        "effort": 8,
+        "memory_limit": 8000,
+        "mode": "dense"
+      },
+      "model_selected": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+      "oracle_best_source": "B",
+      "selection_verified": true,
+      "executed_sources": {
+        "A": {
+          "composition": "fused_handoff+per_record_dispatch+running_reduction",
+          "result": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 172441.62,
+          "observed_cost": 172441.62,
+          "admissible": true,
+          "wall_time_ns_secondary": 5774663
+        },
+        "B": {
+          "composition": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+          "result": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 0,
+            "output_writes": 3584,
+            "reduction_reads": 3584,
+            "reduction_calls": 1,
+            "peak_temp_records": 7168
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 0,
+            "output_writes": 3584,
+            "reduction_reads": 3584,
+            "reduction_calls": 1,
+            "peak_temp_records": 7168
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 47042.96,
+          "observed_cost": 47042.96,
+          "admissible": true,
+          "wall_time_ns_secondary": 4019730
+        },
+        "C": {
+          "composition": "retained_handoff+compact_block64_dispatch+running_reduction",
+          "result": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "predicted_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 3648
+          },
+          "observed_vector": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 3648
+          },
+          "differences": {},
+          "vector_equal": true,
+          "predicted_cost": 75634.56,
+          "observed_cost": 75634.56,
+          "admissible": true,
+          "wall_time_ns_secondary": 3987480
+        }
+      },
+      "generated_space": {
+        "fused_handoff+per_record_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 1
+          },
+          "admissible": true,
+          "cost": 172441.62
+        },
+        "fused_handoff+per_record_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 0,
+            "retained_reads": 0,
+            "aggregate_updates": 0,
+            "output_writes": 3584,
+            "reduction_reads": 3584,
+            "reduction_calls": 1,
+            "peak_temp_records": 3584
+          },
+          "admissible": true,
+          "cost": 143851.28
+        },
+        "retained_handoff+per_record_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 3585
+          },
+          "admissible": true,
+          "cost": 181473.3
+        },
+        "retained_handoff+per_record_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 3584,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 0,
+            "output_writes": 3584,
+            "reduction_reads": 3584,
+            "reduction_calls": 1,
+            "peak_temp_records": 7168
+          },
+          "admissible": true,
+          "cost": 152882.96
+        },
+        "retained_handoff+compact_block64_dispatch+running_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 3584,
+            "output_writes": 0,
+            "reduction_reads": 0,
+            "reduction_calls": 0,
+            "peak_temp_records": 3648
+          },
+          "admissible": true,
+          "cost": 75634.56
+        },
+        "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+          "features": {
+            "filter_tests": 4096,
+            "transform_work": 28672,
+            "transform_dispatches": 56,
+            "retained_writes": 3584,
+            "retained_reads": 3584,
+            "aggregate_updates": 0,
+            "output_writes": 3584,
+            "reduction_reads": 3584,
+            "reduction_calls": 1,
+            "peak_temp_records": 7168
+          },
+          "admissible": true,
+          "cost": 47042.96
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "frozen_sources": {
+    "A": {
+      "file": "poc11_source_a.py",
+      "sha256": "30b1f876ca245d1a75c086961c20c0c2efba9b6b3aab87117712e2f6e6042772"
+    },
+    "B": {
+      "file": "poc11_source_b.py",
+      "sha256": "37ae2958c01d5205b3bb7a3b7db3452ca3792d606bafba7e9d119fa2b57be2c6"
+    }
+  },
+  "mechanisms": {
+    "fused_handoff": {
+      "role": "pass each accepted record directly to transformation",
+      "preconditions": ["single-pass consumer available"],
+      "effects": ["no retained survivor sequence"],
+      "provenance": [{"source": "A", "lines": "27-30", "observation": "filter, transform and accumulation share one loop"}]
+    },
+    "retained_handoff": {
+      "role": "retain all accepted records before transformation",
+      "preconditions": ["temporary storage for survivors"],
+      "effects": ["compact survivor sequence", "writes and rereads survivors"],
+      "provenance": [{"source": "B", "lines": "17-20,33-37", "observation": "select returns a dense list consumed later"}]
+    },
+    "per_record_dispatch": {
+      "role": "invoke transformation separately for every survivor",
+      "preconditions": ["records available individually"],
+      "effects": ["one dispatch per survivor"],
+      "provenance": [{"source": "A", "lines": "17-21,27-30", "observation": "transform is called inside the record loop"}]
+    },
+    "compact_block64_dispatch": {
+      "role": "invoke transformation on compact blocks of at most 64 survivors",
+      "preconditions": ["compact survivor sequence"],
+      "effects": ["ceil(survivors/64) dispatches", "block-sized working set"],
+      "provenance": [{"source": "B", "lines": "7,23-30,36-37", "observation": "selected records are sliced into dense blocks"}]
+    },
+    "running_reduction": {
+      "role": "update the aggregate immediately after each transformed value",
+      "preconditions": ["associative sum", "transformed value available"],
+      "effects": ["one aggregate update per survivor", "no output buffer"],
+      "provenance": [{"source": "A", "lines": "25,29", "observation": "total is updated in the streaming loop"}]
+    },
+    "deferred_reduction": {
+      "role": "retain transformed values then reduce them once",
+      "preconditions": ["associative sum", "temporary storage for outputs"],
+      "effects": ["one reduction call", "writes and rereads outputs"],
+      "provenance": [{"source": "B", "lines": "35-38", "observation": "converted values are accumulated before sum"}]
+    }
+  },
+  "analyst_added_relations": [
+    {
+      "relation": "compact_block64_dispatch requires retained_handoff",
+      "reason": "the observed block dispatch consumes a compact sequence of survivors; neither source supports sparse source chunks as equivalent compact blocks"
+    },
+    {
+      "relation": "both reductions require associative sum",
+      "reason": "semantic equivalence of reordered aggregation depends on associativity in this integer domain"
+    }
+  ],
+  "not_extracted_as_choice": [
+    {
+      "observation": "both fixtures materialize the generated input sequence",
+      "reason": "no contrasting source mechanism was observed"
+    },
+    {
+      "observation": "source functions and run functions each span multiple semantic roles",
+      "reason": "function boundaries were not accepted as mechanism boundaries"
+    }
+  ]
+}
