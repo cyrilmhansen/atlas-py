@@ -1,0 +1,560 @@
+[
+  {
+    "scenario": "lookup_heavy",
+    "platform": "compact",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 11790,
+      "probes": 0,
+      "sequential_reads": 200000,
+      "random_accesses": 11790,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 11790,
+      "probes": 0,
+      "sequential_reads": 200000,
+      "random_accesses": 11790,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 208779.0,
+    "wall_ns": 4155765
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 200000,
+      "random_accesses": 10840,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 200000,
+      "random_accesses": 10840,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 214699.8,
+    "wall_ns": 4693793
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 655360,
+      "random_accesses": 10840,
+      "slots_visited": 655360,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 655360,
+      "random_accesses": 10840,
+      "slots_visited": 655360,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 1324861.8,
+    "wall_ns": 11424858
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 11790,
+      "probes": 0,
+      "sequential_reads": 200000,
+      "random_accesses": 11790,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 11790,
+      "probes": 0,
+      "sequential_reads": 200000,
+      "random_accesses": 11790,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 22970.02,
+    "wall_ns": 3875950
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 200000,
+      "random_accesses": 10840,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 200000,
+      "random_accesses": 10840,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 23902.556,
+    "wall_ns": 4319041
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 655360,
+      "random_accesses": 10840,
+      "slots_visited": 655360,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10840,
+      "probes": 10840,
+      "sequential_reads": 655360,
+      "random_accesses": 10840,
+      "slots_visited": 655360,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 331552.036,
+    "wall_ns": 10980985
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "compact",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 1726,
+      "probes": 0,
+      "sequential_reads": 1000000,
+      "random_accesses": 1726,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 1726,
+      "probes": 0,
+      "sequential_reads": 1000000,
+      "random_accesses": 1726,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 1001734.2,
+    "wall_ns": 5109203
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 1000000,
+      "random_accesses": 10140,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 1000000,
+      "random_accesses": 10140,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 1013999.8,
+    "wall_ns": 7499175
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 3276800,
+      "random_accesses": 10140,
+      "slots_visited": 3276800,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 3276800,
+      "random_accesses": 10140,
+      "slots_visited": 3276800,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 6567041.8,
+    "wall_ns": 41365644
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 1726,
+      "probes": 0,
+      "sequential_reads": 1000000,
+      "random_accesses": 1726,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 1726,
+      "probes": 0,
+      "sequential_reads": 1000000,
+      "random_accesses": 1726,
+      "slots_visited": 0,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10020,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 100454.02,
+    "wall_ns": 4887717
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 1000000,
+      "random_accesses": 10140,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 1000000,
+      "random_accesses": 10140,
+      "slots_visited": 0,
+      "writes": 80,
+      "auxiliary_writes": 40,
+      "capacity_reserved": 75556,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 103657.556,
+    "wall_ns": 7760926
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 3276800,
+      "random_accesses": 10140,
+      "slots_visited": 3276800,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10140,
+      "probes": 10140,
+      "sequential_reads": 3276800,
+      "random_accesses": 10140,
+      "slots_visited": 3276800,
+      "writes": 40,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 1642027.036,
+    "wall_ns": 40819700
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "compact",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 6468,
+      "probes": 0,
+      "sequential_reads": 100000,
+      "random_accesses": 6468,
+      "slots_visited": 0,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10200,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 6468,
+      "probes": 0,
+      "sequential_reads": 100000,
+      "random_accesses": 6468,
+      "slots_visited": 0,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10200,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 105398.6,
+    "wall_ns": 2216417
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 100000,
+      "random_accesses": 10650,
+      "slots_visited": 0,
+      "writes": 1200,
+      "auxiliary_writes": 600,
+      "capacity_reserved": 75736,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 100000,
+      "random_accesses": 10650,
+      "slots_visited": 0,
+      "writes": 1200,
+      "auxiliary_writes": 600,
+      "capacity_reserved": 75736,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 115638.8,
+    "wall_ns": 3921705
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "compact",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 327680,
+      "random_accesses": 10650,
+      "slots_visited": 327680,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 327680,
+      "random_accesses": 10650,
+      "slots_visited": 327680,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 669647.8,
+    "wall_ns": 6814391
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "cache_rich",
+    "combination": "sorted_index+dense_elements+dense_scan+none",
+    "selected": true,
+    "predicted": {
+      "comparisons": 6468,
+      "probes": 0,
+      "sequential_reads": 100000,
+      "random_accesses": 6468,
+      "slots_visited": 0,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10200,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 6468,
+      "probes": 0,
+      "sequential_reads": 100000,
+      "random_accesses": 6468,
+      "slots_visited": 0,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 10200,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 11807.7,
+    "wall_ns": 1889203
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+dense_scan+dense_view",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 100000,
+      "random_accesses": 10650,
+      "slots_visited": 0,
+      "writes": 1200,
+      "auxiliary_writes": 600,
+      "capacity_reserved": 75736,
+      "allocations": 2
+    },
+    "observed": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 100000,
+      "random_accesses": 10650,
+      "slots_visited": 0,
+      "writes": 1200,
+      "auxiliary_writes": 600,
+      "capacity_reserved": 75736,
+      "allocations": 2
+    },
+    "vector_equal": true,
+    "predicted_cost": 14284.236,
+    "wall_ns": 3263431
+  },
+  {
+    "scenario": "update_heavy",
+    "platform": "cache_rich",
+    "combination": "hash_index+sparse_slots+slot_scan+none",
+    "selected": false,
+    "predicted": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 327680,
+      "random_accesses": 10650,
+      "slots_visited": 327680,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "observed": {
+      "comparisons": 10650,
+      "probes": 10650,
+      "sequential_reads": 327680,
+      "random_accesses": 10650,
+      "slots_visited": 327680,
+      "writes": 600,
+      "auxiliary_writes": 0,
+      "capacity_reserved": 65536,
+      "allocations": 1
+    },
+    "vector_equal": true,
+    "predicted_cost": 167813.536,
+    "wall_ns": 5483875
+  }
+]

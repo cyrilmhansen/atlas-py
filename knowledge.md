@@ -170,3 +170,50 @@ aucune dépendance externe. Reproduction : `python3 poc2.py`.
 
 Inventaire POC 3 : `poc3.py` (~260 lignes), `poc3_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc3.py`.
+
+## POC 4 — interactions entre mécanismes
+
+### Confirmed
+
+- L'espace reste généré par les mêmes mécanismes et préconditions : famille
+  triée, hash sparse avec scan des slots, et hash sparse avec `dense_view`.
+  Aucune combinaison nommée `hybrid` n'est ajoutée comme candidat monolithique.
+- L'interaction `sparse_slots + dense_view` modifie effectivement les
+  caractéristiques : la vue dense remplace le parcours de tous les slots par
+  un parcours de `n` éléments, mais ajoute sa capacité mémoire et une écriture
+  auxiliaire lors de chaque update ou insert.
+- Ces effets sont dérivés avant exécution dans `predicted_vector()`, puis
+  retrouvés par l'instrumentation : les vecteurs prédits et observés sont égaux
+  pour les trois compositions et les trois workloads
+  (`poc4_measurements.json`). Les deux chemins décrivent toutefois des branches
+  et hypothèses très proches ; cette égalité valide leur cohérence interne, pas
+  encore un modèle réellement indépendant de l'implémentation.
+- Les workloads rendent le compromis visible : dans `walk_heavy`, le scan des
+  slots parcourt 3 276 800 slots, contre 1 000 000 lectures séquentielles avec
+  `dense_view`; dans `update_heavy`, la vue dense produit 600 écritures
+  auxiliaires pour 400 updates et 200 inserts.
+- Avec les profils synthétiques retenus, la famille triée reste sélectionnée
+  dans tous les workloads. L'expérience établit donc l'effet d'interaction et
+  son coût explicable, mais ne démontre pas qu'il suffit à changer le choix.
+
+### Disproved
+
+- L'hypothèse selon laquelle le vecteur complet pourrait être obtenu par une
+  simple addition indépendante des mécanismes est réfutée pour cette
+  composition : `dense_view` dépend de la présence de `sparse_slots` et change
+  simultanément capacité, écritures et coût du parcours.
+- L'hypothèse d'un basculement obligatoire vers la vue dense n'est pas soutenue :
+  aucun des profils et workloads testés ne la sélectionne. Les coefficients
+  n'ont pas été forcés pour obtenir ce résultat.
+
+### Unknown
+
+- Il reste inconnu jusqu'où ces règles locales suffisent lorsque les mécanismes
+  interagissent davantage, notamment avec suppressions, collisions ou resize.
+- On ne sait pas quand une interaction nécessiterait une modélisation globale,
+  ni si cette granularité resterait exploitable avec davantage de mécanismes.
+- Les profils restent synthétiques ; le calibrage sur une plateforme réelle et
+  les dimensions supplémentaires nécessaires restent inconnus.
+
+Inventaire POC 4 : `poc4.py` (~290 lignes), `poc4_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc4.py`.
