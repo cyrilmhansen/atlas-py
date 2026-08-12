@@ -1,0 +1,2598 @@
+[
+  {
+    "workload": "lookup_heavy",
+    "actions": {
+      "sample16": {
+        "kind": "sample",
+        "size": 16,
+        "expected_cost": 16,
+        "expected_reduction": 0.15,
+        "directness": 0.3,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "sample64": {
+        "kind": "sample",
+        "size": 64,
+        "expected_cost": 64,
+        "expected_reduction": 0.5,
+        "directness": 0.5,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "probe16": {
+        "kind": "probe",
+        "size": 16,
+        "expected_cost": 32,
+        "expected_reduction": 0.75,
+        "directness": 0.9,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "probe64": {
+        "kind": "probe",
+        "size": 64,
+        "expected_cost": 128,
+        "expected_reduction": 0.95,
+        "directness": 1.0,
+        "targets": [
+          "hash_dispersion"
+        ]
+      }
+    },
+    "initial_analysis": {
+      "vectors": {
+        "sorted+binary_lookup+dense_walk": {
+          "comparisons": {
+            "status": "bound",
+            "central": 4200,
+            "interval": [
+              420,
+              4620
+            ],
+            "assumptions": [
+              "cl\u00e9s tri\u00e9es"
+            ],
+            "source": "borne dichotomique"
+          },
+          "random_accesses": {
+            "status": "bound",
+            "central": 4200,
+            "interval": [
+              420,
+              4620
+            ],
+            "assumptions": [
+              "un acc\u00e8s par comparaison"
+            ],
+            "source": "borne d\u00e9riv\u00e9e"
+          },
+          "probes": {
+            "status": "exact",
+            "central": 0,
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "aucun probing"
+          },
+          "sequential_reads": {
+            "status": "exact",
+            "central": 2660,
+            "interval": [
+              2660,
+              2660
+            ],
+            "assumptions": [
+              "parcours apr\u00e8s insertions"
+            ],
+            "source": "taille \u00d7 parcours"
+          },
+          "base_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [],
+            "source": "maintenance primaire"
+          },
+          "auxiliary_writes": {
+            "status": "exact",
+            "central": 0,
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [
+              "aucune vue"
+            ],
+            "source": "maintenance auxiliaire"
+          },
+          "reserved_cells": {
+            "status": "exact",
+            "central": 1064,
+            "interval": [
+              1064,
+              1064
+            ],
+            "assumptions": [],
+            "source": "capacit\u00e9 d\u00e9clar\u00e9e"
+          },
+          "allocations": {
+            "status": "exact",
+            "central": 2,
+            "interval": [
+              2,
+              2
+            ],
+            "assumptions": [],
+            "source": "tableaux"
+          }
+        },
+        "hash+linear_probe+dense_view": {
+          "comparisons": {
+            "status": "estimate",
+            "central": 1245.14,
+            "interval": [
+              952,
+              506464
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "probes": {
+            "status": "estimate",
+            "central": 1245.14,
+            "interval": [
+              952,
+              506464
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "random_accesses": {
+            "status": "estimate",
+            "central": 1245.14,
+            "interval": [
+              952,
+              506464
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "sequential_reads": {
+            "status": "exact",
+            "central": 2660,
+            "interval": [
+              2660,
+              2660
+            ],
+            "assumptions": [
+              "parcours apr\u00e8s insertions"
+            ],
+            "source": "taille \u00d7 parcours"
+          },
+          "base_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [],
+            "source": "maintenance primaire"
+          },
+          "auxiliary_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [
+              "vue miroir"
+            ],
+            "source": "maintenance auxiliaire"
+          },
+          "reserved_cells": {
+            "status": "exact",
+            "central": 6676,
+            "interval": [
+              6676,
+              6676
+            ],
+            "assumptions": [],
+            "source": "capacit\u00e9 d\u00e9clar\u00e9e"
+          },
+          "allocations": {
+            "status": "exact",
+            "central": 4,
+            "interval": [
+              4,
+              4
+            ],
+            "assumptions": [],
+            "source": "tableaux"
+          }
+        }
+      },
+      "costs": {
+        "sorted+binary_lookup+dense_walk": {
+          "central": 1643.26,
+          "interval": [
+            698.26,
+            1748.26
+          ]
+        },
+        "hash+linear_probe+dense_view": {
+          "central": 1227.57,
+          "interval": [
+            1130.84,
+            167949.8
+          ]
+        }
+      },
+      "decision": {
+        "status": "needs_information",
+        "selected": null,
+        "ranking_by_central": [
+          "hash+linear_probe+dense_view",
+          "sorted+binary_lookup+dense_walk"
+        ]
+      }
+    },
+    "policies": {
+      "always_none": {
+        "policy": "always_none",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 1227.57,
+                  "interval": [
+                    1130.84,
+                    167949.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "undetermined",
+                "selected": null,
+                "ranking_by_central": [
+                  "hash+linear_probe+dense_view",
+                  "sorted+binary_lookup+dense_walk"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {},
+        "total_acquisition_cost": 0,
+        "acquisition_steps": 0,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 1227.57,
+              "interval": [
+                1130.84,
+                167949.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "undetermined",
+            "selected": null,
+            "ranking_by_central": [
+              "hash+linear_probe+dense_view",
+              "sorted+binary_lookup+dense_walk"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": null,
+          "central_choice_initial": "hash+linear_probe+dense_view",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  952,
+                  506464
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  952,
+                  506464
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  952,
+                  506464
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "always_expensive": {
+        "policy": "always_expensive",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 1227.57,
+                  "interval": [
+                    1130.84,
+                    167949.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "needs_information",
+                "selected": null,
+                "ranking_by_central": [
+                  "hash+linear_probe+dense_view",
+                  "sorted+binary_lookup+dense_walk"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": "probe64",
+            "choice_reason": "baseline impos\u00e9e, m\u00eame si la d\u00e9cision est robuste",
+            "observation": {
+              "kind": "probe",
+              "size": 64,
+              "total_probes": 125,
+              "mean_probes": 1.9531,
+              "max_probes": 5
+            },
+            "acquisition_cost": 189,
+            "acquisition_work": {
+              "keys_inspected": 0,
+              "insertions": 64,
+              "probes": 125
+            }
+          },
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 3619.81,
+                  "interval": [
+                    2498.56,
+                    5301.7
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {
+          "probe64": {
+            "kind": "probe",
+            "size": 64,
+            "total_probes": 125,
+            "mean_probes": 1.9531,
+            "max_probes": 5
+          }
+        },
+        "total_acquisition_cost": 189,
+        "acquisition_steps": 1,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 3619.81,
+              "interval": [
+                2498.56,
+                5301.7
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "hash+linear_probe+dense_view",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "fixed_sequence": {
+        "policy": "fixed_sequence",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 1227.57,
+                  "interval": [
+                    1130.84,
+                    167949.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "needs_information",
+                "selected": null,
+                "ranking_by_central": [
+                  "hash+linear_probe+dense_view",
+                  "sorted+binary_lookup+dense_walk"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": "sample64",
+            "choice_reason": "ordre prescrit sample64 \u2192 probe64",
+            "observation": {
+              "kind": "sample",
+              "size": 64,
+              "distinct_home_buckets": 26,
+              "distinct_home_ratio": 0.4062,
+              "max_home_bucket": 5
+            },
+            "acquisition_cost": 64,
+            "acquisition_work": {
+              "keys_inspected": 64,
+              "insertions": 0,
+              "probes": 0
+            }
+          },
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 1227.57,
+                  "interval": [
+                    1130.84,
+                    26931.23
+                  ]
+                }
+              },
+              "decision": {
+                "status": "needs_information",
+                "selected": null,
+                "ranking_by_central": [
+                  "hash+linear_probe+dense_view",
+                  "sorted+binary_lookup+dense_walk"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": "probe64",
+            "choice_reason": "ordre prescrit sample64 \u2192 probe64",
+            "observation": {
+              "kind": "probe",
+              "size": 64,
+              "total_probes": 125,
+              "mean_probes": 1.9531,
+              "max_probes": 5
+            },
+            "acquisition_cost": 189,
+            "acquisition_work": {
+              "keys_inspected": 0,
+              "insertions": 64,
+              "probes": 125
+            }
+          },
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 3619.81,
+                  "interval": [
+                    2498.56,
+                    5301.7
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "probe16"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {
+          "sample64": {
+            "kind": "sample",
+            "size": 64,
+            "distinct_home_buckets": 26,
+            "distinct_home_ratio": 0.4062,
+            "max_home_bucket": 5
+          },
+          "probe64": {
+            "kind": "probe",
+            "size": 64,
+            "total_probes": 125,
+            "mean_probes": 1.9531,
+            "max_probes": 5
+          }
+        },
+        "total_acquisition_cost": 253,
+        "acquisition_steps": 2,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 3619.81,
+              "interval": [
+                2498.56,
+                5301.7
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "hash+linear_probe+dense_view",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  5096.61,
+                  13590.97
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "adaptive": {
+        "policy": "adaptive",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 1227.57,
+                  "interval": [
+                    1130.84,
+                    167949.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "needs_information",
+                "selected": null,
+                "ranking_by_central": [
+                  "hash+linear_probe+dense_view",
+                  "sorted+binary_lookup+dense_walk"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": {
+              "sample16": {
+                "expected_cost": 16,
+                "targets_decision_uncertainty": true,
+                "overlap": 617.42,
+                "expected_remaining_width": 141796.12,
+                "could_decide_alone": false,
+                "decision_utility_per_cost": 1.736494
+              },
+              "sample64": {
+                "expected_cost": 64,
+                "targets_decision_uncertainty": true,
+                "overlap": 617.42,
+                "expected_remaining_width": 83409.48,
+                "could_decide_alone": false,
+                "decision_utility_per_cost": 2.411797
+              },
+              "probe16": {
+                "expected_cost": 32,
+                "targets_decision_uncertainty": true,
+                "overlap": 617.42,
+                "expected_remaining_width": 41704.74,
+                "could_decide_alone": false,
+                "decision_utility_per_cost": 13.023703
+              },
+              "probe64": {
+                "expected_cost": 128,
+                "targets_decision_uncertainty": true,
+                "overlap": 617.42,
+                "expected_remaining_width": 8340.95,
+                "could_decide_alone": false,
+                "decision_utility_per_cost": 4.582414
+              }
+            },
+            "chosen_action": "probe16",
+            "choice_reason": "meilleur compromis r\u00e9duction d\u00e9cisionnelle / co\u00fbt",
+            "observation": {
+              "kind": "probe",
+              "size": 16,
+              "total_probes": 20,
+              "mean_probes": 1.25,
+              "max_probes": 2
+            },
+            "acquisition_cost": 36,
+            "acquisition_work": {
+              "keys_inspected": 0,
+              "insertions": 16,
+              "probes": 20
+            }
+          },
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 3742.29,
+                  "interval": [
+                    1840.64,
+                    6667.91
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {
+          "probe16": {
+            "kind": "probe",
+            "size": 16,
+            "total_probes": 20,
+            "mean_probes": 1.25,
+            "max_probes": 2
+          }
+        },
+        "total_acquisition_cost": 36,
+        "acquisition_steps": 1,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 3742.29,
+              "interval": [
+                1840.64,
+                6667.91
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "hash+linear_probe+dense_view",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  420,
+                  4620
+                ],
+                "observed": 4202,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  3102.92,
+                  17731.0
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  3102.92,
+                  17731.0
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  3102.92,
+                  17731.0
+                ],
+                "observed": 8355,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  2660,
+                  2660
+                ],
+                "observed": 2660,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "oracle": {
+      "solutions": {
+        "sorted+binary_lookup+dense_walk": {
+          "vector": {
+            "comparisons": 4202,
+            "probes": 0,
+            "sequential_reads": 2660,
+            "random_accesses": 4202,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 1064,
+            "allocations": 2
+          },
+          "cost": 1643.76,
+          "checksum": 103718756,
+          "wall_ns": 1328974
+        },
+        "hash+linear_probe+dense_view": {
+          "vector": {
+            "comparisons": 8355,
+            "probes": 8355,
+            "sequential_reads": 2660,
+            "random_accesses": 8355,
+            "base_writes": 1084,
+            "auxiliary_writes": 1084,
+            "reserved_cells": 6676,
+            "allocations": 4
+          },
+          "cost": 3573.83,
+          "checksum": 103718756,
+          "wall_ns": 1825525
+        }
+      },
+      "selected": "sorted+binary_lookup+dense_walk"
+    }
+  },
+  {
+    "workload": "walk_heavy",
+    "actions": {
+      "sample16": {
+        "kind": "sample",
+        "size": 16,
+        "expected_cost": 16,
+        "expected_reduction": 0.15,
+        "directness": 0.3,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "sample64": {
+        "kind": "sample",
+        "size": 64,
+        "expected_cost": 64,
+        "expected_reduction": 0.5,
+        "directness": 0.5,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "probe16": {
+        "kind": "probe",
+        "size": 16,
+        "expected_cost": 32,
+        "expected_reduction": 0.75,
+        "directness": 0.9,
+        "targets": [
+          "hash_dispersion"
+        ]
+      },
+      "probe64": {
+        "kind": "probe",
+        "size": 64,
+        "expected_cost": 128,
+        "expected_reduction": 0.95,
+        "directness": 1.0,
+        "targets": [
+          "hash_dispersion"
+        ]
+      }
+    },
+    "initial_analysis": {
+      "vectors": {
+        "sorted+binary_lookup+dense_walk": {
+          "comparisons": {
+            "status": "bound",
+            "central": 700,
+            "interval": [
+              70,
+              770
+            ],
+            "assumptions": [
+              "cl\u00e9s tri\u00e9es"
+            ],
+            "source": "borne dichotomique"
+          },
+          "random_accesses": {
+            "status": "bound",
+            "central": 700,
+            "interval": [
+              70,
+              770
+            ],
+            "assumptions": [
+              "un acc\u00e8s par comparaison"
+            ],
+            "source": "borne d\u00e9riv\u00e9e"
+          },
+          "probes": {
+            "status": "exact",
+            "central": 0,
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "aucun probing"
+          },
+          "sequential_reads": {
+            "status": "exact",
+            "central": 53200,
+            "interval": [
+              53200,
+              53200
+            ],
+            "assumptions": [
+              "parcours apr\u00e8s insertions"
+            ],
+            "source": "taille \u00d7 parcours"
+          },
+          "base_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [],
+            "source": "maintenance primaire"
+          },
+          "auxiliary_writes": {
+            "status": "exact",
+            "central": 0,
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [
+              "aucune vue"
+            ],
+            "source": "maintenance auxiliaire"
+          },
+          "reserved_cells": {
+            "status": "exact",
+            "central": 1064,
+            "interval": [
+              1064,
+              1064
+            ],
+            "assumptions": [],
+            "source": "capacit\u00e9 d\u00e9clar\u00e9e"
+          },
+          "allocations": {
+            "status": "exact",
+            "central": 2,
+            "interval": [
+              2,
+              2
+            ],
+            "assumptions": [],
+            "source": "tableaux"
+          }
+        },
+        "hash+linear_probe+dense_view": {
+          "comparisons": {
+            "status": "estimate",
+            "central": 833.73,
+            "interval": [
+              602,
+              320264
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "probes": {
+            "status": "estimate",
+            "central": 833.73,
+            "interval": [
+              602,
+              320264
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "random_accesses": {
+            "status": "estimate",
+            "central": 833.73,
+            "interval": [
+              602,
+              320264
+            ],
+            "assumptions": [
+              "dispersion uniforme non v\u00e9rifi\u00e9e"
+            ],
+            "source": "facteur de charge seul"
+          },
+          "sequential_reads": {
+            "status": "exact",
+            "central": 53200,
+            "interval": [
+              53200,
+              53200
+            ],
+            "assumptions": [
+              "parcours apr\u00e8s insertions"
+            ],
+            "source": "taille \u00d7 parcours"
+          },
+          "base_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [],
+            "source": "maintenance primaire"
+          },
+          "auxiliary_writes": {
+            "status": "exact",
+            "central": 1084,
+            "interval": [
+              1084,
+              1084
+            ],
+            "assumptions": [
+              "vue miroir"
+            ],
+            "source": "maintenance auxiliaire"
+          },
+          "reserved_cells": {
+            "status": "exact",
+            "central": 6676,
+            "interval": [
+              6676,
+              6676
+            ],
+            "assumptions": [],
+            "source": "capacit\u00e9 d\u00e9clar\u00e9e"
+          },
+          "allocations": {
+            "status": "exact",
+            "central": 4,
+            "interval": [
+              4,
+              4
+            ],
+            "assumptions": [],
+            "source": "tableaux"
+          }
+        }
+      },
+      "costs": {
+        "sorted+binary_lookup+dense_walk": {
+          "central": 5822.26,
+          "interval": [
+            5664.76,
+            5839.76
+          ]
+        },
+        "hash+linear_probe+dense_view": {
+          "central": 6145.81,
+          "interval": [
+            6069.34,
+            111557.8
+          ]
+        }
+      },
+      "decision": {
+        "status": "decidable",
+        "selected": "sorted+binary_lookup+dense_walk",
+        "ranking_by_central": [
+          "sorted+binary_lookup+dense_walk",
+          "hash+linear_probe+dense_view"
+        ]
+      }
+    },
+    "policies": {
+      "always_none": {
+        "policy": "always_none",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 5822.26,
+                  "interval": [
+                    5664.76,
+                    5839.76
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 6145.81,
+                  "interval": [
+                    6069.34,
+                    111557.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {},
+        "total_acquisition_cost": 0,
+        "acquisition_steps": 0,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 6145.81,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "sorted+binary_lookup+dense_walk",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "always_expensive": {
+        "policy": "always_expensive",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 5822.26,
+                  "interval": [
+                    5664.76,
+                    5839.76
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 6145.81,
+                  "interval": [
+                    6069.34,
+                    111557.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": "probe64",
+            "choice_reason": "baseline impos\u00e9e, m\u00eame si la d\u00e9cision est robuste",
+            "observation": {
+              "kind": "probe",
+              "size": 64,
+              "total_probes": 125,
+              "mean_probes": 1.9531,
+              "max_probes": 5
+            },
+            "acquisition_cost": 189,
+            "acquisition_work": {
+              "keys_inspected": 0,
+              "insertions": 64,
+              "probes": 125
+            }
+          },
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 5822.26,
+                  "interval": [
+                    5664.76,
+                    5839.76
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 7643.25,
+                  "interval": [
+                    6934.22,
+                    8706.79
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {
+          "probe64": {
+            "kind": "probe",
+            "size": 64,
+            "total_probes": 125,
+            "mean_probes": 1.9531,
+            "max_probes": 5
+          }
+        },
+        "total_acquisition_cost": 189,
+        "acquisition_steps": 1,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 7643.25,
+              "interval": [
+                6934.22,
+                8706.79
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "sorted+binary_lookup+dense_walk",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  3222.86,
+                  8594.29
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  3222.86,
+                  8594.29
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  3222.86,
+                  8594.29
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "fixed_sequence": {
+        "policy": "fixed_sequence",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 5822.26,
+                  "interval": [
+                    5664.76,
+                    5839.76
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 6145.81,
+                  "interval": [
+                    6069.34,
+                    111557.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {},
+        "total_acquisition_cost": 0,
+        "acquisition_steps": 0,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 6145.81,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "sorted+binary_lookup+dense_walk",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      },
+      "adaptive": {
+        "policy": "adaptive",
+        "history": [
+          {
+            "state": {
+              "costs": {
+                "sorted+binary_lookup+dense_walk": {
+                  "central": 5822.26,
+                  "interval": [
+                    5664.76,
+                    5839.76
+                  ]
+                },
+                "hash+linear_probe+dense_view": {
+                  "central": 6145.81,
+                  "interval": [
+                    6069.34,
+                    111557.8
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk",
+                "ranking_by_central": [
+                  "sorted+binary_lookup+dense_walk",
+                  "hash+linear_probe+dense_view"
+                ]
+              }
+            },
+            "available_actions": [
+              "sample16",
+              "sample64",
+              "probe16",
+              "probe64"
+            ],
+            "action_evaluations": null,
+            "chosen_action": null,
+            "choice_reason": null,
+            "observation": null,
+            "acquisition_cost": 0
+          }
+        ],
+        "observations": {},
+        "total_acquisition_cost": 0,
+        "acquisition_steps": 0,
+        "final_state": {
+          "costs": {
+            "sorted+binary_lookup+dense_walk": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash+linear_probe+dense_view": {
+              "central": 6145.81,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk",
+            "ranking_by_central": [
+              "sorted+binary_lookup+dense_walk",
+              "hash+linear_probe+dense_view"
+            ]
+          }
+        },
+        "oracle_evaluation": {
+          "oracle_selected": "sorted+binary_lookup+dense_walk",
+          "decision_correct": true,
+          "central_choice_initial": "sorted+binary_lookup+dense_walk",
+          "dimension_coverage": {
+            "sorted+binary_lookup+dense_walk": {
+              "comparisons": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  70,
+                  770
+                ],
+                "observed": 701,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  0,
+                  0
+                ],
+                "observed": 0,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  1064,
+                  1064
+                ],
+                "observed": 1064,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  2,
+                  2
+                ],
+                "observed": 2,
+                "within_interval": true
+              }
+            },
+            "hash+linear_probe+dense_view": {
+              "comparisons": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "probes": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "random_accesses": {
+                "interval": [
+                  602,
+                  320264
+                ],
+                "observed": 5397,
+                "within_interval": true
+              },
+              "sequential_reads": {
+                "interval": [
+                  53200,
+                  53200
+                ],
+                "observed": 53200,
+                "within_interval": true
+              },
+              "base_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "auxiliary_writes": {
+                "interval": [
+                  1084,
+                  1084
+                ],
+                "observed": 1084,
+                "within_interval": true
+              },
+              "reserved_cells": {
+                "interval": [
+                  6676,
+                  6676
+                ],
+                "observed": 6676,
+                "within_interval": true
+              },
+              "allocations": {
+                "interval": [
+                  4,
+                  4
+                ],
+                "observed": 4,
+                "within_interval": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "oracle": {
+      "solutions": {
+        "sorted+binary_lookup+dense_walk": {
+          "vector": {
+            "comparisons": 701,
+            "probes": 0,
+            "sequential_reads": 53200,
+            "random_accesses": 701,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 1064,
+            "allocations": 2
+          },
+          "cost": 5822.51,
+          "checksum": 1809918416,
+          "wall_ns": 6258863
+        },
+        "hash+linear_probe+dense_view": {
+          "vector": {
+            "comparisons": 5397,
+            "probes": 5397,
+            "sequential_reads": 53200,
+            "random_accesses": 5397,
+            "base_writes": 1084,
+            "auxiliary_writes": 1084,
+            "reserved_cells": 6676,
+            "allocations": 4
+          },
+          "cost": 7651.69,
+          "checksum": 1809918416,
+          "wall_ns": 6486441
+        }
+      },
+      "selected": "sorted+binary_lookup+dense_walk"
+    }
+  }
+]

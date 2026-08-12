@@ -331,3 +331,60 @@ aucune dépendance externe. Reproduction : `python3 poc5.py`.
 
 Inventaire POC 6 : `poc6.py` (~455 lignes), `poc6_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc6.py`.
+
+## POC 7 — choisir l'information à acquérir
+
+### Confirmed
+
+- `sample16`, `sample64`, `probe16` et `probe64` sont proposés simultanément.
+  Avant observation, la politique ne connaît que leur cible
+  (`hash_dispersion`), leur coût attendu, leur caractère direct et une réduction
+  grossière d'intervalle. Le résultat futur de l'action et l'oracle ne sont pas
+  accessibles au choix.
+- Sur l'état initial indécidable de `lookup_heavy`, les utilités décisionnelles
+  par coût annoncées sont 1,736 (`sample16`), 2,412 (`sample64`), 13,024
+  (`probe16`) et 4,582 (`probe64`). La politique choisit donc `probe16` pour son
+  compromis coût/réduction attendu, et non parce que son observation est connue.
+- `probe16` réalise 16 insertions et 20 probes, soit un coût d'acquisition réel
+  de 36. La moyenne observée de 1,25 probe resserre `hash+dense_view` de
+  `[1 130,84 ; 167 949,80]` à `[1 840,64 ; 6 667,91]`. Comme le maximum de
+  `sorted` reste 1 748,26, la décision devient robuste après une seule action.
+- L'oracle complet, exécuté après l'arrêt, confirme `sorted` (1 643,76) devant
+  `hash+dense_view` (3 573,83, 8 355 probes). Toutes les dimensions observées
+  sont contenues dans les intervalles finaux et les checksums concordent.
+- Sur `lookup_heavy`, `adaptive` décide correctement pour 36 unités, contre 189
+  pour `always_expensive` (`probe64`) et 253 pour `fixed_sequence`
+  (`sample64`, puis `probe64`). `always_none` dépense 0 mais reste
+  `undetermined` ; sa valeur centrale aurait choisi le mauvais candidat hash.
+- Sur `walk_heavy`, l'état initial est déjà robuste : `adaptive`,
+  `fixed_sequence` et `always_none` n'acquièrent rien et l'oracle confirme
+  `sorted`. `always_expensive` dépense inutilement 189 unités pour `probe64`.
+
+### Disproved
+
+- Toujours choisir l'action réputée la plus informative et la plus coûteuse est
+  réfuté : `probe64` coûte plus de cinq fois `probe16` sur `lookup_heavy` sans
+  améliorer la décision, et apporte zéro valeur décisionnelle sur `walk_heavy`.
+- La séquence fixe du POC 6 est réfutée comme politique de coût : elle acquiert
+  `sample64` puis `probe64` pour 253 unités là où la sélection adaptative s'arrête
+  après `probe16` pour 36.
+- Acquérir malgré une dominance déjà robuste est réfuté par `walk_heavy`.
+- L'estimation préalable d'utilité reste grossière : elle indiquait qu'aucune
+  action ne serait probablement décisive seule, alors que `probe16` suffit en
+  pratique. Elle a correctement ordonné les actions dans ce cas, sans prédire
+  exactement leur résultat.
+
+### Unknown
+
+- Le choix automatique de la meilleure information reste dépendant de facteurs
+  de réduction et de directness fixés manuellement ; leur estimation fiable est
+  inconnue. POC 7 ne démontre donc pas encore qu'Atlas puisse dériver lui-même
+  la valeur décisionnelle d'une observation depuis les dépendances du modèle.
+- La comparaison d'informations de nature très différente, l'intégration du
+  coût d'acquisition au coût global du programme et plusieurs décisions ou
+  hypothèses dépendantes restent ouvertes.
+- La généralisation à des implémentations externes et plateformes physiques,
+  ainsi que leur calibration, reste inconnue.
+
+Inventaire POC 7 : `poc7.py` (~500 lignes), `poc7_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc7.py`.
