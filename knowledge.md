@@ -112,3 +112,61 @@ conservé comme observation secondaire seulement.
 
 Inventaire POC 2 : `poc2.py` (~230 lignes), `poc2_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc2.py`.
+
+## POC 3 — composition de mécanismes
+
+### Confirmed
+
+- L'espace de solutions n'est plus une liste de candidats monolithiques : le
+  produit de `lookup`, `representation`, `walk` et `auxiliary`, filtré par des
+  préconditions locales, génère les combinaisons admissibles. Les deux familles
+  de départ sont `sorted_index + dense_elements + dense_scan + none` et
+  `hash_index + sparse_slots + slot_scan + none` ; l'hybride est généré comme
+  `hash_index + sparse_slots + dense_scan + dense_view`, sans être déclaré
+  comme un troisième candidat monolithique.
+- L'hybride est sélectionné sur `lookup_heavy` avec le profil synthétique
+  `cache_rich`, tandis que la famille triée est sélectionnée sur `compact` et
+  reste sélectionnée sur `walk_heavy`. Le changement vient des pondérations du
+  modèle plateforme, pas d'une modification du vecteur algorithmique
+  (`poc3_measurements.json`).
+- Les vecteurs calculés avant exécution sont exactement égaux aux vecteurs
+  instrumentés pour les trois combinaisons et les deux workloads. Dans ce
+  domaine déterministe, les probes sans collision, les recherches binaires,
+  les lectures de parcours, les écritures, la capacité et les allocations sont
+  donc calculables et vérifiables (`vector_equal: true`). Cette égalité valide
+  la structure de l'expérience, mais pas encore la prédiction indépendante
+  d'une implémentation complexe.
+- Les mécanismes ne sont pas indépendants sans contraintes : l'index trié
+  requiert une représentation dense, le probing requiert des slots sparse, et
+  le parcours dense d'une table hachée requiert la vue dense auxiliaire. Ces
+  dépendances sont explicites dans `valid()`.
+- Une granularité située sous les familles d'implémentation ouvre donc un
+  espace de solutions qui n'existait pas au niveau des candidats initiaux.
+
+### Disproved
+
+- L'idée que les deux familles monolithiques suffiraient à explorer le choix est
+  contredite dans ce scénario : une combinaison nouvelle est la meilleure sur
+  un workload et un profil plateforme donnés.
+- Le temps mural n'explique pas ce résultat : il est mesuré séparément et les
+  plateformes restent synthétiques ; il ne constitue pas une validation
+  matérielle de leurs coefficients.
+
+### Unknown
+
+- Le POC ne montre pas que cette granularité resterait utile avec d'autres
+  distributions, collisions, tailles ou opérations de mise à jour réelles.
+- La solution hybride reste simple : ses caractéristiques sont essentiellement
+  composées de mécanismes dont les effets restent séparables. Le POC ne
+  démontre donc pas que les propriétés d'une composition peuvent être dérivées
+  lorsque les mécanismes interagissent et modifient mutuellement leurs
+  caractéristiques.
+- Il reste inconnu quelles caractéristiques supplémentaires seraient nécessaires
+  sur des plateformes physiques et comment calibrer leurs poids. Les vecteurs
+  sont ici exacts pour le mécanisme instrumenté, mais cela ne prouve pas qu'une
+  analyse indépendante prédirait fidèlement toutes les implémentations réelles.
+- Les profils plateforme restent synthétiques et ne constituent pas une
+  validation sur des machines physiques.
+
+Inventaire POC 3 : `poc3.py` (~260 lignes), `poc3_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc3.py`.
