@@ -65,3 +65,50 @@ exécutées et les compteurs montrent explicitement que le modèle peut être
 réfuté. Le résultat porte sur la capacité de la chaîne et sur ses limites, pas
 sur une performance absolue ni sur une architecture Atlas. Le temps mural est
 conservé comme observation secondaire seulement.
+
+## POC 2 — séparation algorithmique / plateforme
+
+### Confirmed
+
+- `poc2.py` calcule d'abord un vecteur de caractéristiques pour `sorted` et
+  `hash`, puis applique séparément les profils synthétiques `compact` et
+  `cache_rich`. Les vecteurs sont identiques entre plateformes pour un même
+  candidat (`poc2_measurements.json`, `vector_equal: true`).
+- Les compteurs prédits et observés concordent exactement pour les deux
+  candidats et les deux workloads : comparaisons, probes, visites de slots,
+  lectures séquentielles, accès aléatoires, écritures, capacité réservée et
+  allocations.
+- Le profil synthétique de plateforme peut changer le choix sans changer le
+  vecteur : `lookup_heavy` choisit `sorted` sur `compact` et `hash` sur
+  `cache_rich`. Ce basculement appartient au modèle de décision et n'est pas
+  démontré sur deux machines physiques.
+- Les vecteurs de caractéristiques sont l'information principale ; leur
+  transformation en coût intervient seulement dans le modèle plateforme. Les
+  caractéristiques structurelles comme la capacité réservée appartiennent au
+  mécanisme choisi, tandis que le coût scalaire appartient au profil plateforme.
+  Le temps mural est conservé séparément et n'est pas utilisé pour construire
+  le coût.
+- L'égalité exacte entre vecteurs prédits et observés valide ici la séparation
+  des couches, mais ne démontre pas encore qu'un modèle analytique indépendant
+  puisse prédire fidèlement une implémentation réelle.
+
+### Disproved
+
+- L'hypothèse implicite selon laquelle une seule durée ou un score précoce
+  suffirait à expliquer le choix est contredite : les vecteurs conservent les
+  phénomènes distincts, puis les profils les pondèrent différemment.
+- Les compteurs hétérogènes du POC 1 (`comparisons + probes + visits + writes +
+  allocations`) ne constituent pas une unité physique commune ; leur somme
+  non pondérée n'est pas une mesure calibrée.
+
+### Unknown
+
+- Le POC ne dit pas si ces vecteurs sont suffisants pour une machine réelle,
+  ni comment calibrer leurs poids en unités physiques.
+- Il reste inconnu comment calibrer ces caractéristiques sur des plateformes
+  réelles et quelles dimensions supplémentaires seraient nécessaires.
+- Les caractéristiques de branchement, de cache réel et de runtime restent
+  non modélisées ; les temps muraux ne permettent pas de les attribuer.
+
+Inventaire POC 2 : `poc2.py` (~230 lignes), `poc2_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc2.py`.
