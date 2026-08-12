@@ -1,0 +1,612 @@
+{
+  "historical_source": {
+    "repository": "https://github.com/jrk/QuickDraw.git",
+    "commit": "6377ec5d89735a11b3f6e1ae728f555936c7583f",
+    "files": {
+      "BitBlt.a": "331e8a5299c646fc5bde0dc7a6facff514230bbb061678b2e02514f9702aa0e8",
+      "QuickDraw.p": "c1d3590c448e4e0ed536cf701e0d1f23acaa39e054cb185dfbb91929fc96a63d",
+      "RgnBlt.a": "16c400510330c67c6db2b0e96601c3d9358e5ed2f13ee3c1319e7e765b06ea7f",
+      "Bitmaps.a": "745f6e7fd58de49e41e5644df319363959cb9b5689dee9a3193329678a53647e",
+      "COPYRIGHT.TXT": "4d7a98ac9439bfb5ca9cd48928f62f9354de5073b1dfe8f14266015d57a19aaa"
+    },
+    "notice": "Copyright Apple Inc.; mirror notice limits availability to non-commercial use"
+  },
+  "reimplementation_hashes": {
+    "quickdraw_bitblt.c": "b10835a18039d63b7412a46a38972aa878bdb6b33a9796bb18be46bc315bd5bc",
+    "quickdraw_bitblt.h": "7757e6c782fa215367b431eadc6f59fe734103e92440269597fd1a0cf8b706f9",
+    "quickdraw_bitblt_experiment.c": "5fca46d7406474a9e6c6eeca39236ebf812acd29a5c8dd3136f1e3b570045a3b",
+    "run_quickdraw_bitblt.py": "f15cd73e9b4d2d432e0f93c3fb98a1f8ac79dff945e59893ede2b799c653e5a2",
+    "Makefile": "17b387a075d5d261cd71830d8bd43afad355baea374e2f430f3070082b4811c2"
+  },
+  "validation": {
+    "result": "tests: 6298 deterministic cases, 4 variants, all bit-identical",
+    "directed_and_random_cases": 6298,
+    "variants": 4,
+    "sanitizers_checked_separately": [
+      "address",
+      "undefined"
+    ]
+  },
+  "platform": {
+    "system": "Linux",
+    "release": "7.2.0-rc6-1-cachyos-rc",
+    "machine": "x86_64",
+    "cpu": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M",
+    "logical_cpus": 24,
+    "benchmark_cpu_affinity": 0,
+    "compiler": "cc (GCC) 16.1.1 20260728",
+    "cflags": "-O3 -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic",
+    "libc": "glibc 2.44"
+  },
+  "generated_code": {
+    "executable_bytes": 46568,
+    "sections_bytes": {
+      "text": 30722,
+      "data": 776,
+      "bss": 56
+    },
+    "variant_symbol_bytes": {
+      "qd_bitblt_r1": 733,
+      "qd_bitblt_r0": 770,
+      "qd_bitblt_r2": 1229,
+      "qd_bitblt_r3": 1879
+    }
+  },
+  "benchmark": {
+    "timer": "CLOCK_MONOTONIC_RAW",
+    "repetitions": 9,
+    "workloads": [
+      {
+        "name": "small_ui",
+        "operations": 4096,
+        "useful_bits": 1600546,
+        "overlap": false,
+        "variants": [
+          {
+            "name": "R0_bit_reference",
+            "samples_ns": [
+              11067201,
+              11050288,
+              11038346,
+              11068353,
+              11071239,
+              11065808,
+              11008520,
+              11009802,
+              12016664
+            ],
+            "median_ns": 11065808,
+            "p95_ns": 12016664,
+            "median_ns_per_operation": 2701.613,
+            "useful_gib_s": 0.016838,
+            "checksum": "cb4d2f1486d5adf3",
+            "stats": {
+              "useful_bits": 1600546,
+              "bit_reads": 1600546,
+              "bit_writes": 1600546,
+              "word_iterations": 0,
+              "edge_masks": 0,
+              "reconstructed_words": 0,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 216
+            }
+          },
+          {
+            "name": "R1_generic_32",
+            "samples_ns": [
+              924546,
+              929936,
+              932571,
+              926450,
+              927521,
+              965203,
+              926700,
+              925257,
+              930077
+            ],
+            "median_ns": 927521,
+            "p95_ns": 965203,
+            "median_ns_per_operation": 226.446,
+            "useful_gib_s": 0.200888,
+            "checksum": "cb4d2f1486d5adf3",
+            "stats": {
+              "useful_bits": 1600546,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 99686,
+              "edge_masks": 84881,
+              "reconstructed_words": 87792,
+              "aligned_words": 1747,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R2_quickdraw_16",
+            "samples_ns": [
+              936549,
+              936548,
+              937371,
+              940526,
+              939935,
+              939644,
+              933413,
+              940998,
+              942721
+            ],
+            "median_ns": 939644,
+            "p95_ns": 942721,
+            "median_ns_per_operation": 229.405,
+            "useful_gib_s": 0.198296,
+            "checksum": "cb4d2f1486d5adf3",
+            "stats": {
+              "useful_bits": 1600546,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 148245,
+              "edge_masks": 89802,
+              "reconstructed_words": 112178,
+              "aligned_words": 13994,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R3_modern_64_memmove",
+            "samples_ns": [
+              930086,
+              921781,
+              932762,
+              933823,
+              1087854,
+              1414862,
+              927692,
+              930027,
+              939504
+            ],
+            "median_ns": 932762,
+            "p95_ns": 1414862,
+            "median_ns_per_operation": 227.725,
+            "useful_gib_s": 0.19976,
+            "checksum": "cb4d2f1486d5adf3",
+            "stats": {
+              "useful_bits": 1600546,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 75284,
+              "edge_masks": 75062,
+              "reconstructed_words": 71049,
+              "aligned_words": 13,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "aligned_large",
+        "operations": 64,
+        "useful_bits": 15728640,
+        "overlap": false,
+        "variants": [
+          {
+            "name": "R0_bit_reference",
+            "samples_ns": [
+              107482342,
+              107402411,
+              107558927,
+              107408112,
+              107511548,
+              108264980,
+              107355002,
+              107293626,
+              107456473
+            ],
+            "median_ns": 107456473,
+            "p95_ns": 108264980,
+            "median_ns_per_operation": 1679007.391,
+            "useful_gib_s": 0.01704,
+            "checksum": "cafcae072d9796a4",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 15728640,
+              "bit_writes": 15728640,
+              "word_iterations": 0,
+              "edge_masks": 0,
+              "reconstructed_words": 0,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 30720
+            }
+          },
+          {
+            "name": "R1_generic_32",
+            "samples_ns": [
+              6123294,
+              6067229,
+              6065144,
+              6059043,
+              6052972,
+              6074231,
+              6070424,
+              6094830,
+              6158179
+            ],
+            "median_ns": 6070424,
+            "p95_ns": 6158179,
+            "median_ns_per_operation": 94850.375,
+            "useful_gib_s": 0.301635,
+            "checksum": "cafcae072d9796a4",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 503040,
+              "edge_masks": 23040,
+              "reconstructed_words": 0,
+              "aligned_words": 480000,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R2_quickdraw_16",
+            "samples_ns": [
+              1651538,
+              1639416,
+              1653002,
+              1637001,
+              1636060,
+              1644626,
+              1648984,
+              1642121,
+              1636491
+            ],
+            "median_ns": 1642121,
+            "p95_ns": 1653002,
+            "median_ns_per_operation": 25658.141,
+            "useful_gib_s": 1.115055,
+            "checksum": "cafcae072d9796a4",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 990720,
+              "edge_masks": 15360,
+              "reconstructed_words": 0,
+              "aligned_words": 975360,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R3_modern_64_memmove",
+            "samples_ns": [
+              42159,
+              45516,
+              37180,
+              36749,
+              36800,
+              35026,
+              36600,
+              36789,
+              36679
+            ],
+            "median_ns": 36789,
+            "p95_ns": 45516,
+            "median_ns_per_operation": 574.828,
+            "useful_gib_s": 49.771798,
+            "checksum": "cafcae072d9796a4",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 0,
+              "edge_masks": 0,
+              "reconstructed_words": 0,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 1966080,
+              "peak_temporary_bytes": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "misaligned_large",
+        "operations": 64,
+        "useful_bits": 15713280,
+        "overlap": false,
+        "variants": [
+          {
+            "name": "R0_bit_reference",
+            "samples_ns": [
+              107253370,
+              107405176,
+              107439621,
+              110398730,
+              109711562,
+              108266162,
+              106453248,
+              107202314,
+              107302383
+            ],
+            "median_ns": 107405176,
+            "p95_ns": 110398730,
+            "median_ns_per_operation": 1678205.875,
+            "useful_gib_s": 0.017031,
+            "checksum": "d651555cca44b002",
+            "stats": {
+              "useful_bits": 15713280,
+              "bit_reads": 15713280,
+              "bit_writes": 15713280,
+              "word_iterations": 0,
+              "edge_masks": 0,
+              "reconstructed_words": 0,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 30720
+            }
+          },
+          {
+            "name": "R1_generic_32",
+            "samples_ns": [
+              6734668,
+              6751079,
+              6749997,
+              7084700,
+              6958512,
+              6756740,
+              6739337,
+              6760848,
+              6752752
+            ],
+            "median_ns": 6752752,
+            "p95_ns": 7084700,
+            "median_ns_per_operation": 105511.75,
+            "useful_gib_s": 0.270892,
+            "checksum": "d651555cca44b002",
+            "stats": {
+              "useful_bits": 15713280,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 506880,
+              "edge_masks": 30720,
+              "reconstructed_words": 506880,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R2_quickdraw_16",
+            "samples_ns": [
+              7656279,
+              7674593,
+              7975662,
+              7795813,
+              7919816,
+              9334989,
+              7636402,
+              7660778,
+              7664515
+            ],
+            "median_ns": 7674593,
+            "p95_ns": 9334989,
+            "median_ns_per_operation": 119915.516,
+            "useful_gib_s": 0.238354,
+            "checksum": "d651555cca44b002",
+            "stats": {
+              "useful_bits": 15713280,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 994080,
+              "edge_masks": 26400,
+              "reconstructed_words": 994080,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R3_modern_64_memmove",
+            "samples_ns": [
+              6921872,
+              6922603,
+              7039444,
+              7127741,
+              7180681,
+              7276762,
+              6927263,
+              6911292,
+              6924177
+            ],
+            "median_ns": 6927263,
+            "p95_ns": 7276762,
+            "median_ns_per_operation": 108238.484,
+            "useful_gib_s": 0.264068,
+            "checksum": "d651555cca44b002",
+            "stats": {
+              "useful_bits": 15713280,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 261120,
+              "edge_masks": 30720,
+              "reconstructed_words": 261120,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "scroll_overlap",
+        "operations": 128,
+        "useful_bits": 15728640,
+        "overlap": true,
+        "variants": [
+          {
+            "name": "R0_bit_reference",
+            "samples_ns": [
+              61766447,
+              61770966,
+              61713877,
+              61688469,
+              62197461,
+              61619419,
+              61769242,
+              61861917,
+              61866966
+            ],
+            "median_ns": 61769242,
+            "p95_ns": 62197461,
+            "median_ns_per_operation": 482572.203,
+            "useful_gib_s": 0.029643,
+            "checksum": "470ccbd9503cc1fd",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 15728640,
+              "bit_writes": 15728640,
+              "word_iterations": 0,
+              "edge_masks": 0,
+              "reconstructed_words": 0,
+              "aligned_words": 0,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 15360
+            }
+          },
+          {
+            "name": "R1_generic_32",
+            "samples_ns": [
+              12990463,
+              13369007,
+              13003197,
+              13019408,
+              13421076,
+              13037020,
+              13116992,
+              13017063,
+              13032051
+            ],
+            "median_ns": 13032051,
+            "p95_ns": 13421076,
+            "median_ns_per_operation": 101812.898,
+            "useful_gib_s": 0.140504,
+            "checksum": "470ccbd9503cc1fd",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 1003520,
+              "edge_masks": 40960,
+              "reconstructed_words": 512000,
+              "aligned_words": 491520,
+              "reverse_rows": 0,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 15360
+            }
+          },
+          {
+            "name": "R2_quickdraw_16",
+            "samples_ns": [
+              7973148,
+              7907754,
+              7902123,
+              7917032,
+              7982626,
+              7966274,
+              7967306,
+              8005028,
+              8029654
+            ],
+            "median_ns": 7967306,
+            "p95_ns": 8029654,
+            "median_ns_per_operation": 62244.578,
+            "useful_gib_s": 0.229821,
+            "checksum": "470ccbd9503cc1fd",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 1003520,
+              "edge_masks": 40960,
+              "reconstructed_words": 1003520,
+              "aligned_words": 0,
+              "reverse_rows": 10240,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          },
+          {
+            "name": "R3_modern_64_memmove",
+            "samples_ns": [
+              7039414,
+              7025788,
+              7034685,
+              7044354,
+              7186422,
+              7017893,
+              7077426,
+              7037420,
+              7038212
+            ],
+            "median_ns": 7038212,
+            "p95_ns": 7186422,
+            "median_ns_per_operation": 54986.031,
+            "useful_gib_s": 0.260159,
+            "checksum": "470ccbd9503cc1fd",
+            "stats": {
+              "useful_bits": 15728640,
+              "bit_reads": 0,
+              "bit_writes": 0,
+              "word_iterations": 266240,
+              "edge_masks": 40960,
+              "reconstructed_words": 266240,
+              "aligned_words": 0,
+              "reverse_rows": 10240,
+              "reverse_words": 0,
+              "memmove_bytes": 0,
+              "peak_temporary_bytes": 0
+            }
+          }
+        ]
+      }
+    ],
+    "sink": "0000000000000000"
+  },
+  "notes": [
+    "Wall-clock is primary; algorithmic counters are gathered outside timed samples.",
+    "Useful throughput counts rectangle payload, not all memory traffic.",
+    "Working sets are reused and therefore predominantly cache-hot.",
+    "R3 was designed only after the preserved R0-R2 preliminary measurement."
+  ]
+}
