@@ -1,0 +1,2005 @@
+[
+  {
+    "workload": "lookup_heavy",
+    "stages": [
+      {
+        "level": "A",
+        "information_acquired": null,
+        "vectors": {
+          "sorted+binary_lookup+dense_walk": {
+            "comparisons": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "cl\u00e9s tri\u00e9es",
+                "insertions au-dessus du maximum"
+              ],
+              "source": "borne s\u00fbre de recherche dichotomique"
+            },
+            "random_accesses": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "un acc\u00e8s par comparaison"
+              ],
+              "source": "borne d\u00e9riv\u00e9e des comparaisons"
+            },
+            "probes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "absence de probing"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 1064,
+              "interval": [
+                1064,
+                1064
+              ],
+              "assumptions": [],
+              "source": "deux tableaux pr\u00e9allou\u00e9s"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "deux tableaux"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+slot_scan": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 4096,
+              "interval": [
+                4096,
+                4096
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "scan sparse s\u00e9par\u00e9"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 10240,
+              "interval": [
+                10240,
+                10240
+              ],
+              "assumptions": [],
+              "source": "capacit\u00e9 \u00d7 parcours"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+dense_view": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                506464
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 6676,
+              "interval": [
+                6676,
+                6676
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 4,
+              "interval": [
+                4,
+                4
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [
+                "vue miroir"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          }
+        },
+        "costs": {
+          "sorted+binary_lookup+dense_walk": {
+            "central": 1643.26,
+            "interval": [
+              698.26,
+              1748.26
+            ]
+          },
+          "hash+linear_probe+slot_scan": {
+            "central": 3813.19,
+            "interval": [
+              3716.46,
+              170535.42
+            ]
+          },
+          "hash+linear_probe+dense_view": {
+            "central": 1227.57,
+            "interval": [
+              1130.84,
+              167949.8
+            ]
+          }
+        },
+        "decision": {
+          "status": "needs_information",
+          "selected": null,
+          "ranking_by_central": [
+            "hash+linear_probe+dense_view",
+            "sorted+binary_lookup+dense_walk",
+            "hash+linear_probe+slot_scan"
+          ]
+        }
+      },
+      {
+        "level": "B",
+        "information_acquired": {
+          "type": "low_bit_statistics",
+          "observation": {
+            "sample_size": 64,
+            "distinct_home_buckets": 31,
+            "distinct_home_ratio": 0.4844,
+            "max_home_bucket": 5,
+            "uniform_dispersion_supported": false,
+            "keys_read": 64
+          }
+        },
+        "vectors": {
+          "sorted+binary_lookup+dense_walk": {
+            "comparisons": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "cl\u00e9s tri\u00e9es",
+                "insertions au-dessus du maximum"
+              ],
+              "source": "borne s\u00fbre de recherche dichotomique"
+            },
+            "random_accesses": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "un acc\u00e8s par comparaison"
+              ],
+              "source": "borne d\u00e9riv\u00e9e des comparaisons"
+            },
+            "probes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "absence de probing"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 1064,
+              "interval": [
+                1064,
+                1064
+              ],
+              "assumptions": [],
+              "source": "deux tableaux pr\u00e9allou\u00e9s"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "deux tableaux"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+slot_scan": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 4096,
+              "interval": [
+                4096,
+                4096
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "scan sparse s\u00e9par\u00e9"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 10240,
+              "interval": [
+                10240,
+                10240
+              ],
+              "assumptions": [],
+              "source": "capacit\u00e9 \u00d7 parcours"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+dense_view": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 1245.14,
+              "interval": [
+                952,
+                79135.0
+              ],
+              "assumptions": [
+                "l'\u00e9chantillon refl\u00e8te la dispersion des bits bas"
+              ],
+              "source": "distincts et maximum par bucket modulo capacit\u00e9"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 6676,
+              "interval": [
+                6676,
+                6676
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 4,
+              "interval": [
+                4,
+                4
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [
+                "vue miroir"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          }
+        },
+        "costs": {
+          "sorted+binary_lookup+dense_walk": {
+            "central": 1643.26,
+            "interval": [
+              698.26,
+              1748.26
+            ]
+          },
+          "hash+linear_probe+slot_scan": {
+            "central": 3813.19,
+            "interval": [
+              3716.46,
+              29516.85
+            ]
+          },
+          "hash+linear_probe+dense_view": {
+            "central": 1227.57,
+            "interval": [
+              1130.84,
+              26931.23
+            ]
+          }
+        },
+        "decision": {
+          "status": "needs_information",
+          "selected": null,
+          "ranking_by_central": [
+            "hash+linear_probe+dense_view",
+            "sorted+binary_lookup+dense_walk",
+            "hash+linear_probe+slot_scan"
+          ]
+        }
+      },
+      {
+        "level": "C",
+        "information_acquired": {
+          "type": "micro_probe",
+          "observation": {
+            "sample_size": 64,
+            "insertions": 64,
+            "total_probes": 113,
+            "mean_probes": 1.7656,
+            "max_probes": 5
+          }
+        },
+        "vectors": {
+          "sorted+binary_lookup+dense_walk": {
+            "comparisons": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "cl\u00e9s tri\u00e9es",
+                "insertions au-dessus du maximum"
+              ],
+              "source": "borne s\u00fbre de recherche dichotomique"
+            },
+            "random_accesses": {
+              "status": "bound",
+              "central": 4200,
+              "interval": [
+                420,
+                4620
+              ],
+              "assumptions": [
+                "un acc\u00e8s par comparaison"
+              ],
+              "source": "borne d\u00e9riv\u00e9e des comparaisons"
+            },
+            "probes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "absence de probing"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 1064,
+              "interval": [
+                1064,
+                1064
+              ],
+              "assumptions": [],
+              "source": "deux tableaux pr\u00e9allou\u00e9s"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "deux tableaux"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+slot_scan": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 4096,
+              "interval": [
+                4096,
+                4096
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "scan sparse s\u00e9par\u00e9"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 10240,
+              "interval": [
+                10240,
+                10240
+              ],
+              "assumptions": [],
+              "source": "capacit\u00e9 \u00d7 parcours"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+dense_view": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 7010.58,
+              "interval": [
+                4206.35,
+                11216.92
+              ],
+              "assumptions": [
+                "croissance approximativement lin\u00e9aire des clusters de l'\u00e9chantillon"
+              ],
+              "source": "micro-probe de 64 insertions, extrapolation prudente"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 6676,
+              "interval": [
+                6676,
+                6676
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 4,
+              "interval": [
+                4,
+                4
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 2660,
+              "interval": [
+                2660,
+                2660
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [
+                "vue miroir"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          }
+        },
+        "costs": {
+          "sorted+binary_lookup+dense_walk": {
+            "central": 1643.26,
+            "interval": [
+              698.26,
+              1748.26
+            ]
+          },
+          "hash+linear_probe+slot_scan": {
+            "central": 5715.79,
+            "interval": [
+              4790.39,
+              7103.88
+            ]
+          },
+          "hash+linear_probe+dense_view": {
+            "central": 3130.17,
+            "interval": [
+              2204.77,
+              4518.26
+            ]
+          }
+        },
+        "decision": {
+          "status": "decidable",
+          "selected": "sorted+binary_lookup+dense_walk",
+          "ranking_by_central": [
+            "sorted+binary_lookup+dense_walk",
+            "hash+linear_probe+dense_view",
+            "hash+linear_probe+slot_scan"
+          ]
+        }
+      }
+    ],
+    "oracle": {
+      "solutions": {
+        "sorted+binary_lookup+dense_walk": {
+          "vector": {
+            "comparisons": 4202,
+            "probes": 0,
+            "sequential_reads": 2660,
+            "random_accesses": 4202,
+            "slots_visited": 0,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 1064,
+            "allocations": 2
+          },
+          "cost": 1643.76,
+          "checksum": 103647076,
+          "wall_ns": 1381062
+        },
+        "hash+linear_probe+slot_scan": {
+          "vector": {
+            "comparisons": 8297,
+            "probes": 8297,
+            "sequential_reads": 0,
+            "random_accesses": 8297,
+            "slots_visited": 10240,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 4096,
+            "allocations": 2
+          },
+          "cost": 6140.31,
+          "checksum": 103647076,
+          "wall_ns": 2443516
+        },
+        "hash+linear_probe+dense_view": {
+          "vector": {
+            "comparisons": 8297,
+            "probes": 8297,
+            "sequential_reads": 2660,
+            "random_accesses": 8297,
+            "slots_visited": 0,
+            "base_writes": 1084,
+            "auxiliary_writes": 1084,
+            "reserved_cells": 6676,
+            "allocations": 4
+          },
+          "cost": 3554.69,
+          "checksum": 103647076,
+          "wall_ns": 1690994
+        }
+      },
+      "selected": "sorted+binary_lookup+dense_walk"
+    },
+    "oracle_comparison": {
+      "sorted+binary_lookup+dense_walk": {
+        "comparisons": {
+          "status": "bound",
+          "interval": [
+            420,
+            4620
+          ],
+          "observed": 4202,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "bound",
+          "interval": [
+            420,
+            4620
+          ],
+          "observed": 4202,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            1064,
+            1064
+          ],
+          "observed": 1064,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            2,
+            2
+          ],
+          "observed": 2,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            2660,
+            2660
+          ],
+          "observed": 2660,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        }
+      },
+      "hash+linear_probe+slot_scan": {
+        "comparisons": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            4096,
+            4096
+          ],
+          "observed": 4096,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            2,
+            2
+          ],
+          "observed": 2,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            10240,
+            10240
+          ],
+          "observed": 10240,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        }
+      },
+      "hash+linear_probe+dense_view": {
+        "comparisons": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "estimate",
+          "interval": [
+            4206.35,
+            11216.92
+          ],
+          "observed": 8297,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            6676,
+            6676
+          ],
+          "observed": 6676,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            4,
+            4
+          ],
+          "observed": 4,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            2660,
+            2660
+          ],
+          "observed": 2660,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        }
+      }
+    },
+    "decision_matches_oracle": true
+  },
+  {
+    "workload": "walk_heavy",
+    "stages": [
+      {
+        "level": "A",
+        "information_acquired": null,
+        "vectors": {
+          "sorted+binary_lookup+dense_walk": {
+            "comparisons": {
+              "status": "bound",
+              "central": 700,
+              "interval": [
+                70,
+                770
+              ],
+              "assumptions": [
+                "cl\u00e9s tri\u00e9es",
+                "insertions au-dessus du maximum"
+              ],
+              "source": "borne s\u00fbre de recherche dichotomique"
+            },
+            "random_accesses": {
+              "status": "bound",
+              "central": 700,
+              "interval": [
+                70,
+                770
+              ],
+              "assumptions": [
+                "un acc\u00e8s par comparaison"
+              ],
+              "source": "borne d\u00e9riv\u00e9e des comparaisons"
+            },
+            "probes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "absence de probing"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 1064,
+              "interval": [
+                1064,
+                1064
+              ],
+              "assumptions": [],
+              "source": "deux tableaux pr\u00e9allou\u00e9s"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "deux tableaux"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 53200,
+              "interval": [
+                53200,
+                53200
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+slot_scan": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 4096,
+              "interval": [
+                4096,
+                4096
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 2,
+              "interval": [
+                2,
+                2
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "scan sparse s\u00e9par\u00e9"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 204800,
+              "interval": [
+                204800,
+                204800
+              ],
+              "assumptions": [],
+              "source": "capacit\u00e9 \u00d7 parcours"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [
+                "aucune vue"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          },
+          "hash+linear_probe+dense_view": {
+            "comparisons": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "probes": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "random_accesses": {
+              "status": "estimate",
+              "central": 833.73,
+              "interval": [
+                602,
+                320264
+              ],
+              "assumptions": [
+                "dispersion uniforme non v\u00e9rifi\u00e9e"
+              ],
+              "source": "facteur de charge et intervalle prudent"
+            },
+            "reserved_cells": {
+              "status": "exact",
+              "central": 6676,
+              "interval": [
+                6676,
+                6676
+              ],
+              "assumptions": [],
+              "source": "politique de capacit\u00e9 d\u00e9clar\u00e9e"
+            },
+            "allocations": {
+              "status": "exact",
+              "central": 4,
+              "interval": [
+                4,
+                4
+              ],
+              "assumptions": [],
+              "source": "tableaux d\u00e9clar\u00e9s"
+            },
+            "sequential_reads": {
+              "status": "exact",
+              "central": 53200,
+              "interval": [
+                53200,
+                53200
+              ],
+              "assumptions": [
+                "parcours apr\u00e8s insertions"
+              ],
+              "source": "taille \u00d7 parcours"
+            },
+            "slots_visited": {
+              "status": "exact",
+              "central": 0,
+              "interval": [
+                0,
+                0
+              ],
+              "assumptions": [],
+              "source": "pas de scan sparse"
+            },
+            "base_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [],
+              "source": "construction et maintenance primaire"
+            },
+            "auxiliary_writes": {
+              "status": "exact",
+              "central": 1084,
+              "interval": [
+                1084,
+                1084
+              ],
+              "assumptions": [
+                "vue miroir"
+              ],
+              "source": "r\u00e8gle de maintenance"
+            }
+          }
+        },
+        "costs": {
+          "sorted+binary_lookup+dense_walk": {
+            "central": 5822.26,
+            "interval": [
+              5664.76,
+              5839.76
+            ]
+          },
+          "hash+linear_probe+slot_scan": {
+            "central": 62045.43,
+            "interval": [
+              61968.96,
+              167457.42
+            ]
+          },
+          "hash+linear_probe+dense_view": {
+            "central": 6145.81,
+            "interval": [
+              6069.34,
+              111557.8
+            ]
+          }
+        },
+        "decision": {
+          "status": "decidable",
+          "selected": "sorted+binary_lookup+dense_walk",
+          "ranking_by_central": [
+            "sorted+binary_lookup+dense_walk",
+            "hash+linear_probe+dense_view",
+            "hash+linear_probe+slot_scan"
+          ]
+        }
+      }
+    ],
+    "oracle": {
+      "solutions": {
+        "sorted+binary_lookup+dense_walk": {
+          "vector": {
+            "comparisons": 700,
+            "probes": 0,
+            "sequential_reads": 53200,
+            "random_accesses": 700,
+            "slots_visited": 0,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 1064,
+            "allocations": 2
+          },
+          "cost": 5822.26,
+          "checksum": 1809571280,
+          "wall_ns": 6177555
+        },
+        "hash+linear_probe+slot_scan": {
+          "vector": {
+            "comparisons": 5276,
+            "probes": 5276,
+            "sequential_reads": 0,
+            "random_accesses": 5276,
+            "slots_visited": 204800,
+            "base_writes": 1084,
+            "auxiliary_writes": 0,
+            "reserved_cells": 4096,
+            "allocations": 2
+          },
+          "cost": 63511.38,
+          "checksum": 1809571280,
+          "wall_ns": 21879795
+        },
+        "hash+linear_probe+dense_view": {
+          "vector": {
+            "comparisons": 5276,
+            "probes": 5276,
+            "sequential_reads": 53200,
+            "random_accesses": 5276,
+            "slots_visited": 0,
+            "base_writes": 1084,
+            "auxiliary_writes": 1084,
+            "reserved_cells": 6676,
+            "allocations": 4
+          },
+          "cost": 7611.76,
+          "checksum": 1809571280,
+          "wall_ns": 6194235
+        }
+      },
+      "selected": "sorted+binary_lookup+dense_walk"
+    },
+    "oracle_comparison": {
+      "sorted+binary_lookup+dense_walk": {
+        "comparisons": {
+          "status": "bound",
+          "interval": [
+            70,
+            770
+          ],
+          "observed": 700,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "bound",
+          "interval": [
+            70,
+            770
+          ],
+          "observed": 700,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            1064,
+            1064
+          ],
+          "observed": 1064,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            2,
+            2
+          ],
+          "observed": 2,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            53200,
+            53200
+          ],
+          "observed": 53200,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        }
+      },
+      "hash+linear_probe+slot_scan": {
+        "comparisons": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            4096,
+            4096
+          ],
+          "observed": 4096,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            2,
+            2
+          ],
+          "observed": 2,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            204800,
+            204800
+          ],
+          "observed": 204800,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        }
+      },
+      "hash+linear_probe+dense_view": {
+        "comparisons": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "probes": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "random_accesses": {
+          "status": "estimate",
+          "interval": [
+            602,
+            320264
+          ],
+          "observed": 5276,
+          "within_interval": true
+        },
+        "reserved_cells": {
+          "status": "exact",
+          "interval": [
+            6676,
+            6676
+          ],
+          "observed": 6676,
+          "within_interval": true
+        },
+        "allocations": {
+          "status": "exact",
+          "interval": [
+            4,
+            4
+          ],
+          "observed": 4,
+          "within_interval": true
+        },
+        "sequential_reads": {
+          "status": "exact",
+          "interval": [
+            53200,
+            53200
+          ],
+          "observed": 53200,
+          "within_interval": true
+        },
+        "slots_visited": {
+          "status": "exact",
+          "interval": [
+            0,
+            0
+          ],
+          "observed": 0,
+          "within_interval": true
+        },
+        "base_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        },
+        "auxiliary_writes": {
+          "status": "exact",
+          "interval": [
+            1084,
+            1084
+          ],
+          "observed": 1084,
+          "within_interval": true
+        }
+      }
+    },
+    "decision_matches_oracle": true
+  }
+]

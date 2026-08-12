@@ -275,3 +275,59 @@ aucune dépendance externe. Reproduction : `python3 poc4.py`.
 
 Inventaire POC 5 : `poc5.py` (~415 lignes), `poc5_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc5.py`.
+
+## POC 6 — hypothèses, incertitude et acquisition sélective
+
+### Confirmed
+
+- Chaque dimension conserve un statut `exact`, `bound` ou `estimate`, un
+  intervalle, sa source et ses hypothèses. Le coût plateforme synthétique est
+  lui aussi un intervalle obtenu seulement après le vecteur ; une solution
+  n'est sélectionnée que si son maximum est inférieur aux minima de toutes les
+  alternatives.
+- Au niveau A de `lookup_heavy`, l'hypothèse de dispersion uniforme est marquée
+  non vérifiée. Les intervalles de `sorted` `[698,26 ; 1 748,26]` et de
+  `hash+dense_view` `[1 130,84 ; 167 949,80]` se chevauchent : la décision est
+  `needs_information` plutôt qu'un choix fondé sur les valeurs centrales.
+- Au niveau B, la lecture de 64 clés trouve 31 résidus distincts modulo la
+  capacité, un bucket maximal de 5 et un ratio de dispersion de 0,4844. Cette
+  statistique réfute le support de l'hypothèse uniforme et réduit la borne haute
+  de `hash+dense_view` à 26 931,23, sans suffire à décider.
+- Au niveau C, un micro-probe limité aux mêmes 64 clés effectue 64 insertions et
+  113 probes (moyenne 1,7656, maximum 5). L'extrapolation prudente donne à
+  `hash+dense_view` `[2 204,77 ; 4 518,26]`, désormais dominé par la borne de
+  `sorted`; la décision devient `decidable` et choisit `sorted`.
+- L'oracle complet est exécuté seulement après la décision. Il confirme
+  `sorted` (`1 643,76`) devant `hash+dense_view` (`3 554,69`) et observe 8 297
+  probes. Toutes les dimensions observées restent dans les intervalles finaux,
+  et les checksums concordent.
+- `walk_heavy` est robuste dès le niveau A : le maximum de `sorted` (5 839,76)
+  est inférieur au minimum de `hash+dense_view` (6 069,34). Aucune statistique
+  ni micro-probe n'est acquis, puis l'oracle confirme la décision.
+- L'acquisition est sélective quant à l'arrêt, mais pas quant au choix de
+  l'information : lorsque des données sont nécessaires, le POC impose encore
+  la séquence niveau A → statistique B → micro-probe C. Atlas ne compare ni leur
+  coût ni leur utilité attendue.
+
+### Disproved
+
+- Considérer la dispersion uniforme comme vraie par défaut est réfuté par la
+  statistique de bits bas et par les 8 297 probes de l'oracle `lookup_heavy`.
+- Toujours choisir la meilleure valeur centrale est réfuté : au niveau A de
+  `lookup_heavy`, elle classe `hash+dense_view` premier, tandis que l'information
+  acquise et l'oracle choisissent `sorted`.
+- Toujours mesurer avant de décider est inutile dans `walk_heavy`, dont les
+  intervalles initiaux suffisent. Inversement, la statistique bon marché seule
+  n'est pas toujours suffisante : `lookup_heavy` reste indécidable au niveau B.
+
+### Unknown
+
+- Le POC ne choisit pas automatiquement parmi plusieurs informations possibles
+  à acquérir et ne valorise pas leur coût dans la décision.
+- La représentation de plusieurs hypothèses dépendantes et le choix d'intervalles
+  d'extrapolation restent ouverts.
+- La généralisation à d'autres distributions, implémentations externes et
+  plateformes physiques, ainsi que leur calibration, reste inconnue.
+
+Inventaire POC 6 : `poc6.py` (~455 lignes), `poc6_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc6.py`.
