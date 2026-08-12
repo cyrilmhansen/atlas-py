@@ -1,0 +1,108 @@
+{
+  "fixture_hashes": {
+    "poc11_source_a.py": "30b1f876ca245d1a75c086961c20c0c2efba9b6b3aab87117712e2f6e6042772",
+    "poc11_source_b.py": "37ae2958c01d5205b3bb7a3b7db3452ca3792d606bafba7e9d119fa2b57be2c6"
+  },
+  "extraction_x": {
+    "question_used_for_analysis": "Where is an accepted record handed off, at what invocation granularity is it transformed, and when is it reduced?",
+    "axes": {
+      "handoff": {
+        "fused_handoff": {
+          "source_evidence": ["A:27-30"],
+          "meaning": "accepted records pass directly to transformation"
+        },
+        "retained_handoff": {
+          "source_evidence": ["B:17-20", "B:33-37"],
+          "meaning": "accepted records form a retained compact sequence"
+        }
+      },
+      "dispatch": {
+        "per_record_dispatch": {
+          "source_evidence": ["A:17-21", "A:27-30"],
+          "meaning": "one transformation invocation per survivor"
+        },
+        "compact_block64_dispatch": {
+          "source_evidence": ["B:7", "B:23-30", "B:36-37"],
+          "meaning": "one transformation invocation per compact block"
+        }
+      },
+      "reduction": {
+        "running_reduction": {
+          "source_evidence": ["A:25", "A:29"],
+          "meaning": "update the aggregate as values become available"
+        },
+        "deferred_reduction": {
+          "source_evidence": ["B:35-38"],
+          "meaning": "retain transformed values and reduce once"
+        }
+      }
+    },
+    "compatibility": [
+      "compact_block64_dispatch requires retained_handoff",
+      "both reduction modes require associative integer addition"
+    ],
+    "source_descriptions": {
+      "A": ["fused_handoff", "per_record_dispatch", "running_reduction"],
+      "B": ["retained_handoff", "compact_block64_dispatch", "deferred_reduction"]
+    }
+  },
+  "extraction_y": {
+    "question_used_for_analysis": "In what shape does work reach transformation, and how is the batch completed?",
+    "axes": {
+      "feed_shape": {
+        "direct_item_feed": {
+          "source_evidence": ["A:27-30"],
+          "meaning": "filtering and item-sized transformation form one online feed"
+        },
+        "compacted_batch_feed": {
+          "source_evidence": ["B:7", "B:17-20", "B:33-37"],
+          "meaning": "selection and block dispatch jointly produce compact batches"
+        }
+      },
+      "completion": {
+        "rolling_fold": {
+          "source_evidence": ["A:25", "A:29"],
+          "meaning": "completion consists of repeated fold events"
+        },
+        "collected_finish": {
+          "source_evidence": ["B:35-38"],
+          "meaning": "completion stores outputs and performs one terminal fold"
+        }
+      }
+    },
+    "compatibility": [
+      "both completion modes require associative integer addition"
+    ],
+    "source_descriptions": {
+      "A": ["direct_item_feed", "rolling_fold"],
+      "B": ["compacted_batch_feed", "collected_finish"]
+    },
+    "deliberate_non_alignment": [
+      "compacted_batch_feed absorbs retention and dispatch granularity instead of exposing two axes",
+      "buffer reads and writes are represented as aggregate traffic because they occur in pairs in the observed sources",
+      "no retained per-record feed is inferred because this lens found no such source behavior"
+    ]
+  },
+  "partial_correspondence_declared_before_execution": [
+    {
+      "x": ["fused_handoff", "per_record_dispatch"],
+      "y": "direct_item_feed",
+      "kind": "many-to-one"
+    },
+    {
+      "x": ["retained_handoff", "compact_block64_dispatch"],
+      "y": "compacted_batch_feed",
+      "kind": "many-to-one"
+    },
+    {
+      "x": "running_reduction",
+      "y": "rolling_fold",
+      "kind": "partial semantic overlap"
+    },
+    {
+      "x": "deferred_reduction",
+      "y": "collected_finish",
+      "kind": "partial semantic overlap"
+    }
+  ]
+}

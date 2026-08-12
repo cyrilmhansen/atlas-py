@@ -1,0 +1,893 @@
+{
+  "fixture_hashes": {
+    "poc11_source_a.py": "30b1f876ca245d1a75c086961c20c0c2efba9b6b3aab87117712e2f6e6042772",
+    "poc11_source_b.py": "37ae2958c01d5205b3bb7a3b7db3452ca3792d606bafba7e9d119fa2b57be2c6"
+  },
+  "method": {
+    "selection_paths_independent": true,
+    "comparison_projection_used_for_selection": false,
+    "oracle_executed_after_models": true,
+    "peak_temp_records_evidence": "source-lifetime audit, not physical memory"
+  },
+  "spaces": {
+    "X": {
+      "composition_count": 6
+    },
+    "Y": {
+      "composition_count": 4
+    }
+  },
+  "scenarios": {
+    "sparse_memory": {
+      "workload": {
+        "count": 4096,
+        "mode": "sparse",
+        "survivors": 512,
+        "effort": 2,
+        "memory_limit": 600
+      },
+      "X": {
+        "selected": "retained_handoff+compact_block64_dispatch+running_reduction",
+        "selected_signature": {
+          "retains_survivors": true,
+          "transform_group": 64,
+          "buffers_outputs": false,
+          "reduction": "rolling"
+        },
+        "memory_exclusions": [
+          "retained_handoff+compact_block64_dispatch+deferred_reduction",
+          "retained_handoff+per_record_dispatch+deferred_reduction"
+        ],
+        "compositions": {
+          "fused_handoff+per_record_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 512,
+              "retained_writes": 0,
+              "retained_reads": 0,
+              "aggregate_updates": 512,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 1
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 512,
+              "terminal_folds": 0,
+              "peak_temp_records": 1
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 21913.62,
+            "admissible": true
+          },
+          "fused_handoff+per_record_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 512,
+              "retained_writes": 0,
+              "retained_reads": 0,
+              "aggregate_updates": 0,
+              "output_writes": 512,
+              "reduction_reads": 512,
+              "reduction_calls": 1,
+              "peak_temp_records": 512
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 1024,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 512
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 17837.84,
+            "admissible": true
+          },
+          "retained_handoff+per_record_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 512,
+              "retained_writes": 512,
+              "retained_reads": 512,
+              "aggregate_updates": 512,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 513
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 512,
+              "terminal_folds": 0,
+              "peak_temp_records": 513
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 23203.86,
+            "admissible": true
+          },
+          "retained_handoff+per_record_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 512,
+              "retained_writes": 512,
+              "retained_reads": 512,
+              "aggregate_updates": 0,
+              "output_writes": 512,
+              "reduction_reads": 512,
+              "reduction_calls": 1,
+              "peak_temp_records": 1024
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 1024,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 1024
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 19128.08,
+            "admissible": false
+          },
+          "retained_handoff+compact_block64_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 8,
+              "retained_writes": 512,
+              "retained_reads": 512,
+              "aggregate_updates": 512,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 576
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 8,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 512,
+              "terminal_folds": 0,
+              "peak_temp_records": 576
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 8085.12,
+            "admissible": true
+          },
+          "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 1024,
+              "transform_dispatches": 8,
+              "retained_writes": 512,
+              "retained_reads": 512,
+              "aggregate_updates": 0,
+              "output_writes": 512,
+              "reduction_reads": 512,
+              "reduction_calls": 1,
+              "peak_temp_records": 1024
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 8,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 1024,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 1024
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 4008.08,
+            "admissible": false
+          }
+        }
+      },
+      "Y": {
+        "selected": "compacted_batch_feed+rolling_fold",
+        "selected_signature": {
+          "retains_survivors": true,
+          "transform_group": 64,
+          "buffers_outputs": false,
+          "reduction": "rolling"
+        },
+        "memory_exclusions": [
+          "compacted_batch_feed+collected_finish"
+        ],
+        "compositions": {
+          "direct_item_feed+rolling_fold": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 1024,
+              "map_groups": 512,
+              "staging_traffic": 0,
+              "fold_events": 512,
+              "completion_traffic": 0,
+              "finish_operations": 0,
+              "max_live_values": 1
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 512,
+              "terminal_folds": 0,
+              "peak_temp_records": 1
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 21913.62,
+            "admissible": true
+          },
+          "direct_item_feed+collected_finish": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 1024,
+              "map_groups": 512,
+              "staging_traffic": 0,
+              "fold_events": 0,
+              "completion_traffic": 1024,
+              "finish_operations": 1,
+              "max_live_values": 512
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 512,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 1024,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 512
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 17837.84,
+            "admissible": true
+          },
+          "compacted_batch_feed+rolling_fold": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 1024,
+              "map_groups": 8,
+              "staging_traffic": 1024,
+              "fold_events": 512,
+              "completion_traffic": 0,
+              "finish_operations": 0,
+              "max_live_values": 576
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 8,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 512,
+              "terminal_folds": 0,
+              "peak_temp_records": 576
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 8085.12,
+            "admissible": true
+          },
+          "compacted_batch_feed+collected_finish": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 1024,
+              "map_groups": 8,
+              "staging_traffic": 1024,
+              "fold_events": 0,
+              "completion_traffic": 1024,
+              "finish_operations": 1,
+              "max_live_values": 1024
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 1024,
+              "transform_invocations": 8,
+              "survivor_buffer_traffic": 1024,
+              "output_buffer_traffic": 1024,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 1024
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 4008.08,
+            "admissible": false
+          }
+        }
+      },
+      "same_selected_consequence": true,
+      "space_overlap": {
+        "common_observable_signatures": 4,
+        "X_only_observable_signatures": 2,
+        "Y_only_observable_signatures": 0
+      },
+      "source_and_recombination_verification": {
+        "A": {
+          "representable_in_X": [
+            "fused_handoff+per_record_dispatch+running_reduction"
+          ],
+          "representable_in_Y": [
+            "direct_item_feed+rolling_fold"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        },
+        "B": {
+          "representable_in_X": [
+            "retained_handoff+compact_block64_dispatch+deferred_reduction"
+          ],
+          "representable_in_Y": [
+            "compacted_batch_feed+collected_finish"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        },
+        "C": {
+          "representable_in_X": [
+            "retained_handoff+compact_block64_dispatch+running_reduction"
+          ],
+          "representable_in_Y": [
+            "compacted_batch_feed+rolling_fold"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        }
+      },
+      "oracle": {
+        "A": {
+          "outcome": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 1024,
+            "transform_invocations": 512,
+            "survivor_buffer_traffic": 0,
+            "output_buffer_traffic": 0,
+            "rolling_fold_updates": 512,
+            "terminal_folds": 0,
+            "peak_temp_records": 1
+          }
+        },
+        "B": {
+          "outcome": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 1024,
+            "transform_invocations": 8,
+            "survivor_buffer_traffic": 1024,
+            "output_buffer_traffic": 1024,
+            "rolling_fold_updates": 0,
+            "terminal_folds": 1,
+            "peak_temp_records": 1024
+          }
+        },
+        "C": {
+          "outcome": {
+            "accepted": 512,
+            "checksum": 2325550
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 1024,
+            "transform_invocations": 8,
+            "survivor_buffer_traffic": 1024,
+            "output_buffer_traffic": 0,
+            "rolling_fold_updates": 512,
+            "terminal_folds": 0,
+            "peak_temp_records": 576
+          }
+        }
+      }
+    },
+    "dense_throughput": {
+      "workload": {
+        "count": 4096,
+        "mode": "dense",
+        "survivors": 3584,
+        "effort": 8,
+        "memory_limit": 8000
+      },
+      "X": {
+        "selected": "retained_handoff+compact_block64_dispatch+deferred_reduction",
+        "selected_signature": {
+          "retains_survivors": true,
+          "transform_group": 64,
+          "buffers_outputs": true,
+          "reduction": "terminal"
+        },
+        "memory_exclusions": [],
+        "compositions": {
+          "fused_handoff+per_record_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 3584,
+              "retained_writes": 0,
+              "retained_reads": 0,
+              "aggregate_updates": 3584,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 1
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 3584,
+              "terminal_folds": 0,
+              "peak_temp_records": 1
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 172441.62,
+            "admissible": true
+          },
+          "fused_handoff+per_record_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 3584,
+              "retained_writes": 0,
+              "retained_reads": 0,
+              "aggregate_updates": 0,
+              "output_writes": 3584,
+              "reduction_reads": 3584,
+              "reduction_calls": 1,
+              "peak_temp_records": 3584
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 7168,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 3584
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 143851.28,
+            "admissible": true
+          },
+          "retained_handoff+per_record_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 3584,
+              "retained_writes": 3584,
+              "retained_reads": 3584,
+              "aggregate_updates": 3584,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 3585
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 3584,
+              "terminal_folds": 0,
+              "peak_temp_records": 3585
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 181473.3,
+            "admissible": true
+          },
+          "retained_handoff+per_record_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 3584,
+              "retained_writes": 3584,
+              "retained_reads": 3584,
+              "aggregate_updates": 0,
+              "output_writes": 3584,
+              "reduction_reads": 3584,
+              "reduction_calls": 1,
+              "peak_temp_records": 7168
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 7168,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 7168
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 152882.96,
+            "admissible": true
+          },
+          "retained_handoff+compact_block64_dispatch+running_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 56,
+              "retained_writes": 3584,
+              "retained_reads": 3584,
+              "aggregate_updates": 3584,
+              "output_writes": 0,
+              "reduction_reads": 0,
+              "reduction_calls": 0,
+              "peak_temp_records": 3648
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 56,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 3584,
+              "terminal_folds": 0,
+              "peak_temp_records": 3648
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 75634.56,
+            "admissible": true
+          },
+          "retained_handoff+compact_block64_dispatch+deferred_reduction": {
+            "native_vector": {
+              "filter_tests": 4096,
+              "transform_work": 28672,
+              "transform_dispatches": 56,
+              "retained_writes": 3584,
+              "retained_reads": 3584,
+              "aggregate_updates": 0,
+              "output_writes": 3584,
+              "reduction_reads": 3584,
+              "reduction_calls": 1,
+              "peak_temp_records": 7168
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 56,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 7168,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 7168
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 47042.96,
+            "admissible": true
+          }
+        }
+      },
+      "Y": {
+        "selected": "compacted_batch_feed+collected_finish",
+        "selected_signature": {
+          "retains_survivors": true,
+          "transform_group": 64,
+          "buffers_outputs": true,
+          "reduction": "terminal"
+        },
+        "memory_exclusions": [],
+        "compositions": {
+          "direct_item_feed+rolling_fold": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 28672,
+              "map_groups": 3584,
+              "staging_traffic": 0,
+              "fold_events": 3584,
+              "completion_traffic": 0,
+              "finish_operations": 0,
+              "max_live_values": 1
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 3584,
+              "terminal_folds": 0,
+              "peak_temp_records": 1
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 172441.62,
+            "admissible": true
+          },
+          "direct_item_feed+collected_finish": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 28672,
+              "map_groups": 3584,
+              "staging_traffic": 0,
+              "fold_events": 0,
+              "completion_traffic": 7168,
+              "finish_operations": 1,
+              "max_live_values": 3584
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 3584,
+              "survivor_buffer_traffic": 0,
+              "output_buffer_traffic": 7168,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 3584
+            },
+            "signature": {
+              "retains_survivors": false,
+              "transform_group": 1,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 143851.28,
+            "admissible": true
+          },
+          "compacted_batch_feed+rolling_fold": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 28672,
+              "map_groups": 56,
+              "staging_traffic": 7168,
+              "fold_events": 3584,
+              "completion_traffic": 0,
+              "finish_operations": 0,
+              "max_live_values": 3648
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 56,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 0,
+              "rolling_fold_updates": 3584,
+              "terminal_folds": 0,
+              "peak_temp_records": 3648
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": false,
+              "reduction": "rolling"
+            },
+            "cost": 75634.56,
+            "admissible": true
+          },
+          "compacted_batch_feed+collected_finish": {
+            "native_vector": {
+              "records_examined": 4096,
+              "map_effort": 28672,
+              "map_groups": 56,
+              "staging_traffic": 7168,
+              "fold_events": 0,
+              "completion_traffic": 7168,
+              "finish_operations": 1,
+              "max_live_values": 7168
+            },
+            "observable_consequences": {
+              "records_examined": 4096,
+              "transform_work": 28672,
+              "transform_invocations": 56,
+              "survivor_buffer_traffic": 7168,
+              "output_buffer_traffic": 7168,
+              "rolling_fold_updates": 0,
+              "terminal_folds": 1,
+              "peak_temp_records": 7168
+            },
+            "signature": {
+              "retains_survivors": true,
+              "transform_group": 64,
+              "buffers_outputs": true,
+              "reduction": "terminal"
+            },
+            "cost": 47042.96,
+            "admissible": true
+          }
+        }
+      },
+      "same_selected_consequence": true,
+      "space_overlap": {
+        "common_observable_signatures": 4,
+        "X_only_observable_signatures": 2,
+        "Y_only_observable_signatures": 0
+      },
+      "source_and_recombination_verification": {
+        "A": {
+          "representable_in_X": [
+            "fused_handoff+per_record_dispatch+running_reduction"
+          ],
+          "representable_in_Y": [
+            "direct_item_feed+rolling_fold"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        },
+        "B": {
+          "representable_in_X": [
+            "retained_handoff+compact_block64_dispatch+deferred_reduction"
+          ],
+          "representable_in_Y": [
+            "compacted_batch_feed+collected_finish"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        },
+        "C": {
+          "representable_in_X": [
+            "retained_handoff+compact_block64_dispatch+running_reduction"
+          ],
+          "representable_in_Y": [
+            "compacted_batch_feed+rolling_fold"
+          ],
+          "X_matches_observation": true,
+          "Y_matches_observation": true
+        }
+      },
+      "oracle": {
+        "A": {
+          "outcome": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 28672,
+            "transform_invocations": 3584,
+            "survivor_buffer_traffic": 0,
+            "output_buffer_traffic": 0,
+            "rolling_fold_updates": 3584,
+            "terminal_folds": 0,
+            "peak_temp_records": 1
+          }
+        },
+        "B": {
+          "outcome": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 28672,
+            "transform_invocations": 56,
+            "survivor_buffer_traffic": 7168,
+            "output_buffer_traffic": 7168,
+            "rolling_fold_updates": 0,
+            "terminal_folds": 1,
+            "peak_temp_records": 7168
+          }
+        },
+        "C": {
+          "outcome": {
+            "accepted": 3584,
+            "checksum": 1727749065
+          },
+          "events": {
+            "records_examined": 4096,
+            "transform_work": 28672,
+            "transform_invocations": 56,
+            "survivor_buffer_traffic": 7168,
+            "output_buffer_traffic": 0,
+            "rolling_fold_updates": 3584,
+            "terminal_folds": 0,
+            "peak_temp_records": 3648
+          }
+        }
+      }
+    }
+  }
+}

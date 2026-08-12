@@ -669,3 +669,76 @@ Inventaire POC 11 : `poc11_source_a.py` (38 lignes), `poc11_source_b.py`
 `poc11_fixtures.json`, `poc11_extraction.json`, `poc11_predictions.json` et
 `poc11_measurements.json`. Aucune dépendance externe. Reproduction complète :
 `python3 poc11.py` ; prédiction seule : `python3 poc11.py --predict-only`.
+
+## POC 12 — robustesse à plusieurs représentations valides
+
+### Confirmed
+
+- Les mêmes fixtures A et B, toujours vérifiées par leurs SHA-256 figés, ont
+  reçu deux extractions manuelles non isomorphes définies avant l'oracle
+  (`poc12_extractions.json`). X demande où ont lieu passage, dispatch et
+  réduction : trois axes, six compositions. Y demande sous quelle forme le
+  travail atteint la transformation et comment le batch se termine : deux
+  axes, quatre compositions.
+- Y ne recopie pas le découpage de X : `compacted_batch_feed` absorbe rétention
+  et dispatch par blocs, et son trafic de staging agrège lectures et écritures
+  que X garde séparées. La correspondance utile est donc plusieurs-vers-un et
+  partielle ; les noms, nombres de mécanismes et graphes ne coïncident pas.
+- Les deux extractions représentent A et B et retrouvent indépendamment
+  l'opportunité historique C. X la décrit comme
+  `retained_handoff + compact_block64_dispatch + running_reduction`; Y comme
+  `compacted_batch_feed + rolling_fold`. Leurs vecteurs natifs diffèrent, mais
+  les conséquences observées — dispatches, trafic de buffers, réduction et pic
+  temporaire — concordent avec A, B et C dans les deux workloads
+  (`poc12_measurements.json`).
+- La décision est stable. Sur `sparse_memory`, X et Y sélectionnent la
+  conséquence C (coût synthétique 8 085,12, pic 576). Sur
+  `dense_throughput`, toutes les compositions sont admissibles et toutes deux
+  sélectionnent la conséquence B (47 042,96, pic 7 168). Les trois sources
+  exécutées gardent des checksums identiques.
+- Les espaces ne sont pourtant pas égaux : quatre signatures observables sont
+  communes et deux n'existent que dans X. Sous mémoire serrée, X exclut deux
+  compositions différées ; Y n'en exclut qu'une parce qu'elle ne représente
+  pas le passage retenu avec dispatch individuel. Cette différence de forme et
+  d'espace n'a aucune conséquence décisionnelle dans les scénarios testés.
+- Le noyau d'information stable dans cette expérience n'est pas une ontologie :
+  c'est la capacité à conserver le regroupement des transformations, la
+  matérialisation et sa résidence mémoire, le buffering des sorties et le
+  moment de la réduction. La séparation X de la rétention et du dispatch, face
+  à leur fusion dans Y, est ici une forme accidentelle.
+- Atlas n'a donc pas à rechercher a priori une forme normale universelle : doit
+  être conservée l'information dont la perte pourrait modifier une propriété,
+  une contrainte ou une décision. Une abstraction peut être raffinée plus tard
+  si une nouvelle question rend pertinente une distinction jusque-là éliminée.
+
+### Disproved
+
+- Une forme canonique identique n'est pas nécessaire pour ces décisions : deux
+  représentations de tailles et de découpages différents conservent les mêmes
+  contraintes déterminantes et découvrent la même recombinaison.
+- L'égalité des espaces de solutions n'est pas nécessaire non plus : les deux
+  signatures supplémentaires de X ne changent aucun classement observé.
+- Comparer noms, arités ou nombre de mécanismes aurait déclaré X et Y
+  incompatibles alors que leurs conséquences sur A, B, C et les deux décisions
+  concordent. La similarité syntaxique n'est donc pas un critère suffisant.
+
+### Unknown
+
+- Rien ne garantit que les deux signatures propres à X resteraient sans effet
+  pour d'autres workloads, contraintes ou plateformes. Il reste inconnu comment
+  arbitrer lorsque deux granularités légitimes ouvrent des espaces dont les
+  gagnants divergent réellement. L'équivalence observée est donc relative aux
+  deux décisions testées, et non universelle.
+- Le POC ne détermine pas automatiquement la quantité minimale de sémantique à
+  préserver, ni comment comparer ou aligner deux représentations sans projection
+  d'audit écrite manuellement.
+- L'indépendance des deux lectures reste une discipline d'analyse manuelle ; sa
+  reproductibilité entre analystes, son automatisation et son application à de
+  gros frameworks restent inconnues.
+- Les pics sont audités depuis les durées de vie structurelles, pas mesurés en
+  mémoire physique, et les coûts plateforme restent synthétiques.
+
+Inventaire POC 12 : `poc12.py` (~400 lignes),
+`poc12_extractions.json`, `poc12_measurements.json` généré, et les fixtures A/B
+inchangées du POC 11. Aucune dépendance externe. Reproduction :
+`python3 -B poc12.py`.
