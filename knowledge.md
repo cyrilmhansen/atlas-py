@@ -388,3 +388,66 @@ aucune dépendance externe. Reproduction : `python3 poc6.py`.
 
 Inventaire POC 7 : `poc7.py` (~500 lignes), `poc7_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc7.py`.
+
+## POC 8 — dériver la valeur décisionnelle de l'information
+
+### Confirmed
+
+- La décision initiale `lookup_heavy` est indéterminée : `sorted` vaut
+  `[698,26 ; 1 748,26]` et `hash+dense_view` `[1 130,84 ; 167 949,80]`.
+  La remontée locale relie le chevauchement aux dimensions incertaines puis à
+  leurs causes : `hash_dispersion → probe_count → comparisons/probes/
+  random_accesses → coût`, et `sorted_search_depth → comparisons/
+  random_accesses → coût`.
+- La largeur pondérée dominante vient de `probe_count` : 101 102,40 unités via
+  les accès aléatoires, 40 440,96 via les probes et 25 275,60 via les
+  comparaisons. Les dimensions exactes de largeur nulle ne déclenchent aucune
+  acquisition.
+- Les quatre actions ne portent ni `directness` ni réduction attendue dans la
+  politique structurelle. `sample16/64` observent `hash_dispersion` en amont ;
+  `probe16/64` observent directement `probe_count`. La taille `k` détermine
+  mécaniquement le rayon relatif `1/√k` du modèle d'extrapolation des probes.
+- Les échantillons statistiques sont causalement pertinents, mais le modèle ne
+  sait pas traduire seuls leurs résidus en intervalle quantitatif de probes.
+  Les deux micro-probes le peuvent et une observation possible pourrait rendre
+  le classement robuste ; `probe16` est donc choisi comme le moins coûteux
+  susceptible de suffire, avant de connaître son résultat.
+- `probe16` observe 18 probes pour 16 insertions (moyenne 1,125, maximum 2),
+  soit un coût réel de 34. L'intervalle de coût hash devient
+  `[2 031,59 ; 2 841,54]`, au-dessus du maximum 1 748,26 de `sorted`; la
+  décision devient robuste et choisit `sorted`.
+- L'oracle postérieur confirme `sorted` (1 643,76) devant hash (3 527,96,
+  8 216 probes), et les checksums concordent. Sur `walk_heavy`, le classement
+  est robuste initialement : la politique structurelle n'analyse ni n'exécute
+  aucune acquisition, tandis que `always_expensive` dépense inutilement 180.
+- Sur `lookup_heavy`, `structural` et `poc7_manual` choisissent tous deux
+  `probe16` pour un coût 34 ; `always_expensive` coûte 180 et `always_none`
+  reste indéterminé. Le gain de POC 8 est l'explication structurelle du choix,
+  pas une amélioration de coût sur ce cas minuscule.
+
+### Disproved
+
+- Les dépendances structurelles seules ne suffisent pas à quantifier toute
+  acquisition pertinente : observer indirectement `hash_dispersion` ne donne
+  pas un intervalle de `probe_count` sans modèle externe de traduction. Les
+  actions `sample16/64` ne peuvent donc pas être classées quantitativement ici.
+- La pertinence causale ne garantit pas la qualité de l'extrapolation. Après
+  `probe16`, l'intervalle prédit `[3 681,56 ; 6 135,94]` pour probes,
+  comparaisons et accès aléatoires ne contient pas les 8 216 événements de
+  l'oracle. La décision reste correcte, mais sa couverture annoncée est fausse.
+- Une relation directe n'est donc pas, à elle seule, une estimation fiable de
+  la valeur future d'une observation. L'hypothèse de représentativité et le
+  rayon `1/√k` restent un modèle supplémentaire, non dérivé du graphe.
+
+### Unknown
+
+- Il reste inconnu comment quantifier rigoureusement l'effet futur d'une
+  observation sans connaître son résultat, notamment pour une relation
+  indirecte potentiellement moins chère.
+- Plusieurs causes corrélées, plusieurs chaînes d'acquisition et l'intégration
+  du coût de connaissance au coût du programme restent ouvertes.
+- La généralisation à des implémentations externes et plateformes physiques,
+  ainsi que leur calibration, reste inconnue.
+
+Inventaire POC 8 : `poc8.py` (~570 lignes), `poc8_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc8.py`.
