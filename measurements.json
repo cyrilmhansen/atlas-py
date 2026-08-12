@@ -1,0 +1,202 @@
+[
+  {
+    "scenario": "lookup_heavy",
+    "platform": "compact",
+    "candidate": "linear",
+    "admissible": true,
+    "predicted_cost": 520000.0,
+    "selected": false,
+    "load_ns": 38933,
+    "work_ns": 190223366,
+    "total_ns": 190262299,
+    "checksum": 3008797352,
+    "instrumented_cost": 5258185,
+    "counters": {
+      "comparisons": 4948175,
+      "probes": 0,
+      "visits": 300000,
+      "writes": 10,
+      "allocations": 10000
+    }
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "compact",
+    "candidate": "sorted",
+    "admissible": true,
+    "predicted_cost": 164152.74,
+    "selected": true,
+    "load_ns": 5768135,
+    "work_ns": 13324326,
+    "total_ns": 19092461,
+    "checksum": 3008797352,
+    "instrumented_cost": 333781,
+    "counters": {
+      "comparisons": 13771,
+      "probes": 0,
+      "visits": 300000,
+      "writes": 10,
+      "allocations": 20000
+    }
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "candidate": "linear",
+    "admissible": true,
+    "predicted_cost": 520000.0,
+    "selected": false,
+    "load_ns": 17914,
+    "work_ns": 194754010,
+    "total_ns": 194771924,
+    "checksum": 3008797352,
+    "instrumented_cost": 5258185,
+    "counters": {
+      "comparisons": 4948175,
+      "probes": 0,
+      "visits": 300000,
+      "writes": 10,
+      "allocations": 10000
+    }
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "candidate": "sorted",
+    "admissible": true,
+    "predicted_cost": 167341.8,
+    "selected": false,
+    "load_ns": 14245996,
+    "work_ns": 13736910,
+    "total_ns": 27982906,
+    "checksum": 3008797352,
+    "instrumented_cost": 333781,
+    "counters": {
+      "comparisons": 13771,
+      "probes": 0,
+      "visits": 300000,
+      "writes": 10,
+      "allocations": 20000
+    }
+  },
+  {
+    "scenario": "lookup_heavy",
+    "platform": "cache_rich",
+    "candidate": "hash",
+    "admissible": true,
+    "predicted_cost": 40096.0,
+    "selected": true,
+    "load_ns": 1433460,
+    "work_ns": 39608875,
+    "total_ns": 41042335,
+    "checksum": 3008797352,
+    "instrumented_cost": 1070506,
+    "counters": {
+      "comparisons": 10960,
+      "probes": 10960,
+      "visits": 983040,
+      "writes": 10,
+      "allocations": 65536
+    }
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "compact",
+    "candidate": "linear",
+    "admissible": true,
+    "predicted_cost": 955000.0,
+    "selected": true,
+    "load_ns": 29556,
+    "work_ns": 390814180,
+    "total_ns": 390843736,
+    "checksum": 89905223592,
+    "instrumented_cost": 9452689,
+    "counters": {
+      "comparisons": 442649,
+      "probes": 0,
+      "visits": 9000000,
+      "writes": 40,
+      "allocations": 10000
+    }
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "compact",
+    "candidate": "sorted",
+    "admissible": true,
+    "predicted_cost": 1032996.71,
+    "selected": false,
+    "load_ns": 5655213,
+    "work_ns": 355024723,
+    "total_ns": 360679936,
+    "checksum": 89905223592,
+    "instrumented_cost": 9021333,
+    "counters": {
+      "comparisons": 1293,
+      "probes": 0,
+      "visits": 9000000,
+      "writes": 40,
+      "allocations": 20000
+    }
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "candidate": "linear",
+    "admissible": true,
+    "predicted_cost": 955000.0,
+    "selected": false,
+    "load_ns": 16461,
+    "work_ns": 372780966,
+    "total_ns": 372797427,
+    "checksum": 89905223592,
+    "instrumented_cost": 9452689,
+    "counters": {
+      "comparisons": 442649,
+      "probes": 0,
+      "visits": 9000000,
+      "writes": 40,
+      "allocations": 10000
+    }
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "candidate": "sorted",
+    "admissible": true,
+    "predicted_cost": 1033295.69,
+    "selected": false,
+    "load_ns": 5657407,
+    "work_ns": 356558411,
+    "total_ns": 362215818,
+    "checksum": 89905223592,
+    "instrumented_cost": 9021333,
+    "counters": {
+      "comparisons": 1293,
+      "probes": 0,
+      "visits": 9000000,
+      "writes": 40,
+      "allocations": 20000
+    }
+  },
+  {
+    "scenario": "walk_heavy",
+    "platform": "cache_rich",
+    "candidate": "hash",
+    "admissible": true,
+    "predicted_cost": 910009.0,
+    "selected": true,
+    "load_ns": 1362757,
+    "work_ns": 1173539606,
+    "total_ns": 1174902363,
+    "checksum": 89905223592,
+    "instrumented_cost": 29576956,
+    "counters": {
+      "comparisons": 10090,
+      "probes": 10090,
+      "visits": 29491200,
+      "writes": 40,
+      "allocations": 65536
+    }
+  }
+]
