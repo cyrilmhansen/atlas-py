@@ -512,3 +512,83 @@ aucune dépendance externe. Reproduction : `python3 poc8.py`.
 
 Inventaire POC 9 : `poc9.py` (~485 lignes), `poc9_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc9.py`.
+
+## POC 10 — transfert vers un mini-batch
+
+### Confirmed
+
+- Un besoin batch neuf est décrit par 4 096 enregistrements, un filtre opaque,
+  un effort de transformation et une limite mémoire, sans présupposer une
+  architecture. Le produit de `item_by_item/chunk64`,
+  `fused/materialized_filter` et `incremental/deferred_reduce` génère huit
+  compositions, sans candidats monolithiques nommés.
+- Les interactions sont explicites dans un vecteur propre au batch. `chunk64`
+  remplace 4 096 unités source par 64 batches ; `materialized_filter` écrit et
+  relit les survivants mais les redensifie en batches de transformation ;
+  `deferred_reduce` remplace une agrégation par survivant par un appel, au prix
+  d'écritures, de relectures et d'un buffer. La coexistence des deux
+  matérialisations porte le pic temporaire à deux fois les survivants.
+- Sur `filter_heavy/throughput`, l'échantillon de 128 enregistrements observe
+  15 survivants et estime `[357 ; 603]`; l'oracle en compte 512. La composition
+  émergente `chunk64 + materialized_filter + deferred_reduce` transforme en 8
+  batches, agrège en un appel et atteint un pic temporaire de 1 024. Elle est
+  prédite et observée gagnante (coût synthétique 5 492,88).
+- Sur `transform_heavy/throughput`, l'échantillon observe 113 survivants et
+  estime `[3 493 ; 3 739]`; l'oracle en compte 3 584. La composition retenue
+  devient `chunk64 + fused + deferred_reduce` : 64 batches, aucune
+  matérialisation après filtre, une réduction et un pic de 3 584. Le modèle et
+  l'oracle concordent (40 657,68).
+- Sur `memory_tight`, la limite d'une unité rend
+  `item_by_item + fused + incremental` robuste pour toute sélectivité possible.
+  Aucun échantillon n'est acquis dans les deux scénarios ; l'oracle confirme un
+  pic de 1 et les décisions. Une propriété inconnue n'exige donc une mesure que
+  si elle peut changer le choix.
+- Les vecteurs prédits à sélectivité connue et les vecteurs instrumentés sont
+  égaux pour les huit compositions ; avec sélectivité estimée, toutes les
+  observations sont dans les intervalles. Les huit exécutions produisent le
+  même checksum par scénario. Le chemin exécuté n'appelle pas les formules du
+  modèle analytique.
+- La séparation `mécanismes + interactions → vecteur → plateforme → choix`, les
+  statuts `exact/bound/estimate`, les hypothèses et l'acquisition conditionnelle
+  restent donc opérants hors du domaine clé-valeur.
+- La sélectivité est une inconnue commune à toutes les compositions : la
+  décision cherche le gagnant pour chaque valeur encore possible et ne traite
+  pas les intervalles des solutions comme des incertitudes indépendantes.
+
+### Disproved
+
+- Un schéma de caractéristiques supposé universel ne se transfère pas : probes,
+  slots et dispersion des clés disparaissent. Le batch exige batches,
+  matérialisations, appels d'agrégation, relectures et mémoire temporaire.
+- L'idée que matérialiser serait toujours inférieur à fusionner est réfutée par
+  `filter_heavy` : redensifier 512 survivants réduit 64 appels de transformation
+  à 8 et compense les écritures/relectures intermédiaires sur `throughput`.
+- L'idée qu'une inconnue importante doit toujours être mesurée est réfutée par
+  `memory_tight`, où le classement est invariant sur toute sa borne.
+- Les contrats de probing des POC 8–9 ne se transfèrent pas au mini-batch. Un
+  contrat simple de sélectivité suffit ici ; les contrats multiples n'ont pas
+  été reproduits artificiellement.
+
+### Unknown
+
+- Un troisième domaine est nécessaire pour mieux distinguer principes généraux
+  et coïncidences communes à deux expériences contrôlées.
+- La bonne granularité pour des mécanismes issus de code externe, leur
+  instrumentation indépendante et l'extraction automatique de connaissances
+  depuis bibliothèques ou frameworks restent inconnues.
+- Il reste également inconnu si cette connaissance peut être recombinée sans
+  importer l'ontologie ou l'architecture du code dont elle est extraite.
+- Les profils sont synthétiques ; calibration et validité sur plateformes
+  physiques restent inconnues. Le contrat d'échantillonnage de sélectivité n'a
+  été testé que sur deux filtres déterministes.
+
+### Bilan de transfert
+
+| Classe | Concepts observés |
+|---|---|
+| Transfert naturel | besoin sans architecture, mécanismes fins, compatibilités, interactions, recherche exhaustive, vecteur avant coût, plateforme séparée, `exact/bound/estimate`, acquisition conditionnelle |
+| Adaptation nécessaire | dimensions du vecteur, effets de buffers simultanés, redensification, propagation corrélée d'une sélectivité partagée |
+| Non transféré | probes, slots, dispersion des clés et contrats épistémiques spécifiques au hachage |
+
+Inventaire POC 10 : `poc10.py` (~405 lignes), `poc10_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc10.py`.

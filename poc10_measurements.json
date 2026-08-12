@@ -1,0 +1,1813 @@
+{
+  "experiments": [
+    {
+      "scenario": "filter_heavy",
+      "platform": "throughput",
+      "platform_profile": {
+        "memory_limit": 4096,
+        "weights": {
+          "source_reads": 0.2,
+          "filter_tests": 0.1,
+          "records_passed": 0,
+          "source_batches": 8,
+          "transform_batches": 30,
+          "transform_work": 1,
+          "intermediate_writes": 1.5,
+          "intermediate_reads": 1,
+          "aggregate_calls": 10,
+          "aggregate_work": 0.3,
+          "output_writes": 1.5,
+          "reduction_reads": 0.5,
+          "peak_temp_records": 0.02
+        }
+      },
+      "mechanisms": {
+        "processing": [
+          "item_by_item",
+          "chunk64"
+        ],
+        "handoff": [
+          "fused",
+          "materialized_filter"
+        ],
+        "aggregation": [
+          "incremental",
+          "deferred_reduce"
+        ]
+      },
+      "initial": {
+        "decision": {
+          "status": "needs_information",
+          "selected": null,
+          "possible_winners": [
+            "chunk64+fused+deferred_reduce",
+            "chunk64+materialized_filter+deferred_reduce",
+            "chunk64+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        }
+      },
+      "decision_sensitive_unknown": {
+        "name": "filter_selectivity",
+        "affects": [
+          "records_passed",
+          "transform_batches",
+          "transform_work",
+          "materializations",
+          "aggregation",
+          "peak_temp_records"
+        ]
+      },
+      "acquisition": {
+        "kind": "filter_selectivity_sample",
+        "records_examined": 128,
+        "records_passed": 15,
+        "observed_rate": 0.117188,
+        "contract": {
+          "status": "estimate",
+          "assumptions": [
+            "\u00e9chantillon repr\u00e9sentatif de la source"
+          ],
+          "rate_interval": [
+            0.087188,
+            0.147187
+          ]
+        },
+        "passed_interval": [
+          357,
+          603
+        ],
+        "acquisition_cost": 128
+      },
+      "final": {
+        "decision": {
+          "status": "decidable",
+          "selected": "chunk64+materialized_filter+deferred_reduce",
+          "possible_winners": [
+            "chunk64+materialized_filter+deferred_reduce"
+          ],
+          "passed_interval": [
+            357,
+            603
+          ]
+        },
+        "selected_predicted_vector": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "records_passed": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_batches": {
+            "status": "estimate",
+            "interval": [
+              6,
+              10
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_work": {
+            "status": "estimate",
+            "interval": [
+              714,
+              1206
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_writes": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_reads": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_calls": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_work": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "output_writes": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "reduction_reads": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "peak_temp_records": {
+            "status": "estimate",
+            "interval": [
+              714,
+              1206
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          }
+        },
+        "cost_summaries": {
+          "item_by_item+fused+incremental": {
+            "interval": [
+              49097.92,
+              59503.72
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+fused+deferred_reduce": {
+            "interval": [
+              46259.04,
+              54701.76
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+materialized_filter+incremental": {
+            "interval": [
+              49997.54,
+              61023.26
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+materialized_filter+deferred_reduce": {
+            "interval": [
+              47158.68,
+              56221.32
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+fused+incremental": {
+            "interval": [
+              8053.18,
+              11078.98
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+fused+deferred_reduce": {
+            "interval": [
+              5213.04,
+              6275.76
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+materialized_filter+incremental": {
+            "interval": [
+              7211.54,
+              10977.26
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+materialized_filter+deferred_reduce": {
+            "interval": [
+              4372.68,
+              6175.32
+            ],
+            "admissibility": "always"
+          }
+        }
+      },
+      "oracle": {
+        "selected": "chunk64+materialized_filter+deferred_reduce",
+        "observed_costs": {
+          "item_by_item+fused+incremental": 55654.42,
+          "item_by_item+fused+deferred_reduce": 51578.64,
+          "item_by_item+materialized_filter+incremental": 56944.64,
+          "item_by_item+materialized_filter+deferred_reduce": 52868.88,
+          "chunk64+fused+incremental": 9959.68,
+          "chunk64+fused+deferred_reduce": 5882.64,
+          "chunk64+materialized_filter+incremental": 9568.64,
+          "chunk64+materialized_filter+deferred_reduce": 5492.88
+        },
+        "selected_observed_vector": {
+          "source_reads": 4096,
+          "filter_tests": 4096,
+          "records_passed": 512,
+          "source_batches": 64,
+          "transform_batches": 8,
+          "transform_work": 1024,
+          "intermediate_writes": 512,
+          "intermediate_reads": 512,
+          "aggregate_calls": 1,
+          "aggregate_work": 512,
+          "output_writes": 512,
+          "reduction_reads": 512,
+          "peak_temp_records": 1024
+        },
+        "checksums": {
+          "item_by_item+fused+incremental": 2325550,
+          "item_by_item+fused+deferred_reduce": 2325550,
+          "item_by_item+materialized_filter+incremental": 2325550,
+          "item_by_item+materialized_filter+deferred_reduce": 2325550,
+          "chunk64+fused+incremental": 2325550,
+          "chunk64+fused+deferred_reduce": 2325550,
+          "chunk64+materialized_filter+incremental": 2325550,
+          "chunk64+materialized_filter+deferred_reduce": 2325550
+        },
+        "wall_ns": {
+          "item_by_item+fused+incremental": 2626828,
+          "item_by_item+fused+deferred_reduce": 2830871,
+          "item_by_item+materialized_filter+incremental": 2543912,
+          "item_by_item+materialized_filter+deferred_reduce": 2650293,
+          "chunk64+fused+incremental": 1493041,
+          "chunk64+fused+deferred_reduce": 1705499,
+          "chunk64+materialized_filter+incremental": 1646589,
+          "chunk64+materialized_filter+deferred_reduce": 1784688
+        },
+        "decision_correct": true,
+        "selected_vector_comparison": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "records_passed": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "observed": 64,
+            "within_interval": true
+          },
+          "transform_batches": {
+            "status": "estimate",
+            "interval": [
+              6,
+              10
+            ],
+            "observed": 8,
+            "within_interval": true
+          },
+          "transform_work": {
+            "status": "estimate",
+            "interval": [
+              714,
+              1206
+            ],
+            "observed": 1024,
+            "within_interval": true
+          },
+          "intermediate_writes": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "intermediate_reads": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "aggregate_calls": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "observed": 1,
+            "within_interval": true
+          },
+          "aggregate_work": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "output_writes": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "reduction_reads": {
+            "status": "estimate",
+            "interval": [
+              357,
+              603
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "peak_temp_records": {
+            "status": "estimate",
+            "interval": [
+              714,
+              1206
+            ],
+            "observed": 1024,
+            "within_interval": true
+          }
+        },
+        "all_vector_intervals_cover_observations": true,
+        "all_exact_vectors_match_at_observed_selectivity": true
+      }
+    },
+    {
+      "scenario": "filter_heavy",
+      "platform": "memory_tight",
+      "platform_profile": {
+        "memory_limit": 1,
+        "weights": {
+          "source_reads": 0.2,
+          "filter_tests": 0.1,
+          "records_passed": 0,
+          "source_batches": 8,
+          "transform_batches": 30,
+          "transform_work": 1,
+          "intermediate_writes": 1.5,
+          "intermediate_reads": 1,
+          "aggregate_calls": 10,
+          "aggregate_work": 0.3,
+          "output_writes": 1.5,
+          "reduction_reads": 0.5,
+          "peak_temp_records": 2
+        }
+      },
+      "mechanisms": {
+        "processing": [
+          "item_by_item",
+          "chunk64"
+        ],
+        "handoff": [
+          "fused",
+          "materialized_filter"
+        ],
+        "aggregation": [
+          "incremental",
+          "deferred_reduce"
+        ]
+      },
+      "initial": {
+        "decision": {
+          "status": "decidable",
+          "selected": "item_by_item+fused+incremental",
+          "possible_winners": [
+            "item_by_item+fused+deferred_reduce",
+            "item_by_item+fused+incremental",
+            "item_by_item+materialized_filter+deferred_reduce",
+            "item_by_item+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        }
+      },
+      "decision_sensitive_unknown": {
+        "name": "filter_selectivity",
+        "affects": [
+          "records_passed",
+          "transform_batches",
+          "transform_work",
+          "materializations",
+          "aggregation",
+          "peak_temp_records"
+        ]
+      },
+      "acquisition": null,
+      "final": {
+        "decision": {
+          "status": "decidable",
+          "selected": "item_by_item+fused+incremental",
+          "possible_winners": [
+            "item_by_item+fused+deferred_reduce",
+            "item_by_item+fused+incremental",
+            "item_by_item+materialized_filter+deferred_reduce",
+            "item_by_item+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        },
+        "selected_predicted_vector": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "records_passed": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_batches": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              8192
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_calls": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "output_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "reduction_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "peak_temp_records": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          }
+        },
+        "cost_summaries": {
+          "item_by_item+fused+incremental": {
+            "interval": [
+              33998.8,
+              207259.6
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+fused+deferred_reduce": {
+            "interval": [
+              33998.8,
+              182691.6
+            ],
+            "admissibility": "conditional"
+          },
+          "item_by_item+materialized_filter+incremental": {
+            "interval": [
+              33998.8,
+              225689.6
+            ],
+            "admissibility": "conditional"
+          },
+          "item_by_item+materialized_filter+deferred_reduce": {
+            "interval": [
+              33998.8,
+              201123.6
+            ],
+            "admissibility": "conditional"
+          },
+          "chunk64+fused+incremental": {
+            "interval": [
+              3788.8,
+              54169.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+fused+deferred_reduce": {
+            "interval": [
+              3788.8,
+              29475.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+materialized_filter+incremental": {
+            "interval": [
+              1868.8,
+              72473.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+materialized_filter+deferred_reduce": {
+            "interval": [
+              1868.8,
+              47907.6
+            ],
+            "admissibility": "never"
+          }
+        }
+      },
+      "oracle": {
+        "selected": "item_by_item+fused+incremental",
+        "observed_costs": {
+          "item_by_item+fused+incremental": 55656.4,
+          "item_by_item+fused+deferred_reduce": 52592.4,
+          "item_by_item+materialized_filter+incremental": 57958.4,
+          "item_by_item+materialized_filter+deferred_reduce": 54896.4,
+          "chunk64+fused+incremental": 10086.4,
+          "chunk64+fused+deferred_reduce": 6896.4,
+          "chunk64+materialized_filter+incremental": 10582.4,
+          "chunk64+materialized_filter+deferred_reduce": 7520.4
+        },
+        "selected_observed_vector": {
+          "source_reads": 4096,
+          "filter_tests": 4096,
+          "records_passed": 512,
+          "source_batches": 4096,
+          "transform_batches": 512,
+          "transform_work": 1024,
+          "intermediate_writes": 0,
+          "intermediate_reads": 0,
+          "aggregate_calls": 512,
+          "aggregate_work": 512,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "peak_temp_records": 1
+        },
+        "checksums": {
+          "item_by_item+fused+incremental": 2325550,
+          "item_by_item+fused+deferred_reduce": 2325550,
+          "item_by_item+materialized_filter+incremental": 2325550,
+          "item_by_item+materialized_filter+deferred_reduce": 2325550,
+          "chunk64+fused+incremental": 2325550,
+          "chunk64+fused+deferred_reduce": 2325550,
+          "chunk64+materialized_filter+incremental": 2325550,
+          "chunk64+materialized_filter+deferred_reduce": 2325550
+        },
+        "wall_ns": {
+          "item_by_item+fused+incremental": 2626828,
+          "item_by_item+fused+deferred_reduce": 2830871,
+          "item_by_item+materialized_filter+incremental": 2543912,
+          "item_by_item+materialized_filter+deferred_reduce": 2650293,
+          "chunk64+fused+incremental": 1493041,
+          "chunk64+fused+deferred_reduce": 1705499,
+          "chunk64+materialized_filter+incremental": 1646589,
+          "chunk64+materialized_filter+deferred_reduce": 1784688
+        },
+        "decision_correct": true,
+        "selected_vector_comparison": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "records_passed": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "transform_batches": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "transform_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              8192
+            ],
+            "observed": 1024,
+            "within_interval": true
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "aggregate_calls": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "aggregate_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 512,
+            "within_interval": true
+          },
+          "output_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "reduction_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "peak_temp_records": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "observed": 1,
+            "within_interval": true
+          }
+        },
+        "all_vector_intervals_cover_observations": true,
+        "all_exact_vectors_match_at_observed_selectivity": true
+      }
+    },
+    {
+      "scenario": "transform_heavy",
+      "platform": "throughput",
+      "platform_profile": {
+        "memory_limit": 4096,
+        "weights": {
+          "source_reads": 0.2,
+          "filter_tests": 0.1,
+          "records_passed": 0,
+          "source_batches": 8,
+          "transform_batches": 30,
+          "transform_work": 1,
+          "intermediate_writes": 1.5,
+          "intermediate_reads": 1,
+          "aggregate_calls": 10,
+          "aggregate_work": 0.3,
+          "output_writes": 1.5,
+          "reduction_reads": 0.5,
+          "peak_temp_records": 0.02
+        }
+      },
+      "mechanisms": {
+        "processing": [
+          "item_by_item",
+          "chunk64"
+        ],
+        "handoff": [
+          "fused",
+          "materialized_filter"
+        ],
+        "aggregation": [
+          "incremental",
+          "deferred_reduce"
+        ]
+      },
+      "initial": {
+        "decision": {
+          "status": "needs_information",
+          "selected": null,
+          "possible_winners": [
+            "chunk64+fused+deferred_reduce",
+            "chunk64+materialized_filter+deferred_reduce",
+            "chunk64+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        }
+      },
+      "decision_sensitive_unknown": {
+        "name": "filter_selectivity",
+        "affects": [
+          "records_passed",
+          "transform_batches",
+          "transform_work",
+          "materializations",
+          "aggregation",
+          "peak_temp_records"
+        ]
+      },
+      "acquisition": {
+        "kind": "filter_selectivity_sample",
+        "records_examined": 128,
+        "records_passed": 113,
+        "observed_rate": 0.882812,
+        "contract": {
+          "status": "estimate",
+          "assumptions": [
+            "\u00e9chantillon repr\u00e9sentatif de la source"
+          ],
+          "rate_interval": [
+            0.852812,
+            0.912813
+          ]
+        },
+        "passed_interval": [
+          3493,
+          3739
+        ],
+        "acquisition_cost": 128
+      },
+      "final": {
+        "decision": {
+          "status": "decidable",
+          "selected": "chunk64+fused+deferred_reduce",
+          "possible_winners": [
+            "chunk64+fused+deferred_reduce"
+          ],
+          "passed_interval": [
+            3493,
+            3739
+          ]
+        },
+        "selected_predicted_vector": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "records_passed": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_work": {
+            "status": "estimate",
+            "interval": [
+              27944,
+              29912
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_calls": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_work": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "output_writes": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "reduction_reads": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "peak_temp_records": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "assumptions": [
+              "\u00e9chantillon repr\u00e9sentatif de la source"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          }
+        },
+        "cost_summaries": {
+          "item_by_item+fused+incremental": {
+            "interval": [
+              202708.72,
+              214590.52
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+fused+deferred_reduce": {
+            "interval": [
+              174844.56,
+              184763.28
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+materialized_filter+incremental": {
+            "interval": [
+              211511.06,
+              224012.78
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+materialized_filter+deferred_reduce": {
+            "interval": [
+              183646.92,
+              194185.56
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+fused+incremental": {
+            "interval": [
+              67583.98,
+              72085.78
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+fused+deferred_reduce": {
+            "interval": [
+              39718.56,
+              42257.28
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+materialized_filter+incremental": {
+            "interval": [
+              76115.06,
+              81356.78
+            ],
+            "admissibility": "always"
+          },
+          "chunk64+materialized_filter+deferred_reduce": {
+            "interval": [
+              48250.92,
+              51529.56
+            ],
+            "admissibility": "never"
+          }
+        }
+      },
+      "oracle": {
+        "selected": "chunk64+fused+deferred_reduce",
+        "observed_costs": {
+          "item_by_item+fused+incremental": 207104.02,
+          "item_by_item+fused+deferred_reduce": 178513.68,
+          "item_by_item+materialized_filter+incremental": 216135.68,
+          "item_by_item+materialized_filter+deferred_reduce": 187545.36,
+          "chunk64+fused+incremental": 69249.28,
+          "chunk64+fused+deferred_reduce": 40657.68,
+          "chunk64+materialized_filter+incremental": 78039.68,
+          "chunk64+materialized_filter+deferred_reduce": 49449.36
+        },
+        "selected_observed_vector": {
+          "source_reads": 4096,
+          "filter_tests": 4096,
+          "records_passed": 3584,
+          "source_batches": 64,
+          "transform_batches": 64,
+          "transform_work": 28672,
+          "intermediate_writes": 0,
+          "intermediate_reads": 0,
+          "aggregate_calls": 1,
+          "aggregate_work": 3584,
+          "output_writes": 3584,
+          "reduction_reads": 3584,
+          "peak_temp_records": 3584
+        },
+        "checksums": {
+          "item_by_item+fused+incremental": 1727749065,
+          "item_by_item+fused+deferred_reduce": 1727749065,
+          "item_by_item+materialized_filter+incremental": 1727749065,
+          "item_by_item+materialized_filter+deferred_reduce": 1727749065,
+          "chunk64+fused+incremental": 1727749065,
+          "chunk64+fused+deferred_reduce": 1727749065,
+          "chunk64+materialized_filter+incremental": 1727749065,
+          "chunk64+materialized_filter+deferred_reduce": 1727749065
+        },
+        "wall_ns": {
+          "item_by_item+fused+incremental": 5646072,
+          "item_by_item+fused+deferred_reduce": 6106787,
+          "item_by_item+materialized_filter+incremental": 5711576,
+          "item_by_item+materialized_filter+deferred_reduce": 6006098,
+          "chunk64+fused+incremental": 3565800,
+          "chunk64+fused+deferred_reduce": 4024611,
+          "chunk64+materialized_filter+incremental": 3876993,
+          "chunk64+materialized_filter+deferred_reduce": 4197385
+        },
+        "decision_correct": true,
+        "selected_vector_comparison": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "records_passed": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "observed": 64,
+            "within_interval": true
+          },
+          "transform_batches": {
+            "status": "exact",
+            "interval": [
+              64,
+              64
+            ],
+            "observed": 64,
+            "within_interval": true
+          },
+          "transform_work": {
+            "status": "estimate",
+            "interval": [
+              27944,
+              29912
+            ],
+            "observed": 28672,
+            "within_interval": true
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "aggregate_calls": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "observed": 1,
+            "within_interval": true
+          },
+          "aggregate_work": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "output_writes": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "reduction_reads": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "peak_temp_records": {
+            "status": "estimate",
+            "interval": [
+              3493,
+              3739
+            ],
+            "observed": 3584,
+            "within_interval": true
+          }
+        },
+        "all_vector_intervals_cover_observations": true,
+        "all_exact_vectors_match_at_observed_selectivity": true
+      }
+    },
+    {
+      "scenario": "transform_heavy",
+      "platform": "memory_tight",
+      "platform_profile": {
+        "memory_limit": 1,
+        "weights": {
+          "source_reads": 0.2,
+          "filter_tests": 0.1,
+          "records_passed": 0,
+          "source_batches": 8,
+          "transform_batches": 30,
+          "transform_work": 1,
+          "intermediate_writes": 1.5,
+          "intermediate_reads": 1,
+          "aggregate_calls": 10,
+          "aggregate_work": 0.3,
+          "output_writes": 1.5,
+          "reduction_reads": 0.5,
+          "peak_temp_records": 2
+        }
+      },
+      "mechanisms": {
+        "processing": [
+          "item_by_item",
+          "chunk64"
+        ],
+        "handoff": [
+          "fused",
+          "materialized_filter"
+        ],
+        "aggregation": [
+          "incremental",
+          "deferred_reduce"
+        ]
+      },
+      "initial": {
+        "decision": {
+          "status": "decidable",
+          "selected": "item_by_item+fused+incremental",
+          "possible_winners": [
+            "item_by_item+fused+deferred_reduce",
+            "item_by_item+fused+incremental",
+            "item_by_item+materialized_filter+deferred_reduce",
+            "item_by_item+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        }
+      },
+      "decision_sensitive_unknown": {
+        "name": "filter_selectivity",
+        "affects": [
+          "records_passed",
+          "transform_batches",
+          "transform_work",
+          "materializations",
+          "aggregation",
+          "peak_temp_records"
+        ]
+      },
+      "acquisition": null,
+      "final": {
+        "decision": {
+          "status": "decidable",
+          "selected": "item_by_item+fused+incremental",
+          "possible_winners": [
+            "item_by_item+fused+deferred_reduce",
+            "item_by_item+fused+incremental",
+            "item_by_item+materialized_filter+deferred_reduce",
+            "item_by_item+materialized_filter+incremental"
+          ],
+          "passed_interval": [
+            0,
+            4096
+          ]
+        },
+        "selected_predicted_vector": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "records_passed": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_batches": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "transform_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              32768
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_calls": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "aggregate_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "assumptions": [
+              "s\u00e9lectivit\u00e9 inconnue"
+            ],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "output_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "reduction_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          },
+          "peak_temp_records": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "assumptions": [],
+            "source": "m\u00e9canismes batch + interactions"
+          }
+        },
+        "cost_summaries": {
+          "item_by_item+fused+incremental": {
+            "interval": [
+              33998.8,
+              231835.6
+            ],
+            "admissibility": "always"
+          },
+          "item_by_item+fused+deferred_reduce": {
+            "interval": [
+              33998.8,
+              207267.6
+            ],
+            "admissibility": "conditional"
+          },
+          "item_by_item+materialized_filter+incremental": {
+            "interval": [
+              33998.8,
+              250265.6
+            ],
+            "admissibility": "conditional"
+          },
+          "item_by_item+materialized_filter+deferred_reduce": {
+            "interval": [
+              33998.8,
+              225699.6
+            ],
+            "admissibility": "conditional"
+          },
+          "chunk64+fused+incremental": {
+            "interval": [
+              3788.8,
+              78745.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+fused+deferred_reduce": {
+            "interval": [
+              3788.8,
+              54051.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+materialized_filter+incremental": {
+            "interval": [
+              1868.8,
+              97049.6
+            ],
+            "admissibility": "never"
+          },
+          "chunk64+materialized_filter+deferred_reduce": {
+            "interval": [
+              1868.8,
+              72483.6
+            ],
+            "admissibility": "never"
+          }
+        }
+      },
+      "oracle": {
+        "selected": "item_by_item+fused+incremental",
+        "observed_costs": {
+          "item_by_item+fused+incremental": 207106.0,
+          "item_by_item+fused+deferred_reduce": 185610.0,
+          "item_by_item+materialized_filter+incremental": 223232.0,
+          "item_by_item+materialized_filter+deferred_reduce": 201738.0,
+          "chunk64+fused+incremental": 69376.0,
+          "chunk64+fused+deferred_reduce": 47754.0,
+          "chunk64+materialized_filter+incremental": 85136.0,
+          "chunk64+materialized_filter+deferred_reduce": 63642.0
+        },
+        "selected_observed_vector": {
+          "source_reads": 4096,
+          "filter_tests": 4096,
+          "records_passed": 3584,
+          "source_batches": 4096,
+          "transform_batches": 3584,
+          "transform_work": 28672,
+          "intermediate_writes": 0,
+          "intermediate_reads": 0,
+          "aggregate_calls": 3584,
+          "aggregate_work": 3584,
+          "output_writes": 0,
+          "reduction_reads": 0,
+          "peak_temp_records": 1
+        },
+        "checksums": {
+          "item_by_item+fused+incremental": 1727749065,
+          "item_by_item+fused+deferred_reduce": 1727749065,
+          "item_by_item+materialized_filter+incremental": 1727749065,
+          "item_by_item+materialized_filter+deferred_reduce": 1727749065,
+          "chunk64+fused+incremental": 1727749065,
+          "chunk64+fused+deferred_reduce": 1727749065,
+          "chunk64+materialized_filter+incremental": 1727749065,
+          "chunk64+materialized_filter+deferred_reduce": 1727749065
+        },
+        "wall_ns": {
+          "item_by_item+fused+incremental": 5646072,
+          "item_by_item+fused+deferred_reduce": 6106787,
+          "item_by_item+materialized_filter+incremental": 5711576,
+          "item_by_item+materialized_filter+deferred_reduce": 6006098,
+          "chunk64+fused+incremental": 3565800,
+          "chunk64+fused+deferred_reduce": 4024611,
+          "chunk64+materialized_filter+incremental": 3876993,
+          "chunk64+materialized_filter+deferred_reduce": 4197385
+        },
+        "decision_correct": true,
+        "selected_vector_comparison": {
+          "source_reads": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "filter_tests": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "records_passed": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "source_batches": {
+            "status": "exact",
+            "interval": [
+              4096,
+              4096
+            ],
+            "observed": 4096,
+            "within_interval": true
+          },
+          "transform_batches": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "transform_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              32768
+            ],
+            "observed": 28672,
+            "within_interval": true
+          },
+          "intermediate_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "intermediate_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "aggregate_calls": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "aggregate_work": {
+            "status": "bound",
+            "interval": [
+              0,
+              4096
+            ],
+            "observed": 3584,
+            "within_interval": true
+          },
+          "output_writes": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "reduction_reads": {
+            "status": "exact",
+            "interval": [
+              0,
+              0
+            ],
+            "observed": 0,
+            "within_interval": true
+          },
+          "peak_temp_records": {
+            "status": "exact",
+            "interval": [
+              1,
+              1
+            ],
+            "observed": 1,
+            "within_interval": true
+          }
+        },
+        "all_vector_intervals_cover_observations": true,
+        "all_exact_vectors_match_at_observed_selectivity": true
+      }
+    }
+  ],
+  "transfer_review": {
+    "transfers_naturally": [
+      "besoin d\u00e9crit par n, transformation, m\u00e9moire et filtre opaque",
+      "espace g\u00e9n\u00e9r\u00e9 par m\u00e9canismes fins et recherche exhaustive",
+      "interactions d\u00e9riv\u00e9es avant co\u00fbt scalaire",
+      "vecteur algorithmique s\u00e9par\u00e9 du profil plateforme",
+      "exact / bound / estimate avec hypoth\u00e8ses",
+      "acquisition seulement si l'inconnue peut changer la d\u00e9cision"
+    ],
+    "requires_adaptation": [
+      "le vecteur devient batches, mat\u00e9rialisations, agr\u00e9gation et m\u00e9moire temporaire",
+      "les interactions portent sur buffers simultan\u00e9s et densification des survivants",
+      "l'incertitude partag\u00e9e de s\u00e9lectivit\u00e9 doit \u00eatre propag\u00e9e de fa\u00e7on corr\u00e9l\u00e9e"
+    ],
+    "does_not_transfer": [
+      "probes, slots, dispersion des cl\u00e9s et contrats sp\u00e9cifiques au hachage",
+      "les contrats \u00e9pist\u00e9miques multiples du POC 9 ne sont pas n\u00e9cessaires ici"
+    ]
+  }
+}
