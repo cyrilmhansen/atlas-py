@@ -451,3 +451,64 @@ aucune dépendance externe. Reproduction : `python3 poc7.py`.
 
 Inventaire POC 8 : `poc8.py` (~570 lignes), `poc8_measurements.json` généré,
 aucune dépendance externe. Reproduction : `python3 poc8.py`.
+
+## POC 9 — contrats épistémiques pour l'extrapolation
+
+### Confirmed
+
+- Observation et inférence sont séparées : `probe16/32/64` produisent seulement
+  taille, moyenne, maximum et total de probes. Trois contrats définis avant les
+  observations décident ensuite si ces faits autorisent une estimation, une
+  borne ou `insufficient_evidence`, avec leurs hypothèses et critères
+  d'acceptation explicites.
+- Sur `lookup_heavy`, les micro-probes emboîtés observent des moyennes
+  1,125/1,34375/1,859375 et des maxima 2/3/4. La même grandeur causalement
+  pertinente est donc interprétée différemment selon le contrat.
+- `naive_representative` accepte `probe16`, suppose immédiatement la
+  représentativité et choisit correctement `sorted`, mais son intervalle
+  `[3 681,56 ; 6 135,94]` ne contient pas les 8 253 probes de l'oracle. Le
+  résultat est explicitement classé `correct_decision_bad_coverage`, et non
+  comme validation du contrat.
+- `conservative` conserve après `probe64` une borne `[1 770,12 ; 34 272]` qui
+  couvre l'oracle, mais ne permet pas de départager les solutions. Il dépense
+  292 unités sur trois probes puis s'arrête `undetermined` plutôt que de
+  transformer la pertinence de la mesure en fausse précision.
+- `multi_scale` exige trois tailles et une variation relative maximale ≤ 0,20.
+  Les variations observées 0,1944 puis 0,3837 violent ce contrat ; après les
+  trois probes et un coût 292, il retourne `insufficient_evidence` sans produire
+  d'intervalle global.
+- L'oracle postérieur confirme `sorted` (1 643,76) devant hash (3 540,17,
+  8 253 probes), et les checksums concordent. Décision correcte et couverture
+  correcte sont ainsi évaluées séparément.
+- Le contrôle positif à clés séquentielles observe des moyennes et maxima égaux
+  à 1 aux trois échelles. `multi_scale` accepte alors `[952 ; 1 071]`, qui
+  contient les 952 probes de l'oracle : le refus n'est donc pas systématique.
+- Sur `walk_heavy`, la décision est robuste avant toute inférence de probing ;
+  les trois contrats n'acquièrent rien et le résultat est classé
+  `correct_decision_no_inference_needed`.
+
+### Disproved
+
+- La représentativité automatique d'un petit échantillon est réfutée :
+  `probe16` mesure la bonne grandeur et conduit à la bonne décision, mais son
+  intervalle naïf ne couvre pas l'observation complète.
+- Une confiance fondée uniquement sur la taille `k` et le rayon `1/√k` est
+  réfutée sur la distribution groupée. Ce rayon est une hypothèse de contrat,
+  pas une garantie dérivée de la causalité ou de la taille seule.
+- Davantage de données ne garantit pas une décision : le contrat conservateur
+  couvre correctement après `probe64` tout en restant indéterminé, et le contrat
+  multi-échelle découvre davantage d'instabilité au lieu de gagner en confiance.
+
+### Unknown
+
+- Il reste inconnu comment obtenir de bons contrats épistémiques et choisir
+  entre plusieurs contrats plausibles sans consulter l'oracle. Cette question
+  n'est pas poursuivie immédiatement afin d'éviter de spécialiser davantage les
+  expériences sur le seul domaine clé-valeur.
+- Les distributions non stationnaires ou adversariales, plusieurs hypothèses
+  dépendantes et la valeur du coût de preuve supplémentaire restent ouvertes.
+- Le transfert d'une connaissance empirique entre implémentations ou plateformes
+  physiques, ainsi que leur calibration, reste inconnu.
+
+Inventaire POC 9 : `poc9.py` (~485 lignes), `poc9_measurements.json` généré,
+aucune dépendance externe. Reproduction : `python3 poc9.py`.

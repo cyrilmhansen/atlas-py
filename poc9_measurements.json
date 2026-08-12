@@ -1,0 +1,1058 @@
+{
+  "experiments": [
+    {
+      "workload": "lookup_heavy",
+      "contracts": {
+        "naive_representative": {
+          "contract": "naive_representative",
+          "history": [
+            {
+              "acquired": "probe16",
+              "observation": {
+                "name": "probe16",
+                "size": 16,
+                "insertions": 16,
+                "total_probes": 18,
+                "mean_probes": 1.125,
+                "max_probes": 2,
+                "acquisition_cost": 34
+              },
+              "inference": {
+                "status": "accepted",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "un \u00e9chantillon est repr\u00e9sentatif",
+                    "rayon relatif 1/\u221ak"
+                  ],
+                  "required_scales": 1,
+                  "acceptance": "au moins un micro-probe",
+                  "output": "estimate_interval"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16
+                  ],
+                  "means": [
+                    1.125
+                  ],
+                  "maxima": [
+                    2
+                  ]
+                },
+                "reason": "repr\u00e9sentativit\u00e9 suppos\u00e9e d\u00e8s la premi\u00e8re \u00e9chelle",
+                "probe_count": {
+                  "status": "estimate_interval",
+                  "central": 4908.75,
+                  "interval": [
+                    3681.56,
+                    6135.94
+                  ]
+                }
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": {
+                  "central": 2436.56,
+                  "interval": [
+                    2031.59,
+                    2841.54
+                  ]
+                }
+              },
+              "decision": {
+                "status": "decidable",
+                "selected": "sorted+binary_lookup+dense_walk"
+              }
+            }
+          ],
+          "observations": {
+            "probe16": {
+              "name": "probe16",
+              "size": 16,
+              "insertions": 16,
+              "total_probes": 18,
+              "mean_probes": 1.125,
+              "max_probes": 2,
+              "acquisition_cost": 34
+            }
+          },
+          "total_acquisition_cost": 34,
+          "final_inference": {
+            "status": "accepted",
+            "contract": {
+              "observes": "probe_count",
+              "assumptions": [
+                "un \u00e9chantillon est repr\u00e9sentatif",
+                "rayon relatif 1/\u221ak"
+              ],
+              "required_scales": 1,
+              "acceptance": "au moins un micro-probe",
+              "output": "estimate_interval"
+            },
+            "evidence": {
+              "available_scales": [
+                16
+              ],
+              "means": [
+                1.125
+              ],
+              "maxima": [
+                2
+              ]
+            },
+            "reason": "repr\u00e9sentativit\u00e9 suppos\u00e9e d\u00e8s la premi\u00e8re \u00e9chelle",
+            "probe_count": {
+              "status": "estimate_interval",
+              "central": 4908.75,
+              "interval": [
+                3681.56,
+                6135.94
+              ]
+            }
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash": {
+              "central": 2436.56,
+              "interval": [
+                2031.59,
+                2841.54
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk"
+          },
+          "oracle_evaluation": {
+            "observed_probes": 8253,
+            "probe_interval": [
+              3681.56,
+              6135.94
+            ],
+            "coverage": false,
+            "decision_correct": true,
+            "outcome": "correct_decision_bad_coverage"
+          }
+        },
+        "conservative": {
+          "contract": "conservative",
+          "history": [
+            {
+              "acquired": "probe16",
+              "observation": {
+                "name": "probe16",
+                "size": 16,
+                "insertions": 16,
+                "total_probes": 18,
+                "mean_probes": 1.125,
+                "max_probes": 2,
+                "acquisition_cost": 34
+              },
+              "inference": {
+                "status": "accepted",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "les cl\u00e9s non vues peuvent former des clusters plus grands"
+                  ],
+                  "required_scales": 1,
+                  "acceptance": "au moins un micro-probe; borne structurelle conserv\u00e9e",
+                  "output": "bound_interval"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16
+                  ],
+                  "means": [
+                    1.125
+                  ],
+                  "maxima": [
+                    2
+                  ]
+                },
+                "reason": "borne des cl\u00e9s non vues conserv\u00e9e",
+                "probe_count": {
+                  "status": "bound_interval",
+                  "central": 32903.5,
+                  "interval": [
+                    1071.0,
+                    64736
+                  ]
+                }
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": {
+                  "central": 11674.83,
+                  "interval": [
+                    1170.11,
+                    22179.56
+                  ]
+                }
+              },
+              "decision": {
+                "status": "undetermined",
+                "selected": null
+              }
+            },
+            {
+              "acquired": "probe32",
+              "observation": {
+                "name": "probe32",
+                "size": 32,
+                "insertions": 32,
+                "total_probes": 43,
+                "mean_probes": 1.34375,
+                "max_probes": 3,
+                "acquisition_cost": 75
+              },
+              "inference": {
+                "status": "accepted",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "les cl\u00e9s non vues peuvent former des clusters plus grands"
+                  ],
+                  "required_scales": 1,
+                  "acceptance": "au moins un micro-probe; borne structurelle conserv\u00e9e",
+                  "output": "bound_interval"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16,
+                    32
+                  ],
+                  "means": [
+                    1.125,
+                    1.34375
+                  ],
+                  "maxima": [
+                    2,
+                    3
+                  ]
+                },
+                "reason": "borne des cl\u00e9s non vues conserv\u00e9e",
+                "probe_count": {
+                  "status": "bound_interval",
+                  "central": 24915.62,
+                  "interval": [
+                    1279.25,
+                    48552
+                  ]
+                }
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": {
+                  "central": 9038.83,
+                  "interval": [
+                    1238.83,
+                    16838.84
+                  ]
+                }
+              },
+              "decision": {
+                "status": "undetermined",
+                "selected": null
+              }
+            },
+            {
+              "acquired": "probe64",
+              "observation": {
+                "name": "probe64",
+                "size": 64,
+                "insertions": 64,
+                "total_probes": 119,
+                "mean_probes": 1.859375,
+                "max_probes": 4,
+                "acquisition_cost": 183
+              },
+              "inference": {
+                "status": "accepted",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "les cl\u00e9s non vues peuvent former des clusters plus grands"
+                  ],
+                  "required_scales": 1,
+                  "acceptance": "au moins un micro-probe; borne structurelle conserv\u00e9e",
+                  "output": "bound_interval"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16,
+                    32,
+                    64
+                  ],
+                  "means": [
+                    1.125,
+                    1.34375,
+                    1.859375
+                  ],
+                  "maxima": [
+                    2,
+                    3,
+                    4
+                  ]
+                },
+                "reason": "borne des cl\u00e9s non vues conserv\u00e9e",
+                "probe_count": {
+                  "status": "bound_interval",
+                  "central": 18021.06,
+                  "interval": [
+                    1770.12,
+                    34272
+                  ]
+                }
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": {
+                  "central": 6763.63,
+                  "interval": [
+                    1400.82,
+                    12126.44
+                  ]
+                }
+              },
+              "decision": {
+                "status": "undetermined",
+                "selected": null
+              }
+            }
+          ],
+          "observations": {
+            "probe16": {
+              "name": "probe16",
+              "size": 16,
+              "insertions": 16,
+              "total_probes": 18,
+              "mean_probes": 1.125,
+              "max_probes": 2,
+              "acquisition_cost": 34
+            },
+            "probe32": {
+              "name": "probe32",
+              "size": 32,
+              "insertions": 32,
+              "total_probes": 43,
+              "mean_probes": 1.34375,
+              "max_probes": 3,
+              "acquisition_cost": 75
+            },
+            "probe64": {
+              "name": "probe64",
+              "size": 64,
+              "insertions": 64,
+              "total_probes": 119,
+              "mean_probes": 1.859375,
+              "max_probes": 4,
+              "acquisition_cost": 183
+            }
+          },
+          "total_acquisition_cost": 292,
+          "final_inference": {
+            "status": "accepted",
+            "contract": {
+              "observes": "probe_count",
+              "assumptions": [
+                "les cl\u00e9s non vues peuvent former des clusters plus grands"
+              ],
+              "required_scales": 1,
+              "acceptance": "au moins un micro-probe; borne structurelle conserv\u00e9e",
+              "output": "bound_interval"
+            },
+            "evidence": {
+              "available_scales": [
+                16,
+                32,
+                64
+              ],
+              "means": [
+                1.125,
+                1.34375,
+                1.859375
+              ],
+              "maxima": [
+                2,
+                3,
+                4
+              ]
+            },
+            "reason": "borne des cl\u00e9s non vues conserv\u00e9e",
+            "probe_count": {
+              "status": "bound_interval",
+              "central": 18021.06,
+              "interval": [
+                1770.12,
+                34272
+              ]
+            }
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash": {
+              "central": 6763.63,
+              "interval": [
+                1400.82,
+                12126.44
+              ]
+            }
+          },
+          "decision": {
+            "status": "undetermined",
+            "selected": null
+          },
+          "oracle_evaluation": {
+            "observed_probes": 8253,
+            "probe_interval": [
+              1770.12,
+              34272
+            ],
+            "coverage": true,
+            "decision_correct": null,
+            "outcome": "refusal_to_conclude"
+          }
+        },
+        "multi_scale": {
+          "contract": "multi_scale",
+          "history": [
+            {
+              "acquired": "probe16",
+              "observation": {
+                "name": "probe16",
+                "size": 16,
+                "insertions": 16,
+                "total_probes": 18,
+                "mean_probes": 1.125,
+                "max_probes": 2,
+                "acquisition_cost": 34
+              },
+              "inference": {
+                "status": "insufficient_evidence",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+                  ],
+                  "required_scales": 3,
+                  "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+                  "stability_threshold": 0.2,
+                  "output": "estimate_interval_or_insufficient_evidence"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16
+                  ],
+                  "means": [
+                    1.125
+                  ],
+                  "maxima": [
+                    2
+                  ]
+                },
+                "reason": "3 \u00e9chelle(s) requise(s)"
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": null
+              },
+              "decision": {
+                "status": "insufficient_evidence",
+                "selected": null
+              }
+            },
+            {
+              "acquired": "probe32",
+              "observation": {
+                "name": "probe32",
+                "size": 32,
+                "insertions": 32,
+                "total_probes": 43,
+                "mean_probes": 1.34375,
+                "max_probes": 3,
+                "acquisition_cost": 75
+              },
+              "inference": {
+                "status": "insufficient_evidence",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+                  ],
+                  "required_scales": 3,
+                  "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+                  "stability_threshold": 0.2,
+                  "output": "estimate_interval_or_insufficient_evidence"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16,
+                    32
+                  ],
+                  "means": [
+                    1.125,
+                    1.34375
+                  ],
+                  "maxima": [
+                    2,
+                    3
+                  ]
+                },
+                "reason": "3 \u00e9chelle(s) requise(s)"
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": null
+              },
+              "decision": {
+                "status": "insufficient_evidence",
+                "selected": null
+              }
+            },
+            {
+              "acquired": "probe64",
+              "observation": {
+                "name": "probe64",
+                "size": 64,
+                "insertions": 64,
+                "total_probes": 119,
+                "mean_probes": 1.859375,
+                "max_probes": 4,
+                "acquisition_cost": 183
+              },
+              "inference": {
+                "status": "insufficient_evidence",
+                "contract": {
+                  "observes": "probe_count",
+                  "assumptions": [
+                    "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+                  ],
+                  "required_scales": 3,
+                  "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+                  "stability_threshold": 0.2,
+                  "output": "estimate_interval_or_insufficient_evidence"
+                },
+                "evidence": {
+                  "available_scales": [
+                    16,
+                    32,
+                    64
+                  ],
+                  "means": [
+                    1.125,
+                    1.34375,
+                    1.859375
+                  ],
+                  "maxima": [
+                    2,
+                    3,
+                    4
+                  ],
+                  "relative_changes": [
+                    0.1944,
+                    0.3837
+                  ],
+                  "maximum_relative_change": 0.3837
+                },
+                "reason": "instabilit\u00e9 sup\u00e9rieure au seuil pr\u00e9d\u00e9fini"
+              },
+              "costs": {
+                "sorted": {
+                  "central": 1643.26,
+                  "interval": [
+                    698.26,
+                    1748.26
+                  ]
+                },
+                "hash": null
+              },
+              "decision": {
+                "status": "insufficient_evidence",
+                "selected": null
+              }
+            }
+          ],
+          "observations": {
+            "probe16": {
+              "name": "probe16",
+              "size": 16,
+              "insertions": 16,
+              "total_probes": 18,
+              "mean_probes": 1.125,
+              "max_probes": 2,
+              "acquisition_cost": 34
+            },
+            "probe32": {
+              "name": "probe32",
+              "size": 32,
+              "insertions": 32,
+              "total_probes": 43,
+              "mean_probes": 1.34375,
+              "max_probes": 3,
+              "acquisition_cost": 75
+            },
+            "probe64": {
+              "name": "probe64",
+              "size": 64,
+              "insertions": 64,
+              "total_probes": 119,
+              "mean_probes": 1.859375,
+              "max_probes": 4,
+              "acquisition_cost": 183
+            }
+          },
+          "total_acquisition_cost": 292,
+          "final_inference": {
+            "status": "insufficient_evidence",
+            "contract": {
+              "observes": "probe_count",
+              "assumptions": [
+                "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+              ],
+              "required_scales": 3,
+              "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+              "stability_threshold": 0.2,
+              "output": "estimate_interval_or_insufficient_evidence"
+            },
+            "evidence": {
+              "available_scales": [
+                16,
+                32,
+                64
+              ],
+              "means": [
+                1.125,
+                1.34375,
+                1.859375
+              ],
+              "maxima": [
+                2,
+                3,
+                4
+              ],
+              "relative_changes": [
+                0.1944,
+                0.3837
+              ],
+              "maximum_relative_change": 0.3837
+            },
+            "reason": "instabilit\u00e9 sup\u00e9rieure au seuil pr\u00e9d\u00e9fini"
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 1643.26,
+              "interval": [
+                698.26,
+                1748.26
+              ]
+            },
+            "hash": null
+          },
+          "decision": {
+            "status": "insufficient_evidence",
+            "selected": null
+          },
+          "oracle_evaluation": {
+            "observed_probes": 8253,
+            "probe_interval": null,
+            "coverage": null,
+            "decision_correct": null,
+            "outcome": "refusal_to_conclude"
+          }
+        }
+      },
+      "initial_sorted_cost": {
+        "central": 1643.26,
+        "interval": [
+          698.26,
+          1748.26
+        ]
+      },
+      "oracle": {
+        "solutions": {
+          "sorted+binary_lookup+dense_walk": {
+            "vector": {
+              "comparisons": 4202,
+              "probes": 0,
+              "sequential_reads": 2660,
+              "random_accesses": 4202,
+              "base_writes": 1084,
+              "auxiliary_writes": 0,
+              "reserved_cells": 1064,
+              "allocations": 2
+            },
+            "cost": 1643.76,
+            "checksum": 103348836,
+            "wall_ns": 1385711
+          },
+          "hash+linear_probe+dense_view": {
+            "vector": {
+              "comparisons": 8253,
+              "probes": 8253,
+              "sequential_reads": 2660,
+              "random_accesses": 8253,
+              "base_writes": 1084,
+              "auxiliary_writes": 1084,
+              "reserved_cells": 6676,
+              "allocations": 4
+            },
+            "cost": 3540.17,
+            "checksum": 103348836,
+            "wall_ns": 1709036
+          }
+        },
+        "selected": "sorted+binary_lookup+dense_walk"
+      }
+    },
+    {
+      "workload": "walk_heavy",
+      "contracts": {
+        "naive_representative": {
+          "contract": "naive_representative",
+          "history": [],
+          "observations": {},
+          "total_acquisition_cost": 0,
+          "final_inference": {
+            "status": "not_needed"
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash": {
+              "central": 5870.68,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk"
+          },
+          "oracle_evaluation": {
+            "observed_probes": 5319,
+            "probe_interval": null,
+            "coverage": null,
+            "decision_correct": true,
+            "outcome": "correct_decision_no_inference_needed"
+          }
+        },
+        "conservative": {
+          "contract": "conservative",
+          "history": [],
+          "observations": {},
+          "total_acquisition_cost": 0,
+          "final_inference": {
+            "status": "not_needed"
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash": {
+              "central": 5870.68,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk"
+          },
+          "oracle_evaluation": {
+            "observed_probes": 5319,
+            "probe_interval": null,
+            "coverage": null,
+            "decision_correct": true,
+            "outcome": "correct_decision_no_inference_needed"
+          }
+        },
+        "multi_scale": {
+          "contract": "multi_scale",
+          "history": [],
+          "observations": {},
+          "total_acquisition_cost": 0,
+          "final_inference": {
+            "status": "not_needed"
+          },
+          "final_costs": {
+            "sorted": {
+              "central": 5822.26,
+              "interval": [
+                5664.76,
+                5839.76
+              ]
+            },
+            "hash": {
+              "central": 5870.68,
+              "interval": [
+                6069.34,
+                111557.8
+              ]
+            }
+          },
+          "decision": {
+            "status": "decidable",
+            "selected": "sorted+binary_lookup+dense_walk"
+          },
+          "oracle_evaluation": {
+            "observed_probes": 5319,
+            "probe_interval": null,
+            "coverage": null,
+            "decision_correct": true,
+            "outcome": "correct_decision_no_inference_needed"
+          }
+        }
+      },
+      "initial_sorted_cost": {
+        "central": 5822.26,
+        "interval": [
+          5664.76,
+          5839.76
+        ]
+      },
+      "oracle": {
+        "solutions": {
+          "sorted+binary_lookup+dense_walk": {
+            "vector": {
+              "comparisons": 701,
+              "probes": 0,
+              "sequential_reads": 53200,
+              "random_accesses": 701,
+              "base_writes": 1084,
+              "auxiliary_writes": 0,
+              "reserved_cells": 1064,
+              "allocations": 2
+            },
+            "cost": 5822.51,
+            "checksum": 1809633104,
+            "wall_ns": 6620642
+          },
+          "hash+linear_probe+dense_view": {
+            "vector": {
+              "comparisons": 5319,
+              "probes": 5319,
+              "sequential_reads": 53200,
+              "random_accesses": 5319,
+              "base_writes": 1084,
+              "auxiliary_writes": 1084,
+              "reserved_cells": 6676,
+              "allocations": 4
+            },
+            "cost": 7625.95,
+            "checksum": 1809633104,
+            "wall_ns": 6701784
+          }
+        },
+        "selected": "sorted+binary_lookup+dense_walk"
+      }
+    }
+  ],
+  "positive_control": {
+    "key_distribution": "sequential distinct keys",
+    "stages": [
+      {
+        "acquired": "probe16",
+        "observation": {
+          "name": "probe16",
+          "size": 16,
+          "insertions": 16,
+          "total_probes": 16,
+          "mean_probes": 1.0,
+          "max_probes": 1,
+          "acquisition_cost": 32
+        },
+        "inference": {
+          "status": "insufficient_evidence",
+          "contract": {
+            "observes": "probe_count",
+            "assumptions": [
+              "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+            ],
+            "required_scales": 3,
+            "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+            "stability_threshold": 0.2,
+            "output": "estimate_interval_or_insufficient_evidence"
+          },
+          "evidence": {
+            "available_scales": [
+              16
+            ],
+            "means": [
+              1.0
+            ],
+            "maxima": [
+              1
+            ]
+          },
+          "reason": "3 \u00e9chelle(s) requise(s)"
+        }
+      },
+      {
+        "acquired": "probe32",
+        "observation": {
+          "name": "probe32",
+          "size": 32,
+          "insertions": 32,
+          "total_probes": 32,
+          "mean_probes": 1.0,
+          "max_probes": 1,
+          "acquisition_cost": 64
+        },
+        "inference": {
+          "status": "insufficient_evidence",
+          "contract": {
+            "observes": "probe_count",
+            "assumptions": [
+              "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+            ],
+            "required_scales": 3,
+            "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+            "stability_threshold": 0.2,
+            "output": "estimate_interval_or_insufficient_evidence"
+          },
+          "evidence": {
+            "available_scales": [
+              16,
+              32
+            ],
+            "means": [
+              1.0,
+              1.0
+            ],
+            "maxima": [
+              1,
+              1
+            ]
+          },
+          "reason": "3 \u00e9chelle(s) requise(s)"
+        }
+      },
+      {
+        "acquired": "probe64",
+        "observation": {
+          "name": "probe64",
+          "size": 64,
+          "insertions": 64,
+          "total_probes": 64,
+          "mean_probes": 1.0,
+          "max_probes": 1,
+          "acquisition_cost": 128
+        },
+        "inference": {
+          "status": "accepted",
+          "contract": {
+            "observes": "probe_count",
+            "assumptions": [
+              "stabilit\u00e9 entre trois tailles embo\u00eet\u00e9es"
+            ],
+            "required_scales": 3,
+            "acceptance": "trois \u00e9chelles et variation relative maximale \u2264 0,20",
+            "stability_threshold": 0.2,
+            "output": "estimate_interval_or_insufficient_evidence"
+          },
+          "evidence": {
+            "available_scales": [
+              16,
+              32,
+              64
+            ],
+            "means": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "maxima": [
+              1,
+              1,
+              1
+            ],
+            "relative_changes": [
+              0.0,
+              0.0
+            ],
+            "maximum_relative_change": 0.0
+          },
+          "reason": "stabilit\u00e9 multi-\u00e9chelle soutenue",
+          "probe_count": {
+            "status": "estimate_interval_or_insufficient_evidence",
+            "central": 952.0,
+            "interval": [
+              952,
+              1071.0
+            ]
+          }
+        }
+      }
+    ],
+    "oracle_probes": 952,
+    "interval": [
+      952,
+      1071.0
+    ],
+    "coverage": true
+  }
+}
