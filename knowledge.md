@@ -742,3 +742,7 @@ Inventaire POC 12 : `poc12.py` (~400 lignes),
 `poc12_extractions.json`, `poc12_measurements.json` généré, et les fixtures A/B
 inchangées du POC 11. Aucune dépendance externe. Reproduction :
 `python3 -B poc12.py`.
+
+## Misc Sol
+
+Le contexte QuickDraw B0→B1 de réutilisation peut être décrit et décidé sans mobiliser l'ontologie algorithmique élémentaire. Le rapprochement B1 ↔ séquence ordonnée explique un mécanisme, mais n'est pas nécessaire à la décision de conversion/amortissement. L'activation de plusieurs domaines ne doit donc pas être recherchée comme un objectif en soi.
