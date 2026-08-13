@@ -1,0 +1,25 @@
+{
+  "platform": "AMD Ryzen AI 9 HX 370 / x86-64 Linux / GCC 16.1.1 -O3",
+  "workloads": {
+    "sparse_sparse_intersection": {
+      "universe": "512x256",
+      "active_pixels": 990,
+      "bbox_pixels": 990,
+      "representations": {
+        "bitmap_mask": {"storage_bytes": 16408, "apply_us": 78.81905},
+        "runs": {"storage_bytes": 2392, "apply_us": 0.91924},
+        "transitions": {"storage_bytes": 616, "apply_us": 70.20488}
+      }
+    },
+    "fragmented_fragmented_intersection": {
+      "universe": "512x256",
+      "active_pixels": 65534,
+      "bbox_pixels": 131072,
+      "representations": {
+        "bitmap_mask": {"storage_bytes": 16408, "apply_us": 336.54155},
+        "runs": {"storage_bytes": 177200, "apply_us": 273.13585},
+        "transitions": {"storage_bytes": 1416, "apply_us": 364.43475}
+      }
+    }
+  }
+}
