@@ -1,0 +1,32 @@
+{
+  "platform": "AMD Ryzen AI 9 HX 370 / x86-64 Linux / GCC 16.1.1 -O3",
+  "source": "quickdraw_region_ops_measurements.json",
+  "cases": {
+    "sparse_sparse_intersection": {
+      "production_initial_us": 5.281,
+      "apply_bitmap_us": 78.81905,
+      "apply_runs_us": 0.9192400000000001,
+      "storage_bitmap": 16408,
+      "storage_runs": 2392,
+      "conversion_median_us": 5105.7,
+      "conversion_p95_us": 12420.414,
+      "logical_region_preserved": true,
+      "samples": 31,
+      "source_representation": "bitmap",
+      "target_representation": "runs"
+    },
+    "fragmented_fragmented_intersection": {
+      "production_initial_us": 5.301,
+      "apply_bitmap_us": 336.54155,
+      "apply_runs_us": 273.13585,
+      "storage_bitmap": 16408,
+      "storage_runs": 177200,
+      "conversion_median_us": 7543.835,
+      "conversion_p95_us": 8919.786,
+      "logical_region_preserved": true,
+      "samples": 31,
+      "source_representation": "bitmap",
+      "target_representation": "runs"
+    }
+  }
+}

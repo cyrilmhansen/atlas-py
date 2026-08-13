@@ -7,7 +7,7 @@ from semantic_core import (
     ACTIVE_PIXELS, BBOX_PIXELS, BYTES, COUNT, DENSITY, DURATION,
     MICROSECONDS, PERSISTENT_STORAGE, REUSE_COUNT, RUN_COUNT,
     TEMPORARY_STORAGE, Representation, LogicalObject, active_pixels,
-    bbox_pixels, measured, quantity,
+    bbox_pixels, derived_duration, measured, quantity, repeat,
 )
 
 
@@ -39,7 +39,7 @@ def main() -> None:
                        "quickdraw_region_ops_measurements.json", platform=fixture["platform"],
                        workload="sparse_sparse/intersection", phase="boolean_op")
     n = quantity("N", REUSE_COUNT, COUNT, "result region", "exact", "scenario parameter")
-    lifecycle = build + boolean + n * b1_apply
+    lifecycle = derived_duration("sparse intersection lifecycle", build + boolean + repeat(n, b1_apply))
 
     print("same logical object:", bitmap, runs, transitions)
     print("density:", density.render(), "=", density.evaluate({}), density.kind.name, density.unit.name)
