@@ -193,3 +193,18 @@ mesures détaillées sont dans `quickdraw_region_ops_measurements.json`.
   cycle de vie et le nombre de réutilisations.
 - Limite : une conversion entre représentations n'a pas été mesurée ; le
   bénéfice d'une stratégie mixte reste une question ouverte.
+
+## Conversion native du résultat B0 vers B1
+
+- Problème : exploiter une combinaison B0 rapide puis une application B1
+  éparse sans changer la région logique.
+- Technique : passer le bitmap résultat effectivement produit par `qro_b0_op`
+  à `qro_b1_build`, puis vérifier le hash canonique et l'application.
+- Observé : dans le harness C homogène, `sparse_sparse/intersection` donne un
+  break-even point-estimate à N=7 et le cycle direct confirme le gain à N=6/7.
+  `fragmented_fragmented/intersection` donne N=4 par addition des médianes,
+  mais la mesure end-to-end à N=4 reste à égalité dans le bruit.
+- Provenance : `semantic_core_v1_native_conversion.c` et
+  `semantic_core_v1_native_measurements.json`, plateforme x86-64 Linux.
+- Limite : ces seuils sont locaux à ce résultat, ce protocole et cette
+  plateforme ; ils ne constituent pas une loi de performance de B0 ou B1.

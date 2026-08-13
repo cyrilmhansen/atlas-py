@@ -1,0 +1,101 @@
+{
+  "program": "semantic_core_v1_native_conversion.c + quickdraw_region_ops.c",
+  "compiler": "native C harness",
+  "cases": [
+    {
+      "workload": "sparse_sparse_intersection",
+      "operation": "intersect",
+      "source_representation": "B0_bitmap_result",
+      "target_representation": "B1_runs_converted",
+      "timer": "CLOCK_MONOTONIC_RAW",
+      "samples": 31,
+      "apply_batch": 100,
+      "production_median_ns": 17693,
+      "conversion_median_ns": 529700,
+      "apply_b0_median_ns_per_use": 79410,
+      "apply_b1_median_ns_per_use": 918,
+      "b0_storage_bytes": 16408,
+      "b1_storage_bytes": 2392,
+      "b0_canonical_hash": "bb71bf103bbe8f8f",
+      "b1_canonical_hash": "bb71bf103bbe8f8f",
+      "logical_identity": true,
+      "calculated_break_even": 7,
+      "end_to_end": {
+        "N_minus_1": {
+          "N": 6,
+          "without_ns": 479205,
+          "with_ns": 217170
+        },
+        "N": {
+          "N": 7,
+          "without_ns": 556501,
+          "with_ns": 218052
+        }
+      }
+    },
+    {
+      "workload": "fragmented_fragmented_intersection",
+      "operation": "intersect",
+      "source_representation": "B0_bitmap_result",
+      "target_representation": "B1_runs_converted",
+      "timer": "CLOCK_MONOTONIC_RAW",
+      "samples": 31,
+      "apply_batch": 100,
+      "production_median_ns": 5631,
+      "conversion_median_ns": 251014,
+      "apply_b0_median_ns_per_use": 333785,
+      "apply_b1_median_ns_per_use": 270234,
+      "b0_storage_bytes": 16408,
+      "b1_storage_bytes": 177200,
+      "b0_canonical_hash": "f6481d13254fb6ef",
+      "b1_canonical_hash": "f6481d13254fb6ef",
+      "logical_identity": true,
+      "calculated_break_even": 4,
+      "end_to_end": {
+        "N_minus_1": {
+          "N": 3,
+          "without_ns": 1002533,
+          "with_ns": 1072005
+        },
+        "N": {
+          "N": 4,
+          "without_ns": 1340070,
+          "with_ns": 1334059
+        }
+      }
+    }
+  ],
+  "experiment": "semantic-core-v1-native-b0-to-b1",
+  "implementation": {
+    "executable": "semantic_core_v1_native_conversion",
+    "sources": [
+      "semantic_core_v1_native_conversion.c",
+      "quickdraw_region_ops.c",
+      "quickdraw_bitblt.c"
+    ],
+    "compiler": "cc",
+    "cflags": "-O3 -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic",
+    "sanitizers": "address,undefined",
+    "compiler_version": "cc (GCC) 16.1.1 20260728"
+  },
+  "source_sha256": {
+    "semantic_core_v1_native_conversion.c": "01358bd6d70220edfee3069d9017a7a5b7ffb02389ad03cb7edfea93b2d0ba10",
+    "quickdraw_region_ops.c": "1dc6480bda9e2e9716434aa518b36969398036e88dff2a5d5e3ac79c93cdfc2f",
+    "quickdraw_bitblt.c": "b10835a18039d63b7412a46a38972aa878bdb6b33a9796bb18be46bc315bd5bc"
+  },
+  "platform": {
+    "system": "Linux",
+    "release": "7.2.0-rc6-1-cachyos-rc",
+    "machine": "x86_64",
+    "python": "3.14.6",
+    "cpu_affinity": "CPU 0 requested by executable"
+  },
+  "protocol": {
+    "timer": "CLOCK_MONOTONIC_RAW",
+    "samples": 31,
+    "warmup": 1,
+    "apply_batch": 100,
+    "statistic": "median of 31 samples; application median divided by batch",
+    "result_chain": "inputs -> B0 build/op -> exact B0 result -> B1 conversion -> apply"
+  }
+}

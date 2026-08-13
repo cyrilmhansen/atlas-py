@@ -1,0 +1,15 @@
+CC ?= cc
+CFLAGS ?= -O3 -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic
+.PHONY: all test sanitize clean
+all: semantic_core_v1_native_conversion
+semantic_core_v1_native_conversion: semantic_core_v1_native_conversion.c quickdraw_region_ops.c quickdraw_region_ops.h quickdraw_bitblt.c quickdraw_bitblt.h
+	$(CC) $(CFLAGS) semantic_core_v1_native_conversion.c quickdraw_region_ops.c quickdraw_bitblt.c -o $@
+semantic_core_v1_native_conversion_sanitize: semantic_core_v1_native_conversion.c quickdraw_region_ops.c quickdraw_region_ops.h quickdraw_bitblt.c quickdraw_bitblt.h
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -fsanitize=address,undefined semantic_core_v1_native_conversion.c quickdraw_region_ops.c quickdraw_bitblt.c -o $@
+test: semantic_core_v1_native_conversion semantic_core_v1_native_conversion_sanitize
+	./semantic_core_v1_native_conversion > semantic_core_v1_native_measurements.json
+	python3 -m json.tool semantic_core_v1_native_measurements.json >/dev/null
+sanitize: semantic_core_v1_native_conversion_sanitize
+	ASAN_OPTIONS=detect_leaks=0 ./semantic_core_v1_native_conversion_sanitize >/dev/null
+clean:
+	$(RM) semantic_core_v1_native_conversion semantic_core_v1_native_conversion_sanitize
