@@ -1,7 +1,44 @@
-PROMPT_VERSION = "corpus-miner-v1"
+from .models import ALLOWED_FACETS
 
 
-def build_prompt(numbered_source: str) -> str:
+PROMPT_VERSION = "corpus-miner-v4"
+DEFAULT_REFERENCE_CONTEXT = """Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.
+
+Prefer knowledge useful for understanding, implementing, testing, comparing,
+maintaining, diagnosing, optimising, or selecting production-quality software
+mechanisms.
+
+Particularly relevant knowledge includes:
+- mechanisms and algorithms;
+- data structures and representations;
+- invariants and preconditions;
+- behavioural and correctness properties;
+- failure modes and limitations;
+- implementation trade-offs;
+- performance-relevant mechanisms;
+- workload or platform dependencies;
+- interface and behavioural contracts;
+- transformations between representations;
+- experimentally testable distinctions;
+- primary references that may provide stronger evidence.
+
+Production-quality usefulness does not mean modern-only: historical algorithms,
+old implementations, academic papers, unusual architectures, and obsolete
+systems remain relevant when their knowledge is reusable for engineering
+reasoning."""
+FACET_DESCRIPTIONS = {
+    "term": "local vocabulary or term",
+    "mechanism": "procedure or mechanism",
+    "precondition": "required condition",
+    "property": "asserted property",
+    "relation": "relation between elements",
+    "reference": "reference or citation",
+    "other": "useful fact that does not fit elsewhere",
+}
+
+
+def build_prompt(numbered_source: str, reference_context: str = DEFAULT_REFERENCE_CONTEXT) -> str:
+    facet_contract = "\n".join(f"- {facet}: {FACET_DESCRIPTIONS[facet]}" for facet in sorted(ALLOWED_FACETS))
     return f"""You are extracting bounded local knowledge for Atlas.
 Use only the numbered source below for SOURCE FACTS. Do not silently complete it
 with pretrained knowledge. Unsupported ideas must be HYPOTHESIS or QUESTION.
@@ -10,9 +47,49 @@ translation would change meaning. Extract only useful distinctions, not a full
 summary. Return JSON only, with schema_version 1 and keys observations, claims,
 questions.
 
-Every observation needs key, facet, statement, start_line, end_line. Claims must
+Every observation needs key, facet, statement, start_line, end_line. The facet
+MUST be exactly one of: {", ".join(sorted(ALLOWED_FACETS))}.
+Facet meanings:
+{facet_contract}
+Claims must
 have status DERIVED_INTERPRETATION or HYPOTHESIS and supported_by observation
-keys. Questions need question, reason, evidence_needed, and derived_from keys.
+keys. Claims and questions are NOT quotas. Empty `claims` and `questions`
+arrays are preferred when the source does not justify useful entries. A claim
+must combine or interpret observations in a useful way; do not create one just
+to restate an observation.
+
+If the source only says "X is not always faster than Y" or "no universal
+winner is established", preserve that non-affirmation. Do not turn it into
+"performance depends on workload/context/conditions" unless the source also
+supports that dependence. Unsupported interpretation must be HYPOTHESIS or be
+omitted.
+
+A missing piece of information does not by itself justify a question. Every
+generated question must pass CONSEQUENCE_IF_UNKNOWN: explain in `reason` how
+the missing information could affect understanding a mechanism, distinguish
+mechanisms or representations, determine a property or precondition, resolve a
+contradiction, test an equivalence, design or interpret an experiment, or make
+a relevant decision. Questions explicitly asked by the source may be retained
+with `derived_from: []`; preserve their requested evidence when provided.
+Questions are not a quota, and do not invent questions about absent definitions
+or subtle term differences without a concrete consequence. Every question object
+MUST use exactly these semantic fields: `question`, `reason`,
+`evidence_needed`, and `derived_from`. When the source explicitly provides
+"Evidence needed", preserve it in `evidence_needed`; never use
+`requested_evidence` or `statement` for a question.
+
+SOURCE answers: "What is supported?"
+REFERENCE CONTEXT answers: "What is worth extracting?"
+
+REFERENCE CONTEXT
+{reference_context}
+
+The Reference Context guides relevance only. It is NOT evidence. Never
+introduce a fact, assumption, terminology, relation, mechanism, property, or
+conclusion merely because it is common engineering knowledge or appears in the
+Reference Context. SOURCE FACTS must still be supported only by the numbered
+SOURCE. Do not turn the Reference Context into an ontology, taxonomy, closed
+vocabulary, or domain assignment.
 
 SOURCE:
 {numbered_source}

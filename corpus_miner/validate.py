@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from .models import ALLOWED_CLAIM_STATUSES, ALLOWED_FACETS, NumberedSource, ValidatedExtraction
@@ -8,9 +9,22 @@ class ValidationError(ValueError):
     pass
 
 
+_JSON_FENCE = re.compile(r"\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```[ \t]*\s*\Z", re.DOTALL)
+
+
+def _normalize_json_transport(raw: str) -> str:
+    """Accept raw JSON or one complete, JSON-only Markdown fence."""
+    match = _JSON_FENCE.fullmatch(raw)
+    if match:
+        return match.group(1)
+    if raw.lstrip().startswith("```") or raw.rstrip().endswith("```"):
+        raise ValidationError("response must be raw JSON or one JSON-only Markdown fence")
+    return raw
+
+
 def parse_and_validate(raw: str, source: NumberedSource) -> ValidatedExtraction:
     try:
-        value = json.loads(raw)
+        value = json.loads(_normalize_json_transport(raw))
     except json.JSONDecodeError as exc:
         raise ValidationError(f"invalid JSON: {exc}") from exc
     if not isinstance(value, dict) or value.get("schema_version") != 1:

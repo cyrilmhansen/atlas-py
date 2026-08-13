@@ -1,16 +1,20 @@
 import json
+import io
 import sqlite3
 import tempfile
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from corpus_miner.backend import BackendError, FakeBackend, OpenAICompatibleBackend
 from corpus_miner.cli import ingest_file, numbered_source
+from corpus_miner.evaluate import evaluate
 from corpus_miner.markdown import markdown_filename, render
 from corpus_miner.models import ValidatedExtraction
-from corpus_miner.prompt import PROMPT_VERSION
+from corpus_miner.models import ALLOWED_FACETS
+from corpus_miner.prompt import DEFAULT_REFERENCE_CONTEXT, PROMPT_VERSION, build_prompt
 from corpus_miner.storage import connect, ingest
 from corpus_miner.validate import ValidationError, parse_and_validate
 
@@ -59,6 +63,96 @@ class CorpusMinerTests(unittest.TestCase):
         accepted, _ = ingest(db, self.source, parsed, json.dumps(extraction()), "fake", None, PROMPT_VERSION, "fixture.md", None, "reference")
         self.assertTrue(accepted)
         self.assertEqual(db.execute("SELECT COUNT(*) FROM observations").fetchone()[0], 5)
+
+    def test_prompt_declares_every_allowed_facet(self):
+        prompt = build_prompt("[L1] example")
+        self.assertEqual(PROMPT_VERSION, "corpus-miner-v4")
+        for facet in ALLOWED_FACETS:
+            self.assertIn(facet, prompt)
+        self.assertIn("MUST be exactly one of", prompt)
+
+    def test_prompt_makes_claims_questions_optional_and_consequential(self):
+        prompt = build_prompt("[L1] example")
+        self.assertIn("Claims and questions are NOT quotas", prompt)
+        self.assertIn("CONSEQUENCE_IF_UNKNOWN", prompt)
+        self.assertIn("not always faster", prompt)
+        self.assertIn("no universal", prompt)
+
+    def test_reference_context_default_and_custom_are_explicitly_separated(self):
+        default = build_prompt("[L1] source")
+        self.assertIn("REFERENCE CONTEXT", default)
+        self.assertIn("Atlas builds reusable engineering knowledge", default)
+        self.assertIn("SOURCE answers: \"What is supported?\"", default)
+        self.assertIn("REFERENCE CONTEXT answers: \"What is worth extracting?\"", default)
+        self.assertIn("It is NOT evidence", default)
+        self.assertIn("numbered\nSOURCE", default)
+        self.assertIn("historical algorithms", default)
+        self.assertEqual(DEFAULT_REFERENCE_CONTEXT.splitlines()[0],
+                         "Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.")
+        custom = build_prompt("[L1] source", reference_context="Only retain parser invariants.")
+        self.assertIn("Only retain parser invariants.", custom)
+        self.assertNotIn("Atlas builds reusable engineering knowledge about software", custom)
+
+    def test_reference_context_does_not_create_provenance(self):
+        custom = "The source contains no facts about parser invariants."
+        prompt = build_prompt("[L1] Source says only this.", reference_context=custom)
+        self.assertIn(custom, prompt)
+        value = {"schema_version": 1, "observations": [{
+            "key": "o1", "facet": "other", "statement": "Source says only this.",
+            "start_line": 1, "end_line": 1}], "claims": [], "questions": []}
+        parsed = parse_and_validate(json.dumps(value), numbered_source("source", "Source says only this."))
+        self.assertEqual(parsed.observations[0]["start_line"], 1)
+
+    def test_prompt_question_contract_matches_validator(self):
+        prompt = build_prompt("[L1] example")
+        for field in ("question", "reason", "evidence_needed", "derived_from"):
+            self.assertIn(f"`{field}`", prompt)
+        self.assertIn("never use", prompt)
+        self.assertIn("`requested_evidence`", prompt)
+        self.assertNotIn("question object\nMUST use exactly these semantic fields: `statement`", prompt)
+
+    def test_json_transport_accepts_raw_and_one_json_fence(self):
+        value = extraction(observations=[], claims=[], questions=[])
+        raw = json.dumps(value)
+        self.assertEqual(parse_and_validate(raw, self.source).observations, ())
+        self.assertEqual(parse_and_validate("```json\n" + raw + "\n```", self.source).observations, ())
+        self.assertEqual(parse_and_validate("```\n" + raw + "\n```", self.source).observations, ())
+        self.assertEqual(parse_and_validate("  \n```json\n" + raw + "\n```\n  ", self.source).observations, ())
+
+    def test_json_transport_rejects_explanatory_text_multiple_fences_and_bad_fence(self):
+        raw = json.dumps({"schema_version": 1, "observations": [], "claims": [], "questions": []})
+        invalid = [
+            "Explanation\n```json\n" + raw + "\n```",
+            "```json\n" + raw + "\n```\nExplanation",
+            "```json\n" + raw + "\n```\n```json\n" + raw + "\n```",
+            "```json\n{not-json}\n```",
+            raw + "\ncomment",
+        ]
+        for candidate in invalid:
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(ValidationError):
+                    parse_and_validate(candidate, self.source)
+
+    def test_explicit_source_question_may_have_no_evidence(self):
+        value = {"schema_version": 1, "observations": [], "claims": [], "questions": [{
+            "question": "What remains open?", "reason": "Explicitly stated by the source.",
+            "evidence_needed": "The requested experiment", "derived_from": [],
+        }]}
+        parsed = parse_and_validate(json.dumps(value), self.source)
+        self.assertEqual(parsed.questions[0]["derived_from"], [])
+
+    def test_explicit_question_evidence_uses_canonical_field(self):
+        value = {"schema_version": 1, "observations": [], "claims": [], "questions": [{
+            "question": "When does X become worthwhile?",
+            "reason": "Explicitly stated by the source.",
+            "evidence_needed": "benchmark Y",
+            "derived_from": [],
+        }]}
+        parsed = parse_and_validate(json.dumps(value), self.source)
+        question = parsed.questions[0]
+        self.assertEqual(question["question"], "When does X become worthwhile?")
+        self.assertEqual(question["evidence_needed"], "benchmark Y")
+        self.assertNotIn("requested_evidence", question)
 
     def test_markdown_filename_is_deterministic_and_safe(self):
         self.assertEqual(markdown_filename("nist/binary search: v1", "a" * 64),
@@ -184,6 +278,152 @@ class CorpusMinerTests(unittest.TestCase):
         try:
             raw = OpenAICompatibleBackend(f"http://127.0.0.1:{server.server_port}", "test").extract("prompt")
             self.assertEqual(parse_and_validate(raw, self.source).claims[0]["status"], "DERIVED_INTERPRETATION")
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
+
+    def test_thinking_on_off_and_default_payloads(self):
+        requests = []
+        response = json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode()
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+                self.wfile.write(response)
+            def log_message(self, *_args): pass
+        server = HTTPServer(("127.0.0.1", 0), Handler); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            OpenAICompatibleBackend(base, "test", thinking=True).extract("p1")
+            OpenAICompatibleBackend(base, "test", thinking=False).extract("p2")
+            OpenAICompatibleBackend(base, "test").extract("p3")
+            self.assertEqual(requests[0]["chat_template_kwargs"], {"enable_thinking": True})
+            self.assertEqual(requests[1]["chat_template_kwargs"], {"enable_thinking": False})
+            self.assertNotIn("chat_template_kwargs", requests[2])
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
+
+    def test_evaluation_selection_prompt_and_response_artifacts(self):
+        corpus = self.root / "corpus"
+        corpus.mkdir()
+        (corpus / "02-second.md").write_text("second", encoding="utf-8")
+        (corpus / "01-first.md").write_text("first", encoding="utf-8")
+        prompts = self.root / "prompts"
+        responses = self.root / "responses"
+        requests = []
+        response = json.dumps({"choices": [{"message": {
+            "reasoning_content": "private reasoning",
+            "content": '{"schema_version":1,"observations":[],"claims":[],"questions":[]}',
+        }}], "usage": {"prompt_tokens": 3}}).encode()
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(response)
+            def log_message(self, *_args): pass
+        server = HTTPServer(("127.0.0.1", 0), Handler); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                evaluate(str(corpus), str(self.root / "report.md"), f"http://127.0.0.1:{server.server_port}", "test", None,
+                         stream=False, show_prompt=True, save_prompts=str(prompts), only=["02-second.md", "01-first.md"],
+                         thinking=True, save_responses=str(responses))
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
+        self.assertEqual(len(requests), 2)
+        self.assertIn("[prompt]", output.getvalue())
+        self.assertIn(build_prompt(numbered_source("first", "first").text), output.getvalue())
+        self.assertEqual([request["messages"][0]["content"] for request in requests], [
+            (prompts / "01-first.md.prompt.txt").read_text(encoding="utf-8"),
+            (prompts / "02-second.md.prompt.txt").read_text(encoding="utf-8"),
+        ])
+        self.assertTrue(all(request["chat_template_kwargs"] == {"enable_thinking": True} for request in requests))
+        artifact = json.loads((responses / "01-first.md.response.json").read_text(encoding="utf-8"))
+        self.assertEqual(artifact["reasoning_content"], "private reasoning")
+        self.assertNotIn("private reasoning", artifact["content"])
+        self.assertEqual(artifact["validation_status"], "valid")
+        report = (self.root / "report.md").read_text(encoding="utf-8")
+        self.assertIn("- thinking: `on`", report)
+        self.assertIn("- streaming: `no`", report)
+        self.assertIn("- prompt: `corpus-miner-v4`", report)
+
+    def test_evaluation_unknown_fixture_is_rejected(self):
+        with self.assertRaises(ValueError):
+            evaluate(str(self.root), str(self.root / "report.md"), "http://127.0.0.1:1", "test", None,
+                     only=["missing.md"])
+
+    def test_stream_sse_reconstructs_reasoning_content_and_usage(self):
+        chunks = [
+            {"choices": [{"delta": {"reasoning_content": "think-1"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"reasoning_content": " think-2"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": '{"schema_version":1,'}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": '"observations":[],"claims":[],"questions":[]}'}, "finish_reason": "stop"}]},
+            {"usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18,
+                        "completion_tokens_details": {"reasoning_tokens": 3}}},
+        ]
+        lines = ["data: " + json.dumps(chunk) for chunk in chunks] + ["data: [DONE]"]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                self.server.seen_stream = request.get("stream")
+                self.server.seen_options = request.get("stream_options")
+                self.server.seen_thinking = request.get("chat_template_kwargs")
+                self.send_response(200); self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                for line in lines:
+                    self.wfile.write((line + "\n\n").encode()); self.wfile.flush()
+            def log_message(self, *_args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        reasoning, content = [], []
+        try:
+            result = OpenAICompatibleBackend(f"http://127.0.0.1:{server.server_port}", "test", thinking=False).extract_stream(
+                "prompt", reasoning.append, content.append)
+            self.assertEqual("".join(reasoning), "think-1 think-2")
+            self.assertEqual("".join(content), result.content)
+            parsed = parse_and_validate(result.content, self.source)
+            self.assertEqual(len(parsed.observations), 0)
+            self.assertEqual(result.usage["total_tokens"], 18)
+            self.assertTrue(server.seen_stream)
+            self.assertEqual(server.seen_options, {"include_usage": True})
+            self.assertEqual(server.seen_thinking, {"enable_thinking": False})
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
+
+    def test_stream_sse_without_reasoning_and_usage_only_chunk(self):
+        lines = [
+            "",
+            "data: " + json.dumps({"choices": [{"delta": {"content": "{}"}}]}),
+            "data: " + json.dumps({"usage": {"prompt_tokens": 2}}),
+            "data: [DONE]",
+        ]
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+                for line in lines: self.wfile.write((line + "\n\n").encode())
+            def log_message(self, *_args): pass
+        server = HTTPServer(("127.0.0.1", 0), Handler); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            result = OpenAICompatibleBackend(f"http://127.0.0.1:{server.server_port}", "test").extract_stream("prompt")
+            self.assertEqual(result.reasoning, "")
+            self.assertEqual(result.content, "{}")
+            self.assertEqual(result.usage["prompt_tokens"], 2)
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
+
+    def test_stream_sse_invalid_json_is_backend_error(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+                self.wfile.write(b"data: {not-json}\n\n")
+            def log_message(self, *_args): pass
+        server = HTTPServer(("127.0.0.1", 0), Handler); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            with self.assertRaises(BackendError):
+                OpenAICompatibleBackend(f"http://127.0.0.1:{server.server_port}", "test").extract_stream("prompt")
         finally:
             server.shutdown(); thread.join(); server.server_close()
 

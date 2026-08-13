@@ -14,6 +14,12 @@ python3 -m corpus_miner.cli ingest SOURCE.md --source-id example \
   --out corpus/extracted
 python3 -m corpus_miner.evaluate corpus_miner/evaluation reports/qwen.md \
   --base-url http://127.0.0.1:1234 --model Qwen
+python3 -m corpus_miner.cli evaluate corpus_miner/evaluation reports/qwen3.6-27b.md \
+  --base-url http://127.0.0.1:1234 \
+  --model Qwen3.6-27B-oQ4e-fp16-mtp --stream
+python3 -m corpus_miner.cli evaluate corpus_miner/evaluation reports/fixture-08.md \
+  --base-url http://127.0.0.1:1234 \
+  --model Qwen3.6-27B-oQ4e-fp16-mtp --only 08-open-question.md --show-prompt
 ```
 
 The fake backend is used by all deterministic tests. The OpenAI-compatible
@@ -52,3 +58,22 @@ have no originating observation when the source itself supplies no evidence.
 SQLite tables are `sources`, `corpus_entries`, `extraction_runs`,
 `observations`, `claims`, `claim_evidence`, `questions`, and
 `question_evidence`.
+
+The prompt separates the evidence boundary from the relevance boundary:
+`SOURCE` is the only basis for source-supported facts, while the default
+Reference Context identifies reusable software and systems engineering
+knowledge worth extracting. A caller may override it with
+`--reference-context TEXT` or `--reference-context-file PATH`; it is not an
+ontology, facet, or evidence source. Evaluation reports record its SHA-256.
+
+With `--stream`, the OpenAI-compatible backend requests SSE with
+`stream_options.include_usage`, displays reasoning and final content as they
+arrive, and reports server-provided token metrics. Without `--stream`, the
+original non-streaming request remains in use. The reasoning text is never
+sent to the Atlas validator or persisted as corpus knowledge.
+
+Evaluation can restrict the ordered fixture set with repeated `--only`, save
+exact prompts with `--save-prompts DIR`, and save per-fixture response
+telemetry with `--save-responses DIR`. `--thinking on` or `--thinking off`
+adds the corresponding `chat_template_kwargs.enable_thinking`; omitting it
+does not force a value.
