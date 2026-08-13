@@ -1,0 +1,2653 @@
+{
+  "historical_source": {
+    "repository": "https://github.com/jrk/QuickDraw.git",
+    "commit": "6377ec5d89735a11b3f6e1ae728f555936c7583f",
+    "files": {
+      "RgnOp.a": "900364197e48f0445361d50839d844afc632b4942ac163cc55783a476f0abb6c",
+      "Regions.a": "e673b7a31f029541ccfbe0415d6cf52fd60dd17cd2f936c5e8605e24baae2748",
+      "SeekRgn.a": "066b2e232133bebb8e6110479423f0d4f476924136ec9a0ea9e20d37685edf67",
+      "PackRgn.a": "67a0efddbd84ef5beaeb2adddfe53f0dbe19b4ac6b21dd68820226e7605b0727",
+      "RgnBlt.a": "16c400510330c67c6db2b0e96601c3d9358e5ed2f13ee3c1319e7e765b06ea7f",
+      "GrafTypes.a": "2d621b5233dd1f61c47e00514bf572c99b9338b66232b92aec04cbc4921e974e",
+      "QuickDraw.p": "c1d3590c448e4e0ed536cf701e0d1f23acaa39e054cb185dfbb91929fc96a63d",
+      "COPYRIGHT.TXT": "4d7a98ac9439bfb5ca9cd48928f62f9354de5073b1dfe8f14266015d57a19aaa"
+    },
+    "notice": "Copyright Apple Inc.; mirror notice limits availability to non-commercial use"
+  },
+  "reimplementation_hashes": {
+    "quickdraw_region_ops.c": "1dc6480bda9e2e9716434aa518b36969398036e88dff2a5d5e3ac79c93cdfc2f",
+    "quickdraw_region_ops.h": "a39441bd3e83460c97e0e709e6addf90a24426c993d0ef65f21c8b71f733a7d4",
+    "quickdraw_region_ops_experiment.c": "7c2d298eaa436afa10a8995315ebfe294174fdbb4f02063e2395aec4c8900217",
+    "run_quickdraw_region_ops.py": "ec1b166aaa94b029837961231cae0f5ec9d5d0969b5a43c6f928bdebb18a49ed",
+    "Makefile.region-ops": "c065d73ea601fb733024f9b28922b676b75b959941bcfba22bd2c139c47b4b15",
+    "quickdraw_bitblt.c": "b10835a18039d63b7412a46a38972aa878bdb6b33a9796bb18be46bc315bd5bc",
+    "quickdraw_bitblt.h": "7757e6c782fa215367b431eadc6f59fe734103e92440269597fd1a0cf8b706f9"
+  },
+  "validation": {
+    "result": "tests: 12800 deterministic pairs x operations, 3 variants, bit-identical",
+    "cases": 12800,
+    "operations": 4,
+    "variants": 3,
+    "sanitizers": [
+      "address",
+      "undefined"
+    ]
+  },
+  "platform": {
+    "system": "Linux",
+    "release": "7.2.0-rc6-1-cachyos-rc",
+    "machine": "x86_64",
+    "cpu": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M",
+    "logical_cpus": 24,
+    "benchmark_cpu_affinity": 0,
+    "compiler": "cc (GCC) 16.1.1 20260728",
+    "cflags": "-O3 -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic",
+    "libc": "glibc 2.44"
+  },
+  "benchmark": {
+    "timer": "CLOCK_MONOTONIC_RAW",
+    "samples": 9,
+    "cases": [
+      {
+        "name": "rect_rect",
+        "reuse": 20,
+        "input_a": {
+          "area": 62429,
+          "bbox_area": 62429,
+          "active_lines": 0,
+          "runs": 163,
+          "vertical_events": 2,
+          "transitions": 4,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 62429,
+          "bbox_area": 62429,
+          "active_lines": 0,
+          "runs": 163,
+          "vertical_events": 2,
+          "transitions": 4,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 210,
+                "op_median_ns": 5110,
+                "op_p95_ns": 8626,
+                "apply_batch_median_ns": 1375988,
+                "apply_ns_per_use": 68799.4,
+                "build_once_apply_once_ns": 74119.4,
+                "build_once_apply_many_ns": 1381308.0,
+                "dynamic_clip_one_cycle_ns": 74119.4,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "7a435a3939b9205c"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 482912,
+                "op_median_ns": 2304,
+                "op_p95_ns": 4799,
+                "apply_batch_median_ns": 139974,
+                "apply_ns_per_use": 6998.7,
+                "build_once_apply_once_ns": 492214.7,
+                "build_once_apply_many_ns": 625190.0,
+                "dynamic_clip_one_cycle_ns": 492214.7,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 3408,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "7a435a3939b9205c"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 338339,
+                "op_median_ns": 80522,
+                "op_p95_ns": 82125,
+                "apply_batch_median_ns": 1497107,
+                "apply_ns_per_use": 74855.35,
+                "build_once_apply_once_ns": 493716.35,
+                "build_once_apply_many_ns": 1915968.0,
+                "dynamic_clip_one_cycle_ns": 493716.35,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 72,
+                  "temporary_bytes": 256,
+                  "allocations": 3
+                },
+                "checksum": "7a435a3939b9205c"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 181,
+                "op_median_ns": 5320,
+                "op_p95_ns": 5410,
+                "apply_batch_median_ns": 1373805,
+                "apply_ns_per_use": 68690.25,
+                "build_once_apply_once_ns": 74191.25,
+                "build_once_apply_many_ns": 1379306.0,
+                "dynamic_clip_one_cycle_ns": 74191.25,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "7a435a3939b9205c"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 480257,
+                "op_median_ns": 2715,
+                "op_p95_ns": 4168,
+                "apply_batch_median_ns": 139543,
+                "apply_ns_per_use": 6977.15,
+                "build_once_apply_once_ns": 489949.15,
+                "build_once_apply_many_ns": 622515.0,
+                "dynamic_clip_one_cycle_ns": 489949.15,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 3408,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "7a435a3939b9205c"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 351083,
+                "op_median_ns": 80151,
+                "op_p95_ns": 81394,
+                "apply_batch_median_ns": 1498229,
+                "apply_ns_per_use": 74911.45,
+                "build_once_apply_once_ns": 506145.45,
+                "build_once_apply_many_ns": 1929463.0,
+                "dynamic_clip_one_cycle_ns": 506145.45,
+                "result": {
+                  "area": 62429,
+                  "bbox_area": 62429,
+                  "active_lines": 0,
+                  "runs": 163,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 72,
+                  "temporary_bytes": 256,
+                  "allocations": 3
+                },
+                "checksum": "7a435a3939b9205c"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 171,
+                "op_median_ns": 5200,
+                "op_p95_ns": 5560,
+                "apply_batch_median_ns": 1558514,
+                "apply_ns_per_use": 77925.7,
+                "build_once_apply_once_ns": 83296.7,
+                "build_once_apply_many_ns": 1563885.0,
+                "dynamic_clip_one_cycle_ns": 83296.7,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "fb1fde5e8b7be202"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 487531,
+                "op_median_ns": 1403,
+                "op_p95_ns": 2495,
+                "apply_batch_median_ns": 4348,
+                "apply_ns_per_use": 217.4,
+                "build_once_apply_once_ns": 489151.4,
+                "build_once_apply_many_ns": 493282.0,
+                "dynamic_clip_one_cycle_ns": 489151.4,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "fb1fde5e8b7be202"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 347085,
+                "op_median_ns": 81864,
+                "op_p95_ns": 96713,
+                "apply_batch_median_ns": 1361421,
+                "apply_ns_per_use": 68071.05,
+                "build_once_apply_once_ns": 497020.05,
+                "build_once_apply_many_ns": 1790370.0,
+                "dynamic_clip_one_cycle_ns": 497020.05,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "fb1fde5e8b7be202"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 181,
+                "op_median_ns": 5340,
+                "op_p95_ns": 5400,
+                "apply_batch_median_ns": 1560537,
+                "apply_ns_per_use": 78026.85,
+                "build_once_apply_once_ns": 83547.85,
+                "build_once_apply_many_ns": 1566058.0,
+                "dynamic_clip_one_cycle_ns": 83547.85,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "fb1fde5e8b7be202"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 480036,
+                "op_median_ns": 1313,
+                "op_p95_ns": 1863,
+                "apply_batch_median_ns": 3296,
+                "apply_ns_per_use": 164.8,
+                "build_once_apply_once_ns": 481513.8,
+                "build_once_apply_many_ns": 484645.0,
+                "dynamic_clip_one_cycle_ns": 481513.8,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "fb1fde5e8b7be202"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 345863,
+                "op_median_ns": 80072,
+                "op_p95_ns": 80863,
+                "apply_batch_median_ns": 1355751,
+                "apply_ns_per_use": 67787.55,
+                "build_once_apply_once_ns": 493722.55,
+                "build_once_apply_many_ns": 1781686.0,
+                "dynamic_clip_one_cycle_ns": 493722.55,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "fb1fde5e8b7be202"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "sparse_sparse",
+        "reuse": 100,
+        "input_a": {
+          "area": 990,
+          "bbox_area": 112169,
+          "active_lines": 0,
+          "runs": 36,
+          "vertical_events": 36,
+          "transitions": 72,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 990,
+          "bbox_area": 112169,
+          "active_lines": 0,
+          "runs": 36,
+          "vertical_events": 36,
+          "transitions": 72,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 171,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5189,
+                "apply_batch_median_ns": 7881905,
+                "apply_ns_per_use": 78819.05,
+                "build_once_apply_once_ns": 84100.05,
+                "build_once_apply_many_ns": 7887186.0,
+                "dynamic_clip_one_cycle_ns": 84100.05,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "83bee47645f907b9"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 411748,
+                "op_median_ns": 1403,
+                "op_p95_ns": 4358,
+                "apply_batch_median_ns": 91924,
+                "apply_ns_per_use": 919.24,
+                "build_once_apply_once_ns": 414070.24,
+                "build_once_apply_many_ns": 505075.0,
+                "dynamic_clip_one_cycle_ns": 414070.24,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 2392,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "83bee47645f907b9"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 300497,
+                "op_median_ns": 89639,
+                "op_p95_ns": 93707,
+                "apply_batch_median_ns": 7020488,
+                "apply_ns_per_use": 70204.88,
+                "build_once_apply_once_ns": 460340.88,
+                "build_once_apply_many_ns": 7410624.0,
+                "dynamic_clip_one_cycle_ns": 460340.88,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 616,
+                  "temporary_bytes": 256,
+                  "allocations": 37
+                },
+                "checksum": "83bee47645f907b9"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 201,
+                "op_median_ns": 5109,
+                "op_p95_ns": 5180,
+                "apply_batch_median_ns": 7869782,
+                "apply_ns_per_use": 78697.82,
+                "build_once_apply_once_ns": 84007.82,
+                "build_once_apply_many_ns": 7875092.0,
+                "dynamic_clip_one_cycle_ns": 84007.82,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "83bee47645f907b9"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 411547,
+                "op_median_ns": 1342,
+                "op_p95_ns": 2194,
+                "apply_batch_median_ns": 92204,
+                "apply_ns_per_use": 922.04,
+                "build_once_apply_once_ns": 413811.04,
+                "build_once_apply_many_ns": 505093.0,
+                "dynamic_clip_one_cycle_ns": 413811.04,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 2392,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "83bee47645f907b9"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 295438,
+                "op_median_ns": 89529,
+                "op_p95_ns": 91703,
+                "apply_batch_median_ns": 7021189,
+                "apply_ns_per_use": 70211.89,
+                "build_once_apply_once_ns": 455178.89,
+                "build_once_apply_many_ns": 7406156.0,
+                "dynamic_clip_one_cycle_ns": 455178.89,
+                "result": {
+                  "area": 990,
+                  "bbox_area": 112169,
+                  "active_lines": 0,
+                  "runs": 36,
+                  "vertical_events": 36,
+                  "transitions": 72,
+                  "storage_bytes": 616,
+                  "temporary_bytes": 256,
+                  "allocations": 37
+                },
+                "checksum": "83bee47645f907b9"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 180,
+                "op_median_ns": 5190,
+                "op_p95_ns": 5250,
+                "apply_batch_median_ns": 7461501,
+                "apply_ns_per_use": 74615.01,
+                "build_once_apply_once_ns": 79985.01,
+                "build_once_apply_many_ns": 7466871.0,
+                "dynamic_clip_one_cycle_ns": 79985.01,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "37d6173acf2e16ff"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 433820,
+                "op_median_ns": 1032,
+                "op_p95_ns": 2034,
+                "apply_batch_median_ns": 16311,
+                "apply_ns_per_use": 163.11,
+                "build_once_apply_once_ns": 435015.11,
+                "build_once_apply_many_ns": 451163.0,
+                "dynamic_clip_one_cycle_ns": 435015.11,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "37d6173acf2e16ff"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 296701,
+                "op_median_ns": 80452,
+                "op_p95_ns": 81684,
+                "apply_batch_median_ns": 6775506,
+                "apply_ns_per_use": 67755.06,
+                "build_once_apply_once_ns": 444908.06,
+                "build_once_apply_many_ns": 7152659.0,
+                "dynamic_clip_one_cycle_ns": 444908.06,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "37d6173acf2e16ff"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 181,
+                "op_median_ns": 5109,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 7816291,
+                "apply_ns_per_use": 78162.91,
+                "build_once_apply_once_ns": 83452.91,
+                "build_once_apply_many_ns": 7821581.0,
+                "dynamic_clip_one_cycle_ns": 83452.91,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "37d6173acf2e16ff"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 421125,
+                "op_median_ns": 832,
+                "op_p95_ns": 1884,
+                "apply_batch_median_ns": 16200,
+                "apply_ns_per_use": 162.0,
+                "build_once_apply_once_ns": 422119.0,
+                "build_once_apply_many_ns": 438157.0,
+                "dynamic_clip_one_cycle_ns": 422119.0,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "37d6173acf2e16ff"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 299456,
+                "op_median_ns": 80652,
+                "op_p95_ns": 81815,
+                "apply_batch_median_ns": 6798299,
+                "apply_ns_per_use": 67982.99,
+                "build_once_apply_once_ns": 448090.99,
+                "build_once_apply_many_ns": 7178407.0,
+                "dynamic_clip_one_cycle_ns": 448090.99,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "37d6173acf2e16ff"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "sparse_dense",
+        "reuse": 100,
+        "input_a": {
+          "area": 990,
+          "bbox_area": 112169,
+          "active_lines": 0,
+          "runs": 36,
+          "vertical_events": 36,
+          "transitions": 72,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 118341,
+          "bbox_area": 127260,
+          "active_lines": 0,
+          "runs": 343,
+          "vertical_events": 253,
+          "transitions": 1104,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 180,
+                "op_median_ns": 5119,
+                "op_p95_ns": 5180,
+                "apply_batch_median_ns": 7879731,
+                "apply_ns_per_use": 78797.31,
+                "build_once_apply_once_ns": 84096.31,
+                "build_once_apply_many_ns": 7885030.0,
+                "dynamic_clip_one_cycle_ns": 84096.31,
+                "result": {
+                  "area": 889,
+                  "bbox_area": 99540,
+                  "active_lines": 0,
+                  "runs": 35,
+                  "vertical_events": 34,
+                  "transitions": 72,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "3364da0e86fa7e90"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 464728,
+                "op_median_ns": 2926,
+                "op_p95_ns": 5781,
+                "apply_batch_median_ns": 86002,
+                "apply_ns_per_use": 860.02,
+                "build_once_apply_once_ns": 468514.02,
+                "build_once_apply_many_ns": 553656.0,
+                "dynamic_clip_one_cycle_ns": 468514.02,
+                "result": {
+                  "area": 889,
+                  "bbox_area": 99540,
+                  "active_lines": 0,
+                  "runs": 35,
+                  "vertical_events": 34,
+                  "transitions": 72,
+                  "storage_bytes": 2384,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "3364da0e86fa7e90"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 400516,
+                "op_median_ns": 92214,
+                "op_p95_ns": 93947,
+                "apply_batch_median_ns": 7597178,
+                "apply_ns_per_use": 75971.78,
+                "build_once_apply_once_ns": 568701.78,
+                "build_once_apply_many_ns": 8089908.0,
+                "dynamic_clip_one_cycle_ns": 568701.78,
+                "result": {
+                  "area": 889,
+                  "bbox_area": 99540,
+                  "active_lines": 0,
+                  "runs": 35,
+                  "vertical_events": 34,
+                  "transitions": 72,
+                  "storage_bytes": 584,
+                  "temporary_bytes": 256,
+                  "allocations": 35
+                },
+                "checksum": "3364da0e86fa7e90"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 190,
+                "op_median_ns": 5100,
+                "op_p95_ns": 5180,
+                "apply_batch_median_ns": 7345452,
+                "apply_ns_per_use": 73454.52,
+                "build_once_apply_once_ns": 78744.52,
+                "build_once_apply_many_ns": 7350742.0,
+                "dynamic_clip_one_cycle_ns": 78744.52,
+                "result": {
+                  "area": 118442,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 344,
+                  "vertical_events": 253,
+                  "transitions": 1112,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "cfb5153cfba840d0"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 482040,
+                "op_median_ns": 5110,
+                "op_p95_ns": 8987,
+                "apply_batch_median_ns": 2139470,
+                "apply_ns_per_use": 21394.7,
+                "build_once_apply_once_ns": 508544.7,
+                "build_once_apply_many_ns": 2626620.0,
+                "dynamic_clip_one_cycle_ns": 508544.7,
+                "result": {
+                  "area": 118442,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 344,
+                  "vertical_events": 253,
+                  "transitions": 1112,
+                  "storage_bytes": 5416,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "cfb5153cfba840d0"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 397120,
+                "op_median_ns": 147378,
+                "op_p95_ns": 152518,
+                "apply_batch_median_ns": 9812130,
+                "apply_ns_per_use": 98121.3,
+                "build_once_apply_once_ns": 642619.3,
+                "build_once_apply_many_ns": 10356628.0,
+                "dynamic_clip_one_cycle_ns": 642619.3,
+                "result": {
+                  "area": 118442,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 344,
+                  "vertical_events": 253,
+                  "transitions": 1112,
+                  "storage_bytes": 4088,
+                  "temporary_bytes": 256,
+                  "allocations": 254
+                },
+                "checksum": "cfb5153cfba840d0"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 200,
+                "op_median_ns": 5190,
+                "op_p95_ns": 5250,
+                "apply_batch_median_ns": 7812634,
+                "apply_ns_per_use": 78126.34,
+                "build_once_apply_once_ns": 83516.34,
+                "build_once_apply_many_ns": 7818024.0,
+                "dynamic_clip_one_cycle_ns": 83516.34,
+                "result": {
+                  "area": 101,
+                  "bbox_area": 99091,
+                  "active_lines": 0,
+                  "runs": 8,
+                  "vertical_events": 9,
+                  "transitions": 18,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "0761bd2ca0746642"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 482581,
+                "op_median_ns": 2695,
+                "op_p95_ns": 6813,
+                "apply_batch_median_ns": 32231,
+                "apply_ns_per_use": 322.31,
+                "build_once_apply_once_ns": 485598.31,
+                "build_once_apply_many_ns": 517507.0,
+                "dynamic_clip_one_cycle_ns": 485598.31,
+                "result": {
+                  "area": 101,
+                  "bbox_area": 99091,
+                  "active_lines": 0,
+                  "runs": 8,
+                  "vertical_events": 9,
+                  "transitions": 18,
+                  "storage_bytes": 2168,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "0761bd2ca0746642"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 435502,
+                "op_median_ns": 85722,
+                "op_p95_ns": 104727,
+                "apply_batch_median_ns": 6812626,
+                "apply_ns_per_use": 68126.26,
+                "build_once_apply_once_ns": 589350.26,
+                "build_once_apply_many_ns": 7333850.0,
+                "dynamic_clip_one_cycle_ns": 589350.26,
+                "result": {
+                  "area": 101,
+                  "bbox_area": 99091,
+                  "active_lines": 0,
+                  "runs": 8,
+                  "vertical_events": 9,
+                  "transitions": 18,
+                  "storage_bytes": 184,
+                  "temporary_bytes": 256,
+                  "allocations": 10
+                },
+                "checksum": "0761bd2ca0746642"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 180,
+                "op_median_ns": 5109,
+                "op_p95_ns": 5190,
+                "apply_batch_median_ns": 7545811,
+                "apply_ns_per_use": 75458.11,
+                "build_once_apply_once_ns": 80747.11,
+                "build_once_apply_many_ns": 7551100.0,
+                "dynamic_clip_one_cycle_ns": 80747.11,
+                "result": {
+                  "area": 117553,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 379,
+                  "vertical_events": 253,
+                  "transitions": 1176,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "908ae8dc50b98f07"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 484815,
+                "op_median_ns": 5089,
+                "op_p95_ns": 9127,
+                "apply_batch_median_ns": 2074097,
+                "apply_ns_per_use": 20740.97,
+                "build_once_apply_once_ns": 510644.97,
+                "build_once_apply_many_ns": 2564001.0,
+                "dynamic_clip_one_cycle_ns": 510644.97,
+                "result": {
+                  "area": 117553,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 379,
+                  "vertical_events": 253,
+                  "transitions": 1176,
+                  "storage_bytes": 5136,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "908ae8dc50b98f07"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 406568,
+                "op_median_ns": 147639,
+                "op_p95_ns": 152939,
+                "apply_batch_median_ns": 9949930,
+                "apply_ns_per_use": 99499.3,
+                "build_once_apply_once_ns": 653706.3,
+                "build_once_apply_many_ns": 10504137.0,
+                "dynamic_clip_one_cycle_ns": 653706.3,
+                "result": {
+                  "area": 117553,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 379,
+                  "vertical_events": 253,
+                  "transitions": 1176,
+                  "storage_bytes": 4088,
+                  "temporary_bytes": 256,
+                  "allocations": 254
+                },
+                "checksum": "908ae8dc50b98f07"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "dense_dense",
+        "reuse": 50,
+        "input_a": {
+          "area": 118341,
+          "bbox_area": 127260,
+          "active_lines": 0,
+          "runs": 343,
+          "vertical_events": 253,
+          "transitions": 1104,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 118341,
+          "bbox_area": 127260,
+          "active_lines": 0,
+          "runs": 343,
+          "vertical_events": 253,
+          "transitions": 1104,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 181,
+                "op_median_ns": 5290,
+                "op_p95_ns": 8707,
+                "apply_batch_median_ns": 3675672,
+                "apply_ns_per_use": 73513.44,
+                "build_once_apply_once_ns": 78984.44,
+                "build_once_apply_many_ns": 3681143.0,
+                "dynamic_clip_one_cycle_ns": 78984.44,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "cdcc5d28ca06447e"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 514631,
+                "op_median_ns": 5149,
+                "op_p95_ns": 8165,
+                "apply_batch_median_ns": 1005058,
+                "apply_ns_per_use": 20101.16,
+                "build_once_apply_once_ns": 539881.16,
+                "build_once_apply_many_ns": 1524838.0,
+                "dynamic_clip_one_cycle_ns": 539881.16,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 4848,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "cdcc5d28ca06447e"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 500946,
+                "op_median_ns": 150354,
+                "op_p95_ns": 154441,
+                "apply_batch_median_ns": 4904061,
+                "apply_ns_per_use": 98081.22,
+                "build_once_apply_once_ns": 749381.22,
+                "build_once_apply_many_ns": 5555361.0,
+                "dynamic_clip_one_cycle_ns": 749381.22,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 4088,
+                  "temporary_bytes": 256,
+                  "allocations": 254
+                },
+                "checksum": "cdcc5d28ca06447e"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 181,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5179,
+                "apply_batch_median_ns": 3681743,
+                "apply_ns_per_use": 73634.86,
+                "build_once_apply_once_ns": 78925.86,
+                "build_once_apply_many_ns": 3687034.0,
+                "dynamic_clip_one_cycle_ns": 78925.86,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "cdcc5d28ca06447e"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 513971,
+                "op_median_ns": 5019,
+                "op_p95_ns": 6342,
+                "apply_batch_median_ns": 1006711,
+                "apply_ns_per_use": 20134.22,
+                "build_once_apply_once_ns": 539124.22,
+                "build_once_apply_many_ns": 1525701.0,
+                "dynamic_clip_one_cycle_ns": 539124.22,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 4848,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "cdcc5d28ca06447e"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 499203,
+                "op_median_ns": 150394,
+                "op_p95_ns": 153279,
+                "apply_batch_median_ns": 4901046,
+                "apply_ns_per_use": 98020.92,
+                "build_once_apply_once_ns": 747617.92,
+                "build_once_apply_many_ns": 5550643.0,
+                "dynamic_clip_one_cycle_ns": 747617.92,
+                "result": {
+                  "area": 118341,
+                  "bbox_area": 127260,
+                  "active_lines": 0,
+                  "runs": 343,
+                  "vertical_events": 253,
+                  "transitions": 1104,
+                  "storage_bytes": 4088,
+                  "temporary_bytes": 256,
+                  "allocations": 254
+                },
+                "checksum": "cdcc5d28ca06447e"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 180,
+                "op_median_ns": 5410,
+                "op_p95_ns": 5570,
+                "apply_batch_median_ns": 3910324,
+                "apply_ns_per_use": 78206.48,
+                "build_once_apply_once_ns": 83796.48,
+                "build_once_apply_many_ns": 3915914.0,
+                "dynamic_clip_one_cycle_ns": 83796.48,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "0b015506b77675c3"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 513189,
+                "op_median_ns": 2625,
+                "op_p95_ns": 3336,
+                "apply_batch_median_ns": 6863,
+                "apply_ns_per_use": 137.26,
+                "build_once_apply_once_ns": 515951.26,
+                "build_once_apply_many_ns": 522677.0,
+                "dynamic_clip_one_cycle_ns": 515951.26,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "0b015506b77675c3"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 502208,
+                "op_median_ns": 86102,
+                "op_p95_ns": 88477,
+                "apply_batch_median_ns": 3347281,
+                "apply_ns_per_use": 66945.62,
+                "build_once_apply_once_ns": 655255.62,
+                "build_once_apply_many_ns": 3935591.0,
+                "dynamic_clip_one_cycle_ns": 655255.62,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "0b015506b77675c3"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 171,
+                "op_median_ns": 5119,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 3905576,
+                "apply_ns_per_use": 78111.52,
+                "build_once_apply_once_ns": 83401.52,
+                "build_once_apply_many_ns": 3910866.0,
+                "dynamic_clip_one_cycle_ns": 83401.52,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "0b015506b77675c3"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 512808,
+                "op_median_ns": 2175,
+                "op_p95_ns": 4018,
+                "apply_batch_median_ns": 8125,
+                "apply_ns_per_use": 162.5,
+                "build_once_apply_once_ns": 515145.5,
+                "build_once_apply_many_ns": 523108.0,
+                "dynamic_clip_one_cycle_ns": 515145.5,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "0b015506b77675c3"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 519350,
+                "op_median_ns": 86603,
+                "op_p95_ns": 90632,
+                "apply_batch_median_ns": 3389962,
+                "apply_ns_per_use": 67799.24,
+                "build_once_apply_once_ns": 673752.24,
+                "build_once_apply_many_ns": 3995915.0,
+                "dynamic_clip_one_cycle_ns": 673752.24,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "0b015506b77675c3"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "fragmented_fragmented",
+        "reuse": 20,
+        "input_a": {
+          "area": 65534,
+          "bbox_area": 131072,
+          "active_lines": 127,
+          "runs": 21887,
+          "vertical_events": 87,
+          "transitions": 512,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 65534,
+          "bbox_area": 131072,
+          "active_lines": 127,
+          "runs": 21887,
+          "vertical_events": 87,
+          "transitions": 512,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 191,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 6730831,
+                "apply_ns_per_use": 336541.55,
+                "build_once_apply_once_ns": 341842.55,
+                "build_once_apply_many_ns": 6736132.0,
+                "dynamic_clip_one_cycle_ns": 341842.55,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "d1471847049d4412"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 517187,
+                "op_median_ns": 107493,
+                "op_p95_ns": 134544,
+                "apply_batch_median_ns": 5462717,
+                "apply_ns_per_use": 273135.85,
+                "build_once_apply_once_ns": 897815.85,
+                "build_once_apply_many_ns": 6087397.0,
+                "dynamic_clip_one_cycle_ns": 897815.85,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 177200,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "d1471847049d4412"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 362244,
+                "op_median_ns": 149152,
+                "op_p95_ns": 152047,
+                "apply_batch_median_ns": 7288695,
+                "apply_ns_per_use": 364434.75,
+                "build_once_apply_once_ns": 875830.75,
+                "build_once_apply_many_ns": 7800091.0,
+                "dynamic_clip_one_cycle_ns": 875830.75,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 1416,
+                  "temporary_bytes": 256,
+                  "allocations": 87
+                },
+                "checksum": "d1471847049d4412"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 171,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5180,
+                "apply_batch_median_ns": 6653175,
+                "apply_ns_per_use": 332658.75,
+                "build_once_apply_once_ns": 337939.75,
+                "build_once_apply_many_ns": 6658456.0,
+                "dynamic_clip_one_cycle_ns": 337939.75,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "d1471847049d4412"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 503241,
+                "op_median_ns": 112572,
+                "op_p95_ns": 151486,
+                "apply_batch_median_ns": 5381363,
+                "apply_ns_per_use": 269068.15,
+                "build_once_apply_once_ns": 884881.15,
+                "build_once_apply_many_ns": 5997176.0,
+                "dynamic_clip_one_cycle_ns": 884881.15,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 177200,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "d1471847049d4412"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 355351,
+                "op_median_ns": 147679,
+                "op_p95_ns": 153169,
+                "apply_batch_median_ns": 7248479,
+                "apply_ns_per_use": 362423.95,
+                "build_once_apply_once_ns": 865453.95,
+                "build_once_apply_many_ns": 7751509.0,
+                "dynamic_clip_one_cycle_ns": 865453.95,
+                "result": {
+                  "area": 65534,
+                  "bbox_area": 131072,
+                  "active_lines": 127,
+                  "runs": 21887,
+                  "vertical_events": 87,
+                  "transitions": 512,
+                  "storage_bytes": 1416,
+                  "temporary_bytes": 256,
+                  "allocations": 87
+                },
+                "checksum": "d1471847049d4412"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 230,
+                "op_median_ns": 5210,
+                "op_p95_ns": 5300,
+                "apply_batch_median_ns": 1456050,
+                "apply_ns_per_use": 72802.5,
+                "build_once_apply_once_ns": 78242.5,
+                "build_once_apply_many_ns": 1461490.0,
+                "dynamic_clip_one_cycle_ns": 78242.5,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "f47d05bd4655731b"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 500415,
+                "op_median_ns": 79530,
+                "op_p95_ns": 82956,
+                "apply_batch_median_ns": 2745,
+                "apply_ns_per_use": 137.25,
+                "build_once_apply_once_ns": 580082.25,
+                "build_once_apply_many_ns": 582690.0,
+                "dynamic_clip_one_cycle_ns": 580082.25,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "f47d05bd4655731b"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 363296,
+                "op_median_ns": 126078,
+                "op_p95_ns": 128233,
+                "apply_batch_median_ns": 1355410,
+                "apply_ns_per_use": 67770.5,
+                "build_once_apply_once_ns": 557144.5,
+                "build_once_apply_many_ns": 1844784.0,
+                "dynamic_clip_one_cycle_ns": 557144.5,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "f47d05bd4655731b"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 211,
+                "op_median_ns": 5120,
+                "op_p95_ns": 5210,
+                "apply_batch_median_ns": 1559575,
+                "apply_ns_per_use": 77978.75,
+                "build_once_apply_once_ns": 83309.75,
+                "build_once_apply_many_ns": 1564906.0,
+                "dynamic_clip_one_cycle_ns": 83309.75,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "f47d05bd4655731b"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 506807,
+                "op_median_ns": 75242,
+                "op_p95_ns": 79400,
+                "apply_batch_median_ns": 2745,
+                "apply_ns_per_use": 137.25,
+                "build_once_apply_once_ns": 582186.25,
+                "build_once_apply_many_ns": 584794.0,
+                "dynamic_clip_one_cycle_ns": 582186.25,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "f47d05bd4655731b"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 362355,
+                "op_median_ns": 125978,
+                "op_p95_ns": 128422,
+                "apply_batch_median_ns": 1356261,
+                "apply_ns_per_use": 67813.05,
+                "build_once_apply_once_ns": 556146.05,
+                "build_once_apply_many_ns": 1844594.0,
+                "dynamic_clip_one_cycle_ns": 556146.05,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "f47d05bd4655731b"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "vertically_stable",
+        "reuse": 100,
+        "input_a": {
+          "area": 110080,
+          "bbox_area": 114688,
+          "active_lines": 0,
+          "runs": 256,
+          "vertical_events": 74,
+          "transitions": 292,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 110080,
+          "bbox_area": 114688,
+          "active_lines": 0,
+          "runs": 256,
+          "vertical_events": 74,
+          "transitions": 292,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 211,
+                "op_median_ns": 5120,
+                "op_p95_ns": 5190,
+                "apply_batch_median_ns": 5394598,
+                "apply_ns_per_use": 53945.98,
+                "build_once_apply_once_ns": 59276.98,
+                "build_once_apply_many_ns": 5399929.0,
+                "dynamic_clip_one_cycle_ns": 59276.98,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "e589c609a35e343d"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 537435,
+                "op_median_ns": 3797,
+                "op_p95_ns": 6252,
+                "apply_batch_median_ns": 240404,
+                "apply_ns_per_use": 2404.04,
+                "build_once_apply_once_ns": 543636.04,
+                "build_once_apply_many_ns": 781636.0,
+                "dynamic_clip_one_cycle_ns": 543636.04,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 4152,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "e589c609a35e343d"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 438408,
+                "op_median_ns": 104848,
+                "op_p95_ns": 107252,
+                "apply_batch_median_ns": 7392440,
+                "apply_ns_per_use": 73924.4,
+                "build_once_apply_once_ns": 617180.4,
+                "build_once_apply_many_ns": 7935696.0,
+                "dynamic_clip_one_cycle_ns": 617180.4,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 1208,
+                  "temporary_bytes": 256,
+                  "allocations": 74
+                },
+                "checksum": "e589c609a35e343d"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 221,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5180,
+                "apply_batch_median_ns": 5379319,
+                "apply_ns_per_use": 53793.19,
+                "build_once_apply_once_ns": 59124.19,
+                "build_once_apply_many_ns": 5384650.0,
+                "dynamic_clip_one_cycle_ns": 59124.19,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "e589c609a35e343d"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 533277,
+                "op_median_ns": 3767,
+                "op_p95_ns": 7234,
+                "apply_batch_median_ns": 239152,
+                "apply_ns_per_use": 2391.52,
+                "build_once_apply_once_ns": 539435.52,
+                "build_once_apply_many_ns": 776196.0,
+                "dynamic_clip_one_cycle_ns": 539435.52,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 4152,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "e589c609a35e343d"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 436094,
+                "op_median_ns": 103575,
+                "op_p95_ns": 106962,
+                "apply_batch_median_ns": 7369367,
+                "apply_ns_per_use": 73693.67,
+                "build_once_apply_once_ns": 613362.67,
+                "build_once_apply_many_ns": 7909036.0,
+                "dynamic_clip_one_cycle_ns": 613362.67,
+                "result": {
+                  "area": 110080,
+                  "bbox_area": 114688,
+                  "active_lines": 0,
+                  "runs": 256,
+                  "vertical_events": 74,
+                  "transitions": 292,
+                  "storage_bytes": 1208,
+                  "temporary_bytes": 256,
+                  "allocations": 74
+                },
+                "checksum": "e589c609a35e343d"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 231,
+                "op_median_ns": 5210,
+                "op_p95_ns": 5961,
+                "apply_batch_median_ns": 7824707,
+                "apply_ns_per_use": 78247.07,
+                "build_once_apply_once_ns": 83688.07,
+                "build_once_apply_many_ns": 7830148.0,
+                "dynamic_clip_one_cycle_ns": 83688.07,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 531955,
+                "op_median_ns": 1803,
+                "op_p95_ns": 2524,
+                "apply_batch_median_ns": 16210,
+                "apply_ns_per_use": 162.1,
+                "build_once_apply_once_ns": 533920.1,
+                "build_once_apply_many_ns": 549968.0,
+                "dynamic_clip_one_cycle_ns": 533920.1,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 434881,
+                "op_median_ns": 84851,
+                "op_p95_ns": 85892,
+                "apply_batch_median_ns": 6804540,
+                "apply_ns_per_use": 68045.4,
+                "build_once_apply_once_ns": 587777.4,
+                "build_once_apply_many_ns": 7324272.0,
+                "dynamic_clip_one_cycle_ns": 587777.4,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 230,
+                "op_median_ns": 5120,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 7803817,
+                "apply_ns_per_use": 78038.17,
+                "build_once_apply_once_ns": 83388.17,
+                "build_once_apply_many_ns": 7809167.0,
+                "dynamic_clip_one_cycle_ns": 83388.17,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 492510,
+                "op_median_ns": 1373,
+                "op_p95_ns": 2134,
+                "apply_batch_median_ns": 16572,
+                "apply_ns_per_use": 165.72,
+                "build_once_apply_once_ns": 494048.72,
+                "build_once_apply_many_ns": 510455.0,
+                "dynamic_clip_one_cycle_ns": 494048.72,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 431515,
+                "op_median_ns": 84550,
+                "op_p95_ns": 88126,
+                "apply_batch_median_ns": 6907235,
+                "apply_ns_per_use": 69072.35,
+                "build_once_apply_once_ns": 585137.35,
+                "build_once_apply_many_ns": 7423300.0,
+                "dynamic_clip_one_cycle_ns": 585137.35,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "5fc85f6179a6d0d4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "vertically_unstable",
+        "reuse": 20,
+        "input_a": {
+          "area": 8657,
+          "bbox_area": 130304,
+          "active_lines": 0,
+          "runs": 2296,
+          "vertical_events": 257,
+          "transitions": 9184,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 8657,
+          "bbox_area": 130304,
+          "active_lines": 0,
+          "runs": 2296,
+          "vertical_events": 257,
+          "transitions": 9184,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 220,
+                "op_median_ns": 5129,
+                "op_p95_ns": 5190,
+                "apply_batch_median_ns": 2035675,
+                "apply_ns_per_use": 101783.75,
+                "build_once_apply_once_ns": 107132.75,
+                "build_once_apply_many_ns": 2041024.0,
+                "dynamic_clip_one_cycle_ns": 107132.75,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "a0747ab22cd1aed3"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 438207,
+                "op_median_ns": 14517,
+                "op_p95_ns": 18004,
+                "apply_batch_median_ns": 653745,
+                "apply_ns_per_use": 32687.25,
+                "build_once_apply_once_ns": 485411.25,
+                "build_once_apply_many_ns": 1106469.0,
+                "dynamic_clip_one_cycle_ns": 485411.25,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 20472,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "a0747ab22cd1aed3"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 438268,
+                "op_median_ns": 173818,
+                "op_p95_ns": 190781,
+                "apply_batch_median_ns": 2301797,
+                "apply_ns_per_use": 115089.85,
+                "build_once_apply_once_ns": 727175.85,
+                "build_once_apply_many_ns": 2913883.0,
+                "dynamic_clip_one_cycle_ns": 727175.85,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 4136,
+                  "temporary_bytes": 256,
+                  "allocations": 257
+                },
+                "checksum": "a0747ab22cd1aed3"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 571,
+                "op_median_ns": 11211,
+                "op_p95_ns": 12443,
+                "apply_batch_median_ns": 2180528,
+                "apply_ns_per_use": 109026.4,
+                "build_once_apply_once_ns": 120808.4,
+                "build_once_apply_many_ns": 2192310.0,
+                "dynamic_clip_one_cycle_ns": 120808.4,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "a0747ab22cd1aed3"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 446663,
+                "op_median_ns": 15279,
+                "op_p95_ns": 18465,
+                "apply_batch_median_ns": 657602,
+                "apply_ns_per_use": 32880.1,
+                "build_once_apply_once_ns": 494822.1,
+                "build_once_apply_many_ns": 1119544.0,
+                "dynamic_clip_one_cycle_ns": 494822.1,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 20472,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "a0747ab22cd1aed3"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 430654,
+                "op_median_ns": 174910,
+                "op_p95_ns": 189558,
+                "apply_batch_median_ns": 2297629,
+                "apply_ns_per_use": 114881.45,
+                "build_once_apply_once_ns": 720445.45,
+                "build_once_apply_many_ns": 2903193.0,
+                "dynamic_clip_one_cycle_ns": 720445.45,
+                "result": {
+                  "area": 8657,
+                  "bbox_area": 130304,
+                  "active_lines": 0,
+                  "runs": 2296,
+                  "vertical_events": 257,
+                  "transitions": 9184,
+                  "storage_bytes": 4136,
+                  "temporary_bytes": 256,
+                  "allocations": 257
+                },
+                "checksum": "a0747ab22cd1aed3"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 260,
+                "op_median_ns": 5420,
+                "op_p95_ns": 5490,
+                "apply_batch_median_ns": 1560076,
+                "apply_ns_per_use": 78003.8,
+                "build_once_apply_once_ns": 83683.8,
+                "build_once_apply_many_ns": 1565756.0,
+                "dynamic_clip_one_cycle_ns": 83683.8,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "d53caeea81cd6ef4"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 441123,
+                "op_median_ns": 10099,
+                "op_p95_ns": 10760,
+                "apply_batch_median_ns": 2756,
+                "apply_ns_per_use": 137.8,
+                "build_once_apply_once_ns": 451359.8,
+                "build_once_apply_many_ns": 453978.0,
+                "dynamic_clip_one_cycle_ns": 451359.8,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "d53caeea81cd6ef4"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 432798,
+                "op_median_ns": 103936,
+                "op_p95_ns": 109056,
+                "apply_batch_median_ns": 1352114,
+                "apply_ns_per_use": 67605.7,
+                "build_once_apply_once_ns": 604339.7,
+                "build_once_apply_many_ns": 1888848.0,
+                "dynamic_clip_one_cycle_ns": 604339.7,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "d53caeea81cd6ef4"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 291,
+                "op_median_ns": 5120,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 1562201,
+                "apply_ns_per_use": 78110.05,
+                "build_once_apply_once_ns": 83521.05,
+                "build_once_apply_many_ns": 1567612.0,
+                "dynamic_clip_one_cycle_ns": 83521.05,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "d53caeea81cd6ef4"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 440712,
+                "op_median_ns": 10420,
+                "op_p95_ns": 11362,
+                "apply_batch_median_ns": 3276,
+                "apply_ns_per_use": 163.8,
+                "build_once_apply_once_ns": 451295.8,
+                "build_once_apply_many_ns": 454408.0,
+                "dynamic_clip_one_cycle_ns": 451295.8,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "d53caeea81cd6ef4"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 429151,
+                "op_median_ns": 105259,
+                "op_p95_ns": 109577,
+                "apply_batch_median_ns": 1362744,
+                "apply_ns_per_use": 68137.2,
+                "build_once_apply_once_ns": 602547.2,
+                "build_once_apply_many_ns": 1897154.0,
+                "dynamic_clip_one_cycle_ns": 602547.2,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "d53caeea81cd6ef4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "empty_full",
+        "reuse": 100,
+        "input_a": {
+          "area": 0,
+          "bbox_area": 0,
+          "active_lines": 0,
+          "runs": 0,
+          "vertical_events": 0,
+          "transitions": 0,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "input_b": {
+          "area": 131072,
+          "bbox_area": 131072,
+          "active_lines": 256,
+          "runs": 256,
+          "vertical_events": 2,
+          "transitions": 4,
+          "storage_bytes": 0,
+          "temporary_bytes": 0,
+          "allocations": 0
+        },
+        "operations": [
+          {
+            "op": "intersect",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 251,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5170,
+                "apply_batch_median_ns": 7802365,
+                "apply_ns_per_use": 78023.65,
+                "build_once_apply_once_ns": 83384.65,
+                "build_once_apply_many_ns": 7807726.0,
+                "dynamic_clip_one_cycle_ns": 83384.65,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "925d3891178ab06c"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 495987,
+                "op_median_ns": 1082,
+                "op_p95_ns": 1473,
+                "apply_batch_median_ns": 16501,
+                "apply_ns_per_use": 165.01,
+                "build_once_apply_once_ns": 497234.01,
+                "build_once_apply_many_ns": 513570.0,
+                "dynamic_clip_one_cycle_ns": 497234.01,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "925d3891178ab06c"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 345222,
+                "op_median_ns": 79169,
+                "op_p95_ns": 79891,
+                "apply_batch_median_ns": 6777990,
+                "apply_ns_per_use": 67779.9,
+                "build_once_apply_once_ns": 492170.9,
+                "build_once_apply_many_ns": 7202381.0,
+                "dynamic_clip_one_cycle_ns": 492170.9,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "925d3891178ab06c"
+              }
+            ]
+          },
+          {
+            "op": "union",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 241,
+                "op_median_ns": 5110,
+                "op_p95_ns": 5200,
+                "apply_batch_median_ns": 4820714,
+                "apply_ns_per_use": 48207.14,
+                "build_once_apply_once_ns": 53558.14,
+                "build_once_apply_many_ns": 4826065.0,
+                "dynamic_clip_one_cycle_ns": 53558.14,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "1952c920e9eb40f5"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 482892,
+                "op_median_ns": 3818,
+                "op_p95_ns": 4979,
+                "apply_batch_median_ns": 241566,
+                "apply_ns_per_use": 2415.66,
+                "build_once_apply_once_ns": 489125.66,
+                "build_once_apply_many_ns": 728276.0,
+                "dynamic_clip_one_cycle_ns": 489125.66,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 4152,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "1952c920e9eb40f5"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 363145,
+                "op_median_ns": 79090,
+                "op_p95_ns": 80352,
+                "apply_batch_median_ns": 7113965,
+                "apply_ns_per_use": 71139.65,
+                "build_once_apply_once_ns": 513374.65,
+                "build_once_apply_many_ns": 7556200.0,
+                "dynamic_clip_one_cycle_ns": 513374.65,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 56,
+                  "temporary_bytes": 256,
+                  "allocations": 2
+                },
+                "checksum": "1952c920e9eb40f5"
+              }
+            ]
+          },
+          {
+            "op": "diff",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 231,
+                "op_median_ns": 5200,
+                "op_p95_ns": 5280,
+                "apply_batch_median_ns": 7814949,
+                "apply_ns_per_use": 78149.49,
+                "build_once_apply_once_ns": 83580.49,
+                "build_once_apply_many_ns": 7820380.0,
+                "dynamic_clip_one_cycle_ns": 83580.49,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "925d3891178ab06c"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 480638,
+                "op_median_ns": 1233,
+                "op_p95_ns": 2144,
+                "apply_batch_median_ns": 16351,
+                "apply_ns_per_use": 163.51,
+                "build_once_apply_once_ns": 482034.51,
+                "build_once_apply_many_ns": 498222.0,
+                "dynamic_clip_one_cycle_ns": 482034.51,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 2104,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "925d3891178ab06c"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 363727,
+                "op_median_ns": 79350,
+                "op_p95_ns": 80512,
+                "apply_batch_median_ns": 6812415,
+                "apply_ns_per_use": 68124.15,
+                "build_once_apply_once_ns": 511201.15,
+                "build_once_apply_many_ns": 7255492.0,
+                "dynamic_clip_one_cycle_ns": 511201.15,
+                "result": {
+                  "area": 0,
+                  "bbox_area": 0,
+                  "active_lines": 0,
+                  "runs": 0,
+                  "vertical_events": 0,
+                  "transitions": 0,
+                  "storage_bytes": 40,
+                  "temporary_bytes": 256,
+                  "allocations": 1
+                },
+                "checksum": "925d3891178ab06c"
+              }
+            ]
+          },
+          {
+            "op": "xor",
+            "variants": [
+              {
+                "name": "B0_bitmap",
+                "build_pair_median_ns": 240,
+                "op_median_ns": 6342,
+                "op_p95_ns": 10489,
+                "apply_batch_median_ns": 4864126,
+                "apply_ns_per_use": 48641.26,
+                "build_once_apply_once_ns": 55223.26,
+                "build_once_apply_many_ns": 4870708.0,
+                "dynamic_clip_one_cycle_ns": 55223.26,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 16408,
+                  "temporary_bytes": 0,
+                  "allocations": 1
+                },
+                "checksum": "1952c920e9eb40f5"
+              },
+              {
+                "name": "B1_runs",
+                "build_pair_median_ns": 480778,
+                "op_median_ns": 3286,
+                "op_p95_ns": 7243,
+                "apply_batch_median_ns": 239803,
+                "apply_ns_per_use": 2398.03,
+                "build_once_apply_once_ns": 486462.03,
+                "build_once_apply_many_ns": 723867.0,
+                "dynamic_clip_one_cycle_ns": 486462.03,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 4152,
+                  "temporary_bytes": 0,
+                  "allocations": 2
+                },
+                "checksum": "1952c920e9eb40f5"
+              },
+              {
+                "name": "B2_transitions",
+                "build_pair_median_ns": 346875,
+                "op_median_ns": 79741,
+                "op_p95_ns": 80312,
+                "apply_batch_median_ns": 7019637,
+                "apply_ns_per_use": 70196.37,
+                "build_once_apply_once_ns": 496812.37,
+                "build_once_apply_many_ns": 7446253.0,
+                "dynamic_clip_one_cycle_ns": 496812.37,
+                "result": {
+                  "area": 131072,
+                  "bbox_area": 131072,
+                  "active_lines": 256,
+                  "runs": 256,
+                  "vertical_events": 2,
+                  "transitions": 4,
+                  "storage_bytes": 56,
+                  "temporary_bytes": 256,
+                  "allocations": 2
+                },
+                "checksum": "1952c920e9eb40f5"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "sink": "0000000000000000"
+  },
+  "notes": [
+    "B0/B1/B2 only; no adaptive B3 was added after the preliminary comparison.",
+    "A complete untimed benchmark pass precedes the recorded pass.",
+    "Build pair, boolean operation, result storage and repeated application are reported separately.",
+    "The application checksum is compared across all three variants for every case and operation.",
+    "Working sets are cache-hot and the benchmark process is pinned to one logical CPU when available."
+  ]
+}

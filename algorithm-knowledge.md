@@ -139,3 +139,57 @@ Même plateforme et compilateur ; mesures détaillées dans
 - Limite : à bounding box identique, `thin` et le damier ont des coûts très
   différents. Aire, runs et changements verticaux décrivent des dimensions
   distinctes ; aucun score unique n'est établi.
+
+# Opérations booléennes de régions
+
+Plateforme et source historique : voir `quickdraw-region-ops-notes.md` ; les
+mesures détaillées sont dans `quickdraw_region_ops_measurements.json`.
+
+## Opération bitmap par univers de bounding box
+
+- Problème : calculer AND, OR, différence ou XOR de deux régions sans parcourir
+  des structures de contour séparées.
+- Technique : B0 combine directement les octets des deux masques.
+- Préconditions : même univers et même stride logique ; stockage proportionnel
+  à l'univers bitmap.
+- Observé : sur `512x256`, l'opération reste proche de 5–6 µs pour les formes
+  testées, y compris `fragmented_fragmented`. C'est nettement inférieur à la
+  fusion d'événements B2 (environ 80–155 µs), mais le résultat réserve 16 408
+  octets dans ces mesures.
+- Limite : l'avantage dépend de l'univers parcouru ; il ne prédit pas le coût
+  d'application lorsque le résultat est sparse.
+
+## Fusion de runs ordonnés
+
+- Problème : combiner deux régions déjà représentées par intervalles sans
+  matérialiser chaque pixel.
+- Technique : balayage simultané des frontières gauche/droite et états
+  intérieur/extérieur, localisé par scanline.
+- Observé : B1 combine `sparse_sparse` en environ 1–2 µs et applique son
+  résultat en moins d'une microseconde. Sur `fragmented_fragmented`, la
+  combinaison atteint environ 108 µs et le résultat 177 200 octets.
+- Limite : le nombre de runs du résultat peut être beaucoup plus important que
+  celui des entrées selon l'opération.
+
+## Fusion d'événements différentiels
+
+- Problème : conserver les scanlines répétitives et produire seulement les
+  changements de contour du résultat.
+- Technique : états persistants des deux entrées, opération booléenne par
+  scanline, puis XOR avec le scan résultat précédent ; provenance `RgnOp.a`.
+- Observé : B2 garde le résultat fragmented/intersection à 1 416 octets,
+  contre 177 200 pour B1 et 16 408 pour B0. Son coût de combinaison est
+  toutefois supérieur à B0/B1 sur la plateforme moderne.
+- Limite : la compacité n'est pas une mesure suffisante du coût de combinaison
+  ou d'application.
+
+## Cycle de vie et changement de classement
+
+- Problème : la représentation doit survivre à construction, combinaison et
+  application répétée.
+- Résultat : B0 est souvent le meilleur opérateur de combinaison ; B1 est
+  meilleur à l'application sur les résultats sparse ; B2 minimise parfois le
+  stockage sans gagner le temps. Le classement change donc avec l'étape du
+  cycle de vie et le nombre de réutilisations.
+- Limite : une conversion entre représentations n'a pas été mesurée ; le
+  bénéfice d'une stratégie mixte reste une question ouverte.
