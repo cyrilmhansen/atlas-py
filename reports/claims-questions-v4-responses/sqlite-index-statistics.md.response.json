@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-index-statistics.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.679825633997098,
+  "usage": {
+    "prompt_tokens": 984,
+    "completion_tokens": 382,
+    "total_tokens": 1366,
+    "input_tokens": 984,
+    "output_tokens": 382,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.56,
+    "total_time": 11.67,
+    "prompt_eval_duration": 3.56,
+    "generation_duration": 8.11,
+    "prompt_tokens_per_second": 276.3,
+    "generation_tokens_per_second": 47.09
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"precondition\",\n      \"statement\": \"SQLite can determine which index narrows the search to fewer rows only if ANALYZE has been run.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If all else is equal, SQLite chooses the index that narrows the search to the smallest number of rows, based on statistics from ANALYZE.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"If ANALYZE has not been run, the choice of which index to use is arbitrary.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"A multi-column index uses the left-most column to order rows and later columns to break ties.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"property\",\n      \"statement\": \"With a suitable multi-column index, SQLite can find a constrained row with fewer searches than with separate lookups.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

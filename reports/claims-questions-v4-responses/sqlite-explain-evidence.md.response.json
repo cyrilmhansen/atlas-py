@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-explain-evidence.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 6.871308550005779,
+  "usage": {
+    "prompt_tokens": 913,
+    "completion_tokens": 167,
+    "total_tokens": 1080,
+    "input_tokens": 913,
+    "output_tokens": 167,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.36,
+    "total_time": 6.87,
+    "prompt_eval_duration": 3.36,
+    "generation_duration": 3.5,
+    "prompt_tokens_per_second": 271.35,
+    "generation_tokens_per_second": 47.7
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs-1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"When the EXPLAIN QUERY PLAN phrase appears, the statement returns high-level information regarding the query plan that would have been used.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs-2\",\n      \"facet\": \"reference\",\n      \"statement\": \"The requirement is accompanied by a test reference in the SQLite test suite.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

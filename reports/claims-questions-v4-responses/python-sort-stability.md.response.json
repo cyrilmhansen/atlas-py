@@ -1,0 +1,29 @@
+{
+  "fixture": "python-sort-stability.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 15.837236918974668,
+  "usage": {
+    "prompt_tokens": 946,
+    "completion_tokens": 577,
+    "total_tokens": 1523,
+    "input_tokens": 946,
+    "output_tokens": 577,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.47,
+    "total_time": 15.83,
+    "prompt_eval_duration": 3.47,
+    "generation_duration": 12.36,
+    "prompt_tokens_per_second": 272.89,
+    "generation_tokens_per_second": 46.66
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_sorted_returns_new\",\n      \"facet\": \"property\",\n      \"statement\": \"sorted() returns a new sorted list.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_list_sort_inplace\",\n      \"facet\": \"property\",\n      \"statement\": \"list.sort() modifies the list in-place.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_list_sort_type_constraint\",\n      \"facet\": \"precondition\",\n      \"statement\": \"list.sort() is only defined for lists.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_sorted_iterable_input\",\n      \"facet\": \"precondition\",\n      \"statement\": \"sorted() accepts any iterable.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_sorts_stable\",\n      \"facet\": \"property\",\n      \"statement\": \"Sorts are guaranteed to be stable.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_stability_definition\",\n      \"facet\": \"property\",\n      \"statement\": \"When multiple records have the same key, their original order is preserved.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_stability_enables_complex_sorts\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Stability lets a programmer build complex sorts in a series of sorting steps.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_timsort_algorithm\",\n      \"facet\": \"reference\",\n      \"statement\": \"The Timsort algorithm is used in Python.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_timsort_exploits_ordering\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Timsort can take advantage of any ordering already present in a dataset.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

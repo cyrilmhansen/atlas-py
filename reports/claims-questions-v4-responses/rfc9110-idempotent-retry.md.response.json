@@ -1,0 +1,29 @@
+{
+  "fixture": "rfc9110-idempotent-retry.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 13.03804657998262,
+  "usage": {
+    "prompt_tokens": 1028,
+    "completion_tokens": 436,
+    "total_tokens": 1464,
+    "input_tokens": 1028,
+    "output_tokens": 436,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.75,
+    "total_time": 13.03,
+    "prompt_eval_duration": 3.75,
+    "generation_duration": 9.28,
+    "prompt_tokens_per_second": 273.91,
+    "generation_tokens_per_second": 46.99
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_idempotent_def\",\n      \"facet\": \"property\",\n      \"statement\": \"A request method is considered idempotent if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_idempotent_methods\",\n      \"facet\": \"property\",\n      \"statement\": \"PUT, DELETE, and safe request methods are idempotent.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_idempotent_scope\",\n      \"facet\": \"property\",\n      \"statement\": \"The idempotent property only applies to what has been requested by the user; a server is free to log each request separately or retain a revision control history.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_retry_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Idempotent methods are distinguished because the request can be repeated automatically if a communication failure occurs before the client is able to read the server's response.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_non_idempotent_retry_constraint\",\n      \"facet\": \"precondition\",\n      \"statement\": \"A client SHOULD NOT automatically retry a request with a non-idempotent method unless it has some means to know that the request semantics are actually idempotent, or some means to detect that the original request was never applied.\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

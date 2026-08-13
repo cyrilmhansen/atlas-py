@@ -1,0 +1,29 @@
+{
+  "fixture": "cpp-stable-sort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 12.671045932045672,
+  "usage": {
+    "prompt_tokens": 934,
+    "completion_tokens": 423,
+    "total_tokens": 1357,
+    "input_tokens": 934,
+    "output_tokens": 423,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.65,
+    "total_time": 12.64,
+    "prompt_eval_duration": 3.65,
+    "generation_duration": 8.99,
+    "prompt_tokens_per_second": 256.02,
+    "generation_tokens_per_second": 47.03
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_sort_order\",\n      \"facet\": \"property\",\n      \"statement\": \"std::stable_sort sorts elements in a range in non-descending order.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_stability\",\n      \"facet\": \"property\",\n      \"statement\": \"The order of equivalent elements is guaranteed to be preserved.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_comp_contract\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The comparison function must impose the required ordering and must not modify the objects passed to it.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_iter_preconditions\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The iterator value type must satisfy the required move, assignment, or swappable conditions.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_undefined_behavior\",\n      \"facet\": \"property\",\n      \"statement\": \"If the iterator value type does not satisfy the required move, assignment, or swappable conditions, the behavior is undefined.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_stability_scope\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The stability guarantee is not a claim that applies without the algorithm's stated preconditions.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

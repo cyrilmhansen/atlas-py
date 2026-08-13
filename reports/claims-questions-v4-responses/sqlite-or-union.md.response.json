@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-or-union.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 14.078872126992792,
+  "usage": {
+    "prompt_tokens": 1025,
+    "completion_tokens": 497,
+    "total_tokens": 1522,
+    "input_tokens": 1025,
+    "output_tokens": 497,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.63,
+    "total_time": 14.07,
+    "prompt_eval_duration": 3.63,
+    "generation_duration": 10.44,
+    "prompt_tokens_per_second": 282.22,
+    "generation_tokens_per_second": 47.6
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_or_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"When confronted with OR-connected terms, SQLite examines each OR term separately and tries to use an index to find the rowids associated with each term. It then takes the union of the resulting rowid sets.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_or_precondition\",\n      \"facet\": \"precondition\",\n      \"statement\": \"For the OR-by-UNION technique to be useful, there must be an index available that helps resolve every OR-connected term.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_or_fallback\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If even a single OR-connected term is not indexed, a full table scan would have to be done for that term, and a full table scan may be preferable to the union operation and follow-on searches.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_and_hypothesis\",\n      \"facet\": \"other\",\n      \"statement\": \"The OR-by-UNION technique could also be leveraged for AND-connected terms by using an intersect operator in place of union.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_and_status\",\n      \"facet\": \"property\",\n      \"statement\": \"The performance gain for AND-by-INTERSECT is slight, so SQLite does not implement that technique at this time.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_and_future\",\n      \"facet\": \"other\",\n      \"statement\": \"A future version might be enhanced to support AND-by-INTERSECT.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

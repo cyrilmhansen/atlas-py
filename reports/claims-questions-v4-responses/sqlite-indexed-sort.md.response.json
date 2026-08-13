@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-indexed-sort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 22.04654541698983,
+  "usage": {
+    "prompt_tokens": 990,
+    "completion_tokens": 844,
+    "total_tokens": 1834,
+    "input_tokens": 990,
+    "output_tokens": 844,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.57,
+    "total_time": 22.04,
+    "prompt_eval_duration": 3.57,
+    "generation_duration": 18.47,
+    "prompt_tokens_per_second": 277.1,
+    "generation_tokens_per_second": 45.7
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"When no appropriate index is available, an ORDER BY query gathers the output and runs it through a sorter.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"property\",\n      \"statement\": \"The sorter used for indexless ORDER BY can require substantial temporary storage.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If an index is available on the ORDER BY column, SQLite can scan that index and perform rowid lookups instead of sorting.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"property\",\n      \"statement\": \"Both index scan and indexless sort can require work proportional to N log N.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"SQLite uses a cost-based query planner and estimates the total time for each plan.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_6\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The choice between index scan and indexless sort can depend on table size and WHERE-clause constraints.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_7\",\n      \"facet\": \"property\",\n      \"statement\": \"The indexed sort generally uses less temporary storage because it does not accumulate the entire result before sorting.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_8\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"A covering index can avoid the rowid lookups.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_9\",\n      \"facet\": \"property\",\n      \"statement\": \"Using a covering index can reduce the cost further.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [\n    {\n      \"key\": \"claim_1\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"statement\": \"SQLite's query planner selects between index-based retrieval and sorting based on estimated total time, which is influenced by table size and WHERE-clause constraints, despite both methods having similar asymptotic complexity (N log N).\",\n      \"supported_by\": [\n        \"obs_4\",\n        \"obs_5\",\n        \"obs_6\"\n      ]\n    },\n    {\n      \"key\": \"claim_2\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"statement\": \"Index-based ORDER BY is preferred over sorting primarily for reduced temporary storage usage, as it avoids accumulating the entire result set, whereas covering indices offer further cost reduction by eliminating rowid lookups.\",\n      \"supported_by\": [\n        \"obs_2\",\n        \"obs_3\",\n        \"obs_7\",\n        \"obs_8\",\n        \"obs_9\"\n      ]\n    }\n  ],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

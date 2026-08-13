@@ -1,0 +1,29 @@
+{
+  "fixture": "rfc9110-safe-methods.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.26642260805238,
+  "usage": {
+    "prompt_tokens": 1003,
+    "completion_tokens": 332,
+    "total_tokens": 1335,
+    "input_tokens": 1003,
+    "output_tokens": 332,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.65,
+    "total_time": 11.26,
+    "prompt_eval_duration": 3.65,
+    "generation_duration": 7.61,
+    "prompt_tokens_per_second": 274.9,
+    "generation_tokens_per_second": 43.62
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_safe_def\",\n      \"facet\": \"property\",\n      \"statement\": \"Request methods are considered safe if their defined semantics are essentially read-only; the client does not request, and does not expect, any state change on the origin server as a result of applying a safe method to a target resource.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_impl_side_effects\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"An implementation may include behavior that is potentially harmful, not entirely read-only, or causes side effects while invoking a safe method.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_client_accountability\",\n      \"facet\": \"property\",\n      \"statement\": \"The client did not request additional behavior (such as side effects) and cannot be held accountable for it.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_safe_methods_list\",\n      \"facet\": \"term\",\n      \"statement\": \"GET, HEAD, OPTIONS, and TRACE are defined to be safe request methods.\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

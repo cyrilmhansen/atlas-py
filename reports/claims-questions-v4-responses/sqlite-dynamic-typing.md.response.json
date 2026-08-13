@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-dynamic-typing.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.73981283698231,
+  "usage": {
+    "prompt_tokens": 940,
+    "completion_tokens": 398,
+    "total_tokens": 1338,
+    "input_tokens": 940,
+    "output_tokens": 398,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.47,
+    "total_time": 11.73,
+    "prompt_eval_duration": 3.47,
+    "generation_duration": 8.27,
+    "prompt_tokens_per_second": 271.04,
+    "generation_tokens_per_second": 48.15
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"property\",\n      \"statement\": \"SQLite uses dynamic typing.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"term\",\n      \"statement\": \"Content can be stored as INTEGER, REAL, TEXT, BLOB, or NULL.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"SQLite does not enforce data type constraints in the usual way.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"property\",\n      \"statement\": \"Data of any type can usually be inserted into any column.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"precondition\",\n      \"statement\": \"Columns declared INTEGER PRIMARY KEY may only hold a 64-bit signed integer.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_6\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"SQLite uses a declared type as a hint, called type affinity, and attempts conversions when possible.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

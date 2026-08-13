@@ -1,0 +1,29 @@
+{
+  "fixture": "python-heapq-open-questions.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 15.759242659027223,
+  "usage": {
+    "prompt_tokens": 1016,
+    "completion_tokens": 555,
+    "total_tokens": 1571,
+    "input_tokens": 1016,
+    "output_tokens": 555,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.65,
+    "total_time": 15.75,
+    "prompt_eval_duration": 3.65,
+    "generation_duration": 12.1,
+    "prompt_tokens_per_second": 278.19,
+    "generation_tokens_per_second": 45.86
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"reference\",\n      \"statement\": \"A priority queue is a common use for a heap.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"precondition\",\n      \"statement\": \"To return tasks with equal priorities in the order they were originally added, a mechanism for ordering equal-priority items is required.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"Tuple comparison breaks for (priority, task) pairs if the priorities are equal and the tasks do not have a default comparison order.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If the priority of a task changes, it must be moved to a new position in the heap.\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If a pending task needs to be deleted, it must be found and removed from the queue.\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_6\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"A solution to the first two challenges is to store priority, an entry count, and the task.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_7\",\n      \"facet\": \"property\",\n      \"statement\": \"The entry count serves as a tie-breaker.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_8\",\n      \"facet\": \"property\",\n      \"statement\": \"The entry count prevents tuple comparison from directly comparing tasks.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

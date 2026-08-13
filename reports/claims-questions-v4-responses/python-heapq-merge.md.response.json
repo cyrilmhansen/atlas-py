@@ -1,0 +1,29 @@
+{
+  "fixture": "python-heapq-merge.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 14.964978497009724,
+  "usage": {
+    "prompt_tokens": 942,
+    "completion_tokens": 548,
+    "total_tokens": 1490,
+    "input_tokens": 942,
+    "output_tokens": 548,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.47,
+    "total_time": 14.96,
+    "prompt_eval_duration": 3.47,
+    "generation_duration": 11.49,
+    "prompt_tokens_per_second": 271.79,
+    "generation_tokens_per_second": 47.68
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_merge_behavior\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.merge merges multiple sorted inputs into a single sorted output.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_merge_return_type\",\n      \"facet\": \"property\",\n      \"statement\": \"heapq.merge returns an iterator.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_merge_memory\",\n      \"facet\": \"property\",\n      \"statement\": \"heapq.merge does not pull the data into memory all at once.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_merge_precondition\",\n      \"facet\": \"precondition\",\n      \"statement\": \"heapq.merge assumes each input stream is already sorted.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_nsmallest_nlargest_small_n\",\n      \"facet\": \"property\",\n      \"statement\": \"heapq.nsmallest and heapq.nlargest perform best for smaller values of n.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_sorted_large_n\",\n      \"facet\": \"relation\",\n      \"statement\": \"For larger values of n, it is more efficient to use sorted() than heapq.nsmallest/nlargest.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_min_max_n_one\",\n      \"facet\": \"relation\",\n      \"statement\": \"When n is one, min() or max() is more efficient than heapq.nsmallest/nlargest.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_repeated_usage_heap\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If repeated usage is required, consider turning the iterable into an actual heap.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

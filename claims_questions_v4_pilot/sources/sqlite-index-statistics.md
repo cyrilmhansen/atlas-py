@@ -1,0 +1,3 @@
+Suppose a query can use more than one index. If ANALYZE has been run, SQLite can know that one index usually narrows the search to fewer rows than another. If all else is equal, SQLite chooses the index with the hope of narrowing the search to as small a number of rows as possible. This choice is only possible because of the statistics provided by ANALYZE. If ANALYZE has not been run then the choice of which index to use is arbitrary.
+
+A multi-column index uses the left-most column to order rows and later columns to break ties. With a suitable multi-column index, SQLite can find a constrained row with fewer searches than with separate lookups.

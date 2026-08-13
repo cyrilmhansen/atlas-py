@@ -1,0 +1,122 @@
+[
+  {
+    "id": "rfc9110-safe-methods",
+    "source": "IETF RFC 9110, HTTP Semantics",
+    "locator": "section 9.2.1 Safe Methods",
+    "url": "https://www.rfc-editor.org/rfc/rfc9110.html#name-safe-methods",
+    "why_selected": "Explicit comparison of read-only intent with implementation side effects.",
+    "pressure": "qualified comparison; exception; negative statement",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/rfc9110-safe-methods.md",
+    "content_hash": "89bcb2253ba5793f2e75ed715441d9b29a968a7176dd13b2c60b0db7fb9ca5a2"
+  },
+  {
+    "id": "rfc9110-idempotent-retry",
+    "source": "IETF RFC 9110, HTTP Semantics",
+    "locator": "section 9.2.2 Idempotent Methods",
+    "url": "https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods",
+    "why_selected": "Conditional conclusion about retries and a distinction between intended effects and incidental effects.",
+    "pressure": "conditional conclusion; exception",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/rfc9110-idempotent-retry.md",
+    "content_hash": "030d6007103fb151a82b385fe8099b15d3ecad62b9660a7c742d57f1a5e88f77"
+  },
+  {
+    "id": "sqlite-index-statistics",
+    "source": "SQLite Query Planning",
+    "locator": "sections 1.5 and 1.6, index choice and ANALYZE",
+    "url": "https://www.sqlite.org/queryplanner.html#_multiple_result_rows",
+    "why_selected": "Competing indexes can produce different choices; the conclusion depends on collected statistics.",
+    "pressure": "explicit comparison; conditional conclusion",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-index-statistics.md",
+    "content_hash": "21c4606d48e40a84286886186bf3d2e1d9ebd4109475445fa4a902a94d0403d0"
+  },
+  {
+    "id": "sqlite-or-union",
+    "source": "SQLite Query Planning",
+    "locator": "section 1.8, OR-connected terms",
+    "url": "https://www.sqlite.org/queryplanner.html#_or_connected_terms_in_the_where_clause",
+    "why_selected": "A proposed alternative is explicitly limited by an unindexed term and described as a possible future feature.",
+    "pressure": "competing mechanisms; negative statement; future question",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-or-union.md",
+    "content_hash": "60da195a6a470f53ca1ea82f4907c03058feb36c6d2f904161089e518abad919"
+  },
+  {
+    "id": "sqlite-indexed-sort",
+    "source": "SQLite Query Planning",
+    "locator": "sections 2.1–2.3, sorting by index",
+    "url": "https://www.sqlite.org/queryplanner.html#_sorting_by_index",
+    "why_selected": "Two plans have similar asymptotic work but different temporary-storage consequences, so the preferred plan is contextual.",
+    "pressure": "explicit comparison; representation trade-off; conditional conclusion",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-indexed-sort.md",
+    "content_hash": "a23004f5fe132ce6d94bc6d9c434f83e378b4ded90c0166f462a6fa634df7ad0"
+  },
+  {
+    "id": "python-sort-stability",
+    "source": "Python Sorting Techniques documentation",
+    "locator": "Sorting Basics; Sort Stability and Complex Sorts",
+    "url": "https://docs.python.org/3/howto/sorting.html#sort-stability-and-complex-sorts",
+    "why_selected": "The source states a guarantee, then derives a compositional use from it; stable and in-place forms have different contracts.",
+    "pressure": "qualified comparison; mechanism equivalence",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/python-sort-stability.md",
+    "content_hash": "17b7a8a5e78259b7db12b207e219f00b15ed344fd777b8a4ae56f919e2e0d396"
+  },
+  {
+    "id": "python-heapq-merge",
+    "source": "Python heapq documentation",
+    "locator": "heapq.merge and nsmallest/nlargest",
+    "url": "https://docs.python.org/3/library/heapq.html#heapq.merge",
+    "why_selected": "The same ordered result can be produced by streaming merge or materialized sorting, with different memory assumptions and size regimes.",
+    "pressure": "competing mechanisms; representation trade-off; conditional conclusion",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/python-heapq-merge.md",
+    "content_hash": "ae2c949b3730d335234bb589282db081b75b8e110ef27752c931d7e54a93bed4"
+  },
+  {
+    "id": "python-heapq-open-questions",
+    "source": "Python heapq documentation",
+    "locator": "Priority Queue Implementation Notes",
+    "url": "https://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes",
+    "why_selected": "The source contains explicit design questions and a concrete evidence-bearing implementation response.",
+    "pressure": "explicit open question; evidence requirement; exception",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/python-heapq-open-questions.md",
+    "content_hash": "fe4a8d2efd82785105fe481f65d830c3ddae390e6f0fdd5a7e56a96b09f2ec41"
+  },
+  {
+    "id": "cpp-stable-sort",
+    "source": "cppreference, std::stable_sort",
+    "locator": "Effects and complexity notes",
+    "url": "https://en.cppreference.com/cpp/algorithm/stable_sort",
+    "why_selected": "A standard-library contract explicitly preserves equivalent-element order and has preconditions distinct from ordinary sorting.",
+    "pressure": "explicit comparison; precondition; local guarantee",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/cpp-stable-sort.md",
+    "content_hash": "8058550a33dfee9d7413566a72540d7abfb08c6a788c5e5ade204278cbaa2c38"
+  },
+  {
+    "id": "sqlite-concurrency",
+    "source": "SQLite Frequently Asked Questions",
+    "locator": "FAQ 5, concurrent access",
+    "url": "https://sqlite.org/faq.html#q5",
+    "why_selected": "The source compares embedded-file concurrency with client/server systems and explicitly limits the conclusion by workload.",
+    "pressure": "qualified comparison; local exception",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-concurrency.md",
+    "content_hash": "9145daeba9fe4247b47d7b0fc04336630849e69911f4264b4994031da82f0a57"
+  },
+  {
+    "id": "sqlite-dynamic-typing",
+    "source": "SQLite Frequently Asked Questions",
+    "locator": "FAQ 2–3, datatypes and affinity",
+    "url": "https://sqlite.org/faq.html#q3",
+    "why_selected": "An apparent contradiction is resolved by an explicit exception and a qualified description of type affinity.",
+    "pressure": "explicit question; exception; non-affirmation",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-dynamic-typing.md",
+    "content_hash": "419266bb8eeeadb72bb600715eb8e93ba437eb6f13fde8eb11ac03e4e14e76e1"
+  },
+  {
+    "id": "sqlite-explain-evidence",
+    "source": "SQLite Requirement Matrix, EXPLAIN",
+    "locator": "EXPLAIN QUERY PLAN requirement R-01592-27714",
+    "url": "https://www2.sqlite.org/draft/matrix/matrix_dlang_explain.html",
+    "why_selected": "The requirement explicitly ties a statement about planner behavior to a named evidence test.",
+    "pressure": "explicit evidence requirement; source-to-test relation",
+    "local_path": "/home/john/luna/20260812/claims_questions_v4_pilot/sources/sqlite-explain-evidence.md",
+    "content_hash": "1394600267bcc877f9a884a6a6e3da325411957bc06279a92dab48ce2418edbd"
+  }
+]

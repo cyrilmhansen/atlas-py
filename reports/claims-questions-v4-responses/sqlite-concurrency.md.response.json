@@ -1,0 +1,29 @@
+{
+  "fixture": "sqlite-concurrency.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.681078220019117,
+  "usage": {
+    "prompt_tokens": 941,
+    "completion_tokens": 375,
+    "total_tokens": 1316,
+    "input_tokens": 941,
+    "output_tokens": 375,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.47,
+    "total_time": 11.68,
+    "prompt_eval_duration": 3.47,
+    "generation_duration": 8.21,
+    "prompt_tokens_per_second": 271.38,
+    "generation_tokens_per_second": 45.69
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_sqlite_read_concurrency\",\n      \"facet\": \"property\",\n      \"statement\": \"Multiple processes can have the same SQLite database open at the same time, and multiple processes can be doing a SELECT at the same time.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_sqlite_write_serialization\",\n      \"facet\": \"property\",\n      \"statement\": \"Only one process can be making changes to the database at any moment.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_client_server_concurrency\",\n      \"facet\": \"property\",\n      \"statement\": \"Client/server database engines usually support a higher level of concurrency and allow multiple processes to write at the same time.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_high_concurrency_recommendation\",\n      \"facet\": \"relation\",\n      \"statement\": \"If an application needs a lot of concurrency, it should consider a client/server database.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_concurrency_demand_estimate\",\n      \"facet\": \"property\",\n      \"statement\": \"Experience suggests that most applications need much less concurrency than their designers imagine.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}
