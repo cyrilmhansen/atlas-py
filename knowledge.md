@@ -766,3 +766,15 @@ Le contexte QuickDraw B0→B1 de réutilisation peut être décrit et décidé s
 - La connaissance durable est donc une frontière locale assortie d'une
   précision expérimentale, et non une constante universelle de la représentation.
 - Provenance : `investigations/b0-b1-break-even-stability/`.
+
+## Semantic Spider — structure du résultat B0→B1
+
+- Deux résultats B0 de même aire et densité (50 %) peuvent avoir des coûts B1
+  radicalement différents : les bandes horizontales testées ont 128 runs et
+  3 128 octets, contre 65 536 runs et 526 392 octets pour un damier.
+- Le gain temporel d'application et le coût de stockage/conversion sont donc
+  des axes distincts. Atteindre un break-even temporel ne suffit pas à rendre
+  une conversion admissible sous contrainte mémoire.
+- Pour cette décision locale, `run_count` et le stockage de la représentation
+  cible sont des propriétés plus discriminantes que la densité seule.
+- Provenance : `investigations/region-conversion-structure/`.
