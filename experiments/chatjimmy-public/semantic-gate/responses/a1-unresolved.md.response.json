@@ -1,0 +1,42 @@
+{
+  "fixture": "a1-unresolved.md",
+  "model": "llama3.1-8B",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "public-default",
+  "duration": 0.3751109709846787,
+  "status": 200,
+  "headers": {
+    "date": "Thu, 13 Aug 2026 19:54:12 GMT",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+    "cache-control": "no-cache, no-transform",
+    "x-forwarded-for": "82.64.77.103, 10.13.10.113",
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    "connection": "close"
+  },
+  "stats": {
+    "created_at": 1786650852.3180773,
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 0.07451891899108887,
+    "logprobs": null,
+    "topk": 8,
+    "ttft": 0.03516840934753418,
+    "reason": "termination token 128009/<|eot_id|> detected",
+    "status": 0,
+    "prefill_tokens": 861,
+    "prefill_rate": 24482.19910919482,
+    "decode_tokens": 430,
+    "decode_rate": 14008.813769962095,
+    "total_tokens": 1291,
+    "total_time": 0.06587433815002441,
+    "roundtrip_time": 85
+  },
+  "content": "Here is the extracted knowledge in JSON format with schema_version 1:\n\n```\n{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"L1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"An ordered index is used to answer lookups.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"L3\",\n      \"facet\": \"relation\",\n      \"statement\": \"Does rebuilding the index after each update preserve latency under sustained writes?\",\n      \"start_line\": 3,\n      \"end_line\": 3,\n      \"derived_from\": [],\n      \"evidence_needed\": \"None\"\n    }\n  ],\n  \"claims\": [],\n  \"questions\": [\n    {\n      \"key\": \"L3\",\n      \"facet\": \"relation\",\n      \"question\": \"Does rebuilding the index after each update preserve latency under sustained writes?\",\n      \"reason\": \"To understand the performance of the ordered index.\",\n      \"evidence_needed\": \"Latency measurements or policies for sustained writes.\",\n      \"derived_from\": []\n    }\n  ]\n}\n```\n\nNote that I've preserved the local vocabulary of the source by using the exact words from the source, and avoided creating an ontology or taxonomy. I've also only extracted the relevant information that is actually mentioned in the source, without making unsupported assumptions. The `questions` array contains only the question asked by the source, and the `observations` array contains only the relevant information about the ordered index. \n\nThe source mentions that the implementation description does not report a latency measurement or a policy for sustained writes, so I've left the `evidence_needed` field empty for the observation L2. \n\nAs the source asks an explicit question, I've added it to the `questions` array, with a `derived_from` field pointing to none, since it's not a derived question. \n\nNote that I've followed the guidelines provided in the source, and made no unsupported assumptions or inferences. Let me know if you have any further requests!\n",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting value: line 1 column 1 (char 0)"
+}

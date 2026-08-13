@@ -1,0 +1,42 @@
+{
+  "fixture": "c2-irrelevant-absence.md",
+  "model": "llama3.1-8B",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "public-default",
+  "duration": 0.37475804798305035,
+  "status": 200,
+  "headers": {
+    "date": "Thu, 13 Aug 2026 19:54:13 GMT",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+    "cache-control": "no-cache, no-transform",
+    "x-forwarded-for": "82.64.77.103, 10.233.75.0",
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    "connection": "close"
+  },
+  "stats": {
+    "created_at": 1786650853.4439547,
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 0.07309174537658691,
+    "logprobs": null,
+    "topk": 8,
+    "ttft": 0.03539276123046875,
+    "reason": "termination token 128009/<|eot_id|> detected",
+    "status": 0,
+    "prefill_tokens": 867,
+    "prefill_rate": 24496.5345979737,
+    "decode_tokens": 409,
+    "decode_rate": 14015.509534469518,
+    "total_tokens": 1276,
+    "total_time": 0.06458854675292969,
+    "roundtrip_time": 85
+  },
+  "content": "```\n{\n    \"schema_version\": 1,\n    \"observations\": [\n        {\n            \"key\": \"L1\",\n            \"facet\": \"mechanism\",\n            \"statement\": \"The lookup routine returns the first matching record from the ordered index.\",\n            \"start_line\": 1,\n            \"end_line\": 1\n        },\n        {\n            \"key\": \"L2\",\n            \"facet\": \"other\",\n            \"statement\": \"\",\n            \"start_line\": 2,\n            \"end_line\": 2\n        },\n        {\n            \"key\": \"L3\",\n            \"facet\": \"other\",\n            \"statement\": \"\",\n            \"start_line\": 3,\n            \"end_line\": 3\n        },\n        {\n            \"key\": \"L5\",\n            \"facet\": \"other\",\n            \"statement\": \"That allocator detail does not affect the lookup order, returned record, or stated preconditions in this bounded description.\",\n            \"start_line\": 5,\n            \"end_line\": 5\n        }\n    ],\n    \"claims\": [\n        {\n            \"status\": \"HYPOTHESIS\",\n            \"supported_by\": \"L1\",\n            \"reason\": \"The lookup routine's order of operation is based on the ordered index.\"\n        }\n    ],\n    \"questions\": [\n        {\n            \"question\": \"What is the source of the lookup order?\",\n            \"reason\": \"The passage does not specify which storage allocator backs the index.\",\n            \"evidence_needed\": \"L2\",\n            \"derived_from\": []\n        },\n        {\n            \"question\": \"What is the impact of the allocator detail on the lookup order?\",\n            \"reason\": \"The source only discusses the effect on preconditions.\",\n            \"evidence_needed\": \"L3\",\n            \"derived_from\": []\n        }\n    ]\n}\n```\n\nNote: This output follows the specified schema and structure, but please review the output for any inaccuracies or inconsistencies that may arise from the specific guidelines.\n",
+  "validation_status": "invalid",
+  "validation_error": "response must be raw JSON or one JSON-only Markdown fence"
+}

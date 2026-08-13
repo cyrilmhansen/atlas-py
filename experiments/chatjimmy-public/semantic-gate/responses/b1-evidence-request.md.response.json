@@ -1,0 +1,42 @@
+{
+  "fixture": "b1-evidence-request.md",
+  "model": "llama3.1-8B",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "public-default",
+  "duration": 0.3680942250066437,
+  "status": 200,
+  "headers": {
+    "date": "Thu, 13 Aug 2026 19:54:13 GMT",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+    "cache-control": "no-cache, no-transform",
+    "x-forwarded-for": "82.64.77.103, 10.13.10.113",
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    "connection": "close"
+  },
+  "stats": {
+    "created_at": 1786650853.0695574,
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 0.06963229179382324,
+    "logprobs": null,
+    "topk": 8,
+    "ttft": 0.035370826721191406,
+    "reason": "termination token 128009/<|eot_id|> detected",
+    "status": 0,
+    "prefill_tokens": 867,
+    "prefill_rate": 24511.72563293699,
+    "decode_tokens": 343,
+    "decode_rate": 13937.26467938347,
+    "total_tokens": 1210,
+    "total_time": 0.05999350547790527,
+    "roundtrip_time": 80
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"batch_write_overhead\",\n      \"facet\": \"property\",\n      \"statement\": \"writes are batched to reduce per-operation overhead\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    }\n  ],\n  \"claims\": [\n    {\n      \"key\": \"batch_write_overhead\",\n      \"facet\": \"property\",\n      \"statement\": \"batching is faster than one-by-one writes under certain conditions\",\n      \"start_line\": 2,\n      \"end_line\": 2,\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"supported_by\": [\n        {\n          \"source\": 2\n        }\n      ]\n    },\n    {\n      \"key\": \"batch_size_to_optimize\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"a batch size of 64 is optimal for batching\",\n      \"start_line\": 5,\n      \"end_line\": 5,\n      \"status\": \"HYPOTHESIS\",\n      \"supported_by\": [\n        {\n          \"source\": 5\n        }\n      ]\n    }\n  ],\n  \"questions\": [\n    {\n      \"key\": \"optimization_point\",\n      \"facet\": \"other\",\n      \"question\": \"At what batch size is batching faster than one-by-one writes?\",\n      \"reason\": \"To understand the optimization point of batching\",\n      \"evidence_needed\": \"a benchmark varying batch size from 1 to 1024 under the sustained-write workload\",\n      \"derived_from\": [\n        3\n      ]\n    }\n  ]\n}\n",
+  "validation_status": "invalid",
+  "validation_error": "claim has invalid supported_by references"
+}
