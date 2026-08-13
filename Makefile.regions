@@ -1,0 +1,26 @@
+CC ?= cc
+CFLAGS ?= -O3 -DNDEBUG -std=c11 -Wall -Wextra -Wpedantic
+
+.PHONY: all test benchmark clean
+
+all: quickdraw_regions_experiment
+
+quickdraw_regions_experiment: quickdraw_regions.c quickdraw_regions_experiment.c \
+                              quickdraw_regions.h quickdraw_bitblt.c quickdraw_bitblt.h
+	$(CC) $(CFLAGS) quickdraw_regions.c quickdraw_regions_experiment.c quickdraw_bitblt.c -o $@
+
+test: quickdraw_regions_experiment quickdraw_regions_sanitize
+	./quickdraw_regions_experiment --test
+	ASAN_OPTIONS=detect_leaks=0 ./quickdraw_regions_sanitize --test
+
+quickdraw_regions_sanitize: quickdraw_regions.c quickdraw_regions_experiment.c \
+                            quickdraw_regions.h quickdraw_bitblt.c quickdraw_bitblt.h
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		quickdraw_regions.c quickdraw_regions_experiment.c quickdraw_bitblt.c -o $@
+
+benchmark: quickdraw_regions_experiment
+	./quickdraw_regions_experiment --benchmark > quickdraw_regions_benchmark.json
+
+clean:
+	$(RM) quickdraw_regions_experiment quickdraw_regions_sanitize
