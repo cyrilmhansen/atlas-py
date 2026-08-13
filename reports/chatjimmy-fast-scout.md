@@ -8,7 +8,7 @@ This is a non-authoritative scout experiment against the public ChatJimmy route 
 - model: `llama3.1-8B`
 - access: anonymous public route; no oMLX or private API backend
 - extractor status retained from the previous experiment: **FAIL**
-- scout status: **FAIL** as a semantic scout, despite all HTTP calls succeeding
+- scout status after re-audit: **FAST_SCOUT_MARGINAL**
 
 Corpus Miner V4, its prompt, validator and facets were not modified. The scout
 used four fixed Atlas tensions, with four sequential calls per tension. Each
@@ -108,3 +108,50 @@ PYTHONPATH=. python3 experiments/chatjimmy-public/run_fast_scout.py \
 The script uses only the public endpoint and stores the exact prompts and raw
 responses. The prior `192.168.1.188` run remains invalid for identifying the
 ChatJimmy backend and is not used here.
+
+## Value re-audit of the unsupported bucket
+
+No new ChatJimmy calls were made. The 12 candidates previously placed in
+`UNSUPPORTED_BUT_TESTABLE` were re-read against the Atlas reservoir using
+the operational test: would handing this item to a fresh Semantic Spider save
+a meaningful research step?
+
+| id | candidate summary | reclassification |
+|---|---|---|
+| R-1 | compare a B0-to-B1 conversion using a sparse-matrix representation with the existing conversion | **NOVEL_AND_DISCRIMINATING** |
+| R-2 | investigate B1-to-B2 conversion using a sparse matrix | **GENERIC_BUT_TESTABLE** |
+| R-3 | investigate B0-to-B2 conversion using a sparse matrix | **GENERIC_BUT_TESTABLE** |
+| R-4 | accelerate B0-to-B1 with parallel processing or caching | **GENERIC_BUT_TESTABLE** |
+| C-1 | test whether coffee/pastry association survives adjustment for other items | **GENERIC_BUT_TESTABLE** |
+| C-2 | test whether a weekend interaction result survives holidays and atypical workweeks | **GENERIC_BUT_TESTABLE** |
+| C-3 | test whether communication intimacy changes between casual, business and emergency contexts | **GENERIC_BUT_TESTABLE** |
+| D-1 | use OpenCV/Pygame/OpenGL as implementation or source directions | **MISLEADING_AFTER_CHECK** |
+| D-2 | compare alternative tie-breaking implementations | **GENERIC_BUT_TESTABLE** |
+| X-1 | test transfer of an invariant between two domains | **GENERIC_BUT_TESTABLE** |
+| X-2 | test transfer of a complexity property between two domains | **GENERIC_BUT_TESTABLE** |
+| X-3 | test transfer of a variant or counterexample between two domains | **GENERIC_BUT_TESTABLE** |
+
+Counts: **1 NOVEL_AND_DISCRIMINATING, 10 GENERIC_BUT_TESTABLE, 0
+REDUNDANT_AFTER_CHECK, 1 MISLEADING_AFTER_CHECK**.
+
+R-1 would create a new branch: implement or locate a sparse intermediate for
+the exact B0 result, then measure conversion time, storage, and application
+time against the existing B0-to-B1 path. The discriminating observation is
+whether it preserves the Region while changing the conversion/application
+trade-off. This branch is not in the current Atlas frontier, which records
+the native B0-to-B1 path and open lifecycle questions but no sparse-matrix
+alternative. It is a useful scout lead, not a validated engineering fact.
+
+The remaining ten testable items are concrete enough to execute but do not
+save a meaningful research step: they say to compare contexts, transfer a
+generic invariant/property, or try a broad optimization without specifying a
+new source, mechanism, or discriminating observable. D-1 is worse: the
+response presents OpenGL as a Bresenham implementation/source direction
+without evidence in the retained corpus, so the proposed direction is
+materially misleading as stated.
+
+The revised scout classification is **FAST_SCOUT_MARGINAL**. ChatJimmy can
+occasionally save a stronger Spider a research step by naming a concrete
+unexplored branch, but the yield here is 1/12 and the remaining output
+requires substantial human filtering. It is not a reliable autonomous
+frontier generator.
