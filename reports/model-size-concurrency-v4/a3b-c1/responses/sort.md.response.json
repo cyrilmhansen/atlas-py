@@ -1,0 +1,24 @@
+{
+  "fixture": "sort.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 6.932558822038118,
+  "usage": {
+    "prompt_tokens": 2035,
+    "completion_tokens": 782,
+    "total_tokens": 2817,
+    "input_tokens": 2035,
+    "output_tokens": 782,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 6.92
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_sort_definition\",\n      \"facet\": \"term\",\n      \"statement\": \"Sort is defined as arranging items in a predetermined order.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_sort_formal\",\n      \"facet\": \"property\",\n      \"statement\": \"A sort operation transforms an initial array S of N items into a final array S' such that S' is a permutation of S and S'[i] <= S'[i+1] for 0 < i < N.\",\n      \"start_line\": 13,\n      \"end_line\": 22\n    },\n    {\n      \"key\": \"obs_sort_factors\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The choice of sorting algorithm depends on factors including the number of items relative to working memory, knowledge of the orderliness of items or range of keys, and the cost of comparing keys vs. moving items.\",\n      \"start_line\": 5,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_sort_properties\",\n      \"facet\": \"property\",\n      \"statement\": \"Most sorting algorithms can be implemented as in-place sorts, and many can be implemented to be stable.\",\n      \"start_line\": 8,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_sort_stability_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Any sorting algorithm can be made stable by appending the original position to the key, allowing positions to break ties when keys are otherwise equal.\",\n      \"start_line\": 91,\n      \"end_line\": 93\n    },\n    {\n      \"key\": \"obs_sort_etymology\",\n      \"facet\": \"term\",\n      \"statement\": \"The term 'sort' in Computer Science originated from early automated ordering procedures using punched card machines that classified cards by holes to implement radix sort.\",\n      \"start_line\": 96,\n      \"end_line\": 98\n    },\n    {\n      \"key\": \"obs_sort_knuth_note\",\n      \"facet\": \"reference\",\n      \"statement\": \"Knuth notes that the sort operation might be called 'order'.\",\n      \"start_line\": 94,\n      \"end_line\": 95\n    },\n    {\n      \"key\": \"obs_sort_list\",\n      \"facet\": \"relation\",\n      \"statement\": \"Specific sorting algorithms include quicksort, heapsort, Shell sort, comb sort, radix sort, bucket sort, insertion sort, selection sort, merge sort, counting sort, histogram sort, strand sort, q sort, J sort, shuffle sort, American flag sort, gnome sort, bubble sort, bidirectional bubble sort, treesort, adaptive heap sort, multikey Quicksort, and topological sort.\",\n      \"start_line\": 29,\n      \"end_line\": 74\n    },\n    {\n      \"key\": \"obs_sort_related\",\n      \"facet\": \"relation\",\n      \"statement\": \"Related concepts include external sort, internal sort, comparison sort, distribution sort, easy split/hard merge, hard split/easy merge, and derangement.\",\n      \"start_line\": 76,\n      \"end_line\": 89\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

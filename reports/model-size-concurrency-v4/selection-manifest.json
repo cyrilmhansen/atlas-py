@@ -1,0 +1,19 @@
+{
+  "prompt_version": "corpus-miner-v4",
+  "reference_context": "default",
+  "thinking": "off",
+  "sources": [
+    {"file": "pilot_nist_v4/sources_md/quicksort.md", "family": "initial_nist", "pressure": "mechanism, complexity and scope"},
+    {"file": "pilot_nist_v4/sources_md/sort.md", "family": "initial_nist", "pressure": "contract, stability and workload choice"},
+    {"file": "pilot_nist_v4/sources_md/binary-search.md", "family": "initial_nist", "pressure": "precondition and implementation trade-off"},
+    {"file": "pilot_nist_v4/sources_md/histogram-sort.md", "family": "initial_nist", "pressure": "complexity assumptions and memory trade-off"},
+    {"file": "claims_questions_v4_pilot/sources/sqlite-indexed-sort.md", "family": "claims_questions_stress", "pressure": "qualified comparison and scope broadening"},
+    {"file": "claims_questions_v4_pilot/sources/python-heapq-merge.md", "family": "claims_questions_stress", "pressure": "competing mechanisms and representation trade-off"},
+    {"file": "claims_questions_v4_pilot/sources/rfc9110-safe-methods.md", "family": "claims_questions_stress", "pressure": "qualified comparison and exception"},
+    {"file": "claims_questions_v4_pilot/sources/python-heapq-open-questions.md", "family": "claims_questions_stress", "pressure": "open question and evidence pressure"},
+    {"file": "question_semantics_v4_pilot/sources/a1-unresolved.md", "family": "question_semantics", "pressure": "unresolved explicit question"},
+    {"file": "question_semantics_v4_pilot/sources/a2-resolved.md", "family": "question_semantics", "pressure": "locally resolved question"},
+    {"file": "question_semantics_v4_pilot/sources/b1-evidence-request.md", "family": "question_semantics", "pressure": "explicit evidence request"},
+    {"file": "question_semantics_v4_pilot/sources/c2-irrelevant-absence.md", "family": "question_semantics", "pressure": "negative control"}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "c2-irrelevant-absence.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 1.6889242350007407,
+  "usage": {
+    "prompt_tokens": 902,
+    "completion_tokens": 224,
+    "total_tokens": 1126,
+    "input_tokens": 902,
+    "output_tokens": 224,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.68
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The lookup routine returns the first matching record from the ordered index.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"other\",\n      \"statement\": \"The passage does not specify which storage allocator backs the index.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"The allocator detail does not affect the lookup order, returned record, or stated preconditions in this bounded description.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

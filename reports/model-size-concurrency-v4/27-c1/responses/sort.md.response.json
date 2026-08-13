@@ -1,0 +1,24 @@
+{
+  "fixture": "sort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 27.730096594023053,
+  "usage": {
+    "prompt_tokens": 2035,
+    "completion_tokens": 1066,
+    "total_tokens": 3101,
+    "input_tokens": 2035,
+    "output_tokens": 1066,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 27.72
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_sort_def\",\n      \"facet\": \"term\",\n      \"statement\": \"Sort is defined as arranging items in a predetermined order.\",\n      \"start_line\": 4,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_sort_factors\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The choice of sorting algorithm depends on factors such as the number of items relative to working memory, knowledge of the orderliness of the items or the range of the keys, and the cost of comparing keys vs. the cost of moving items.\",\n      \"start_line\": 5,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_in_place\",\n      \"facet\": \"property\",\n      \"statement\": \"Most sorting algorithms can be implemented as an in-place sort.\",\n      \"start_line\": 7,\n      \"end_line\": 8\n    },\n    {\n      \"key\": \"obs_stability\",\n      \"facet\": \"property\",\n      \"statement\": \"Many sorting algorithms can be implemented so they are stable.\",\n      \"start_line\": 9,\n      \"end_line\": 10\n    },\n    {\n      \"key\": \"obs_formal_order\",\n      \"facet\": \"property\",\n      \"statement\": \"In the formal definition, for a final array S' of N items, S'[i] <= S'[i+1] for 0 < i < N.\",\n      \"start_line\": 13,\n      \"end_line\": 18\n    },\n    {\n      \"key\": \"obs_formal_permutation\",\n      \"facet\": \"property\",\n      \"statement\": \"In the formal definition, the final array S' is a permutation of the initial array S.\",\n      \"start_line\": 19,\n      \"end_line\": 22\n    },\n    {\n      \"key\": \"obs_generalization\",\n      \"facet\": \"relation\",\n      \"statement\": \"Sort is a kind of permutation.\",\n      \"start_line\": 23,\n      \"end_line\": 25\n    },\n    {\n      \"key\": \"obs_specializations\",\n      \"facet\": \"relation\",\n      \"statement\": \"Specializations of sort include quicksort, heapsort, Shell sort, comb sort, radix sort, bucket sort, insertion sort, selection sort, merge sort, counting sort, histogram sort, strand sort, q sort, J sort, shuffle sort, American flag sort, gnome sort, bubble sort, bidirectional bubble sort, treesort, adaptive heap sort, multikey Quicksort, and topological sort.\",\n      \"start_line\": 27,\n      \"end_line\": 74\n    },\n    {\n      \"key\": \"obs_related_concepts\",\n      \"facet\": \"reference\",\n      \"statement\": \"Related concepts include external sort, internal sort, comparison sort, distribution sort, easy split hard merge, hard split easy merge, and derangement.\",\n      \"start_line\": 75,\n      \"end_line\": 89\n    },\n    {\n      \"key\": \"obs_stability_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Any sorting algorithm can be made stable by appending the original position to the key; when otherwise-equal keys are compared, the positions break the tie and maintain the original order.\",\n      \"start_line\": 90,\n      \"end_line\": 93\n    },\n    {\n      \"key\": \"obs_etymology\",\n      \"facet\": \"other\",\n      \"statement\": \"The term 'sort' came to be used in Computer Science because the earliest automated ordering procedures used punched card machines, which classified cards by their holes, to implement radix sort.\",\n      \"start_line\": 96,\n      \"end_line\": 98\n    },\n    {\n      \"key\": \"obs_knuth_note\",\n      \"facet\": \"reference\",\n      \"statement\": \"Knuth notes [Knuth98, 3:1, Chap. 5] that the sort operation might be called 'order'.\",\n      \"start_line\": 94,\n      \"end_line\": 95\n    },\n    {\n      \"key\": \"obs_implementations\",\n      \"facet\": \"reference\",\n      \"statement\": \"Specific implementations can be found in Pascal, C++, Fortran, and Mathematica, and Thomas Baudel's sort algorithm visualizer (Java) includes a dozen algorithms.\",\n      \"start_line\": 101,\n      \"end_line\": 106\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "python-heapq-merge.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 2.8539820250007324,
+  "usage": {
+    "prompt_tokens": 942,
+    "completion_tokens": 540,
+    "total_tokens": 1482,
+    "input_tokens": 942,
+    "output_tokens": 540,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.84
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.merge merges multiple sorted inputs into a single sorted output.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"property\",\n      \"statement\": \"heapq.merge returns an iterator.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"heapq.merge does not pull the data into memory all at once.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"precondition\",\n      \"statement\": \"heapq.merge assumes each input stream is already sorted.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nsmallest and heapq.nlargest perform best for smaller values of n.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_6\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"For larger values of n, it is more efficient to use sorted() than heapq.nsmallest/nlargest.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_7\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"When n is one, min() or max() is more efficient than heapq.nsmallest/nlargest.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_8\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"If repeated usage is required, consider turning the iterable into an actual heap.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

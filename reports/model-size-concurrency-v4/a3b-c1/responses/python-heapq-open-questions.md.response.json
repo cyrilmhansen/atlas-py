@@ -1,0 +1,24 @@
+{
+  "fixture": "python-heapq-open-questions.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 4.647037855000235,
+  "usage": {
+    "prompt_tokens": 1016,
+    "completion_tokens": 568,
+    "total_tokens": 1584,
+    "input_tokens": 1016,
+    "output_tokens": 568,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 4.64
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"term\",\n      \"statement\": \"A priority queue is a common use for a heap.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Tuple comparison breaks for (priority, task) pairs if the priorities are equal and the tasks do not have a default comparison order.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"A solution to challenges involving equal priorities and task comparison is to store priority, an entry count, and the task.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"property\",\n      \"statement\": \"The entry count serves as a tie-breaker and prevents tuple comparison from directly comparing tasks.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    }\n  ],\n  \"claims\": [\n    {\n      \"key\": \"claim_1\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"supported_by\": [\n        \"obs_3\",\n        \"obs_4\"\n      ],\n      \"statement\": \"Storing an entry count alongside priority and task allows the heap to maintain insertion order for equal priorities without requiring the task objects to be comparable.\"\n    }\n  ],\n  \"questions\": [\n    {\n      \"question\": \"How do you move a task to a new position in the heap if its priority changes?\",\n      \"reason\": \"The source identifies this as a challenge but does not provide the mechanism for updating positions, which is critical for implementing mutable priority queues.\",\n      \"evidence_needed\": \"Mechanism for updating heap positions upon priority change.\",\n      \"derived_from\": []\n    },\n    {\n      \"question\": \"How do you find and remove a pending task from the queue?\",\n      \"reason\": \"The source identifies deletion as a challenge but does not provide the mechanism for locating and removing arbitrary elements, which is a key operational requirement.\",\n      \"evidence_needed\": \"Mechanism for locating and removing arbitrary tasks from the heap.\",\n      \"derived_from\": []\n    }\n  ]\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "binary-search.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 5.712989111023489,
+  "usage": {
+    "prompt_tokens": 1721,
+    "completion_tokens": 690,
+    "total_tokens": 2411,
+    "input_tokens": 1721,
+    "output_tokens": 690,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 5.7
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_01\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Binary search searches a sorted array by repeatedly dividing the search interval in half, starting with the whole array, narrowing to the lower half if the search key is less than the middle item, or the upper half otherwise, until the value is found or the interval is empty.\",\n      \"start_line\": 5,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_02\",\n      \"facet\": \"term\",\n      \"statement\": \"Binary search is a generalization of dichotomic search and a type of search.\",\n      \"start_line\": 10,\n      \"end_line\": 15\n    },\n    {\n      \"key\": \"obs_03\",\n      \"facet\": \"relation\",\n      \"statement\": \"Binary search is used in or is a part of binary insertion sort, ideal merge, suffix array, and inversion list.\",\n      \"start_line\": 16,\n      \"end_line\": 25\n    },\n    {\n      \"key\": \"obs_04\",\n      \"facet\": \"relation\",\n      \"statement\": \"Binary search is a part of or used in divide and conquer.\",\n      \"start_line\": 26,\n      \"end_line\": 29\n    },\n    {\n      \"key\": \"obs_05\",\n      \"facet\": \"property\",\n      \"statement\": \"The run time of binary search is O(ln n).\",\n      \"start_line\": 39,\n      \"end_line\": 42\n    },\n    {\n      \"key\": \"obs_06\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Finding the middle index is often coded as mid = (high + low)/2, but this overflows if high and low are close to the largest expressible integer; the overflow-safe alternative is mid = low + (high - low)/2 for non-negative high and low.\",\n      \"start_line\": 43,\n      \"end_line\": 46\n    },\n    {\n      \"key\": \"obs_07\",\n      \"facet\": \"property\",\n      \"statement\": \"Binary search may be effective with an ordered linked list, making O(n) traversals (same as linear search) but performing only O(log n) comparisons.\",\n      \"start_line\": 48,\n      \"end_line\": 52\n    },\n    {\n      \"key\": \"obs_08\",\n      \"facet\": \"reference\",\n      \"statement\": \"The entry is from the Dictionary of Algorithms and Data Structures, edited by Paul E. Black, modified 21 April 2022, available at https://www.nist.gov/dads/HTML/binarySearch.html.\",\n      \"start_line\": 80,\n      \"end_line\": 85\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "b1-evidence-request.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.112807720026467,
+  "usage": {
+    "prompt_tokens": 904,
+    "completion_tokens": 352,
+    "total_tokens": 1256,
+    "input_tokens": 904,
+    "output_tokens": 352,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 11.11
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_batching_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_batch_size_question\",\n      \"facet\": \"other\",\n      \"statement\": \"Question: At what batch size does batching become faster than one-by-one writes?\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_evidence_needed\",\n      \"facet\": \"reference\",\n      \"statement\": \"Evidence needed: a benchmark varying batch size from 1 to 1024 under the sustained-write workload.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": [\n    {\n      \"question\": \"At what batch size does batching become faster than one-by-one writes?\",\n      \"reason\": \"Determining this threshold is necessary to select an optimal batch size for the sustained-write workload, distinguishing between regimes where batching provides a performance benefit versus those where it does not.\",\n      \"evidence_needed\": \"a benchmark varying batch size from 1 to 1024 under the sustained-write workload\",\n      \"derived_from\": [\n        \"obs_batch_size_question\",\n        \"obs_evidence_needed\"\n      ]\n    }\n  ]\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

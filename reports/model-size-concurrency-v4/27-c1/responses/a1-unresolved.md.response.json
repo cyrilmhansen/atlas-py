@@ -1,0 +1,24 @@
+{
+  "fixture": "a1-unresolved.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 9.902333880017977,
+  "usage": {
+    "prompt_tokens": 896,
+    "completion_tokens": 247,
+    "total_tokens": 1143,
+    "input_tokens": 896,
+    "output_tokens": 247,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 9.44
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"An ordered index is used to answer lookups.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"reference\",\n      \"statement\": \"The implementation description does not report a latency measurement or a policy for sustained writes.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": [\n    {\n      \"question\": \"Does rebuilding the index after each update preserve latency under sustained writes?\",\n      \"reason\": \"Determining whether this specific update strategy maintains performance characteristics is necessary to evaluate the mechanism's suitability for write-heavy workloads.\",\n      \"evidence_needed\": \"Latency measurements or policy details regarding sustained writes.\",\n      \"derived_from\": [\n        \"obs_2\"\n      ]\n    }\n  ]\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

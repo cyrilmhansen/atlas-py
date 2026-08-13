@@ -1,0 +1,24 @@
+{
+  "fixture": "rfc9110-safe-methods.md",
+  "model": "Qwen3.6-35B-A3B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 2.4392528309836052,
+  "usage": {
+    "prompt_tokens": 1003,
+    "completion_tokens": 333,
+    "total_tokens": 1336,
+    "input_tokens": 1003,
+    "output_tokens": 333,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.43
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"term\",\n      \"statement\": \"Safe methods are request methods whose defined semantics are essentially read-only, meaning the client does not request or expect any state change on the origin server as a result of applying the method.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"property\",\n      \"statement\": \"The definition of safe methods does not prevent an implementation from including behavior that is potentially harmful, not entirely read-only, or causes side effects.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"property\",\n      \"statement\": \"For a method to be considered safe, it is important that the client did not request additional behavior and cannot be held accountable for it.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"reference\",\n      \"statement\": \"GET, HEAD, OPTIONS, and TRACE are defined to be safe request methods by this specification.\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}
