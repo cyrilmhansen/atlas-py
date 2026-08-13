@@ -1,5 +1,12 @@
 # Atlas Core POC — connaissance acquise
 
+## Claim scope — connaissance d'audit
+
+- Un claim dérivé peut ajouter une conséquence, une relation ou une recommandation locale si elle est entraînée par l'ensemble des observations citées et conserve leur sujet, préconditions, modalité, portée comparative et type de relation.
+- Une dérivation devient unsupported lorsqu'elle renforce silencieusement une qualification (`may/generally/some` vers `primarily/always`), transforme un facteur en règle de décision, une association en explication causale, ou un cas local en propriété universelle.
+- Les locators et `supported_by` établissent la provenance des prémisses mais ne valident pas à eux seuls la portée de la conclusion.
+- Cette règle est issue de `expeditions/claim-scope/claim-scope.md`; elle ne modifie pas Corpus Miner V4 et ne constitue pas encore un protocole automatisé.
+
 ## Confirmed
 
 - Un même besoin (10 000 éléments, charge de lecture majoritaire) peut produire
