@@ -1,0 +1,29 @@
+{
+  "fixture": "c1-bounded.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 7.9500549280201085,
+  "usage": {
+    "prompt_tokens": 895,
+    "completion_tokens": 217,
+    "total_tokens": 1112,
+    "input_tokens": 895,
+    "output_tokens": 217,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.46,
+    "total_time": 7.92,
+    "prompt_eval_duration": 3.46,
+    "generation_duration": 4.46,
+    "prompt_tokens_per_second": 258.52,
+    "generation_tokens_per_second": 48.69
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_aligned_path\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The copy routine uses 64-bit words when both source and destination are 8-byte aligned.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_unaligned_path\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"For unaligned inputs it uses the generic byte path.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_equivalence\",\n      \"facet\": \"property\",\n      \"statement\": \"The two paths preserve the same byte sequence.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

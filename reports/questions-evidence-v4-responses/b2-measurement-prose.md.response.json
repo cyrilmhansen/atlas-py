@@ -1,0 +1,29 @@
+{
+  "fixture": "b2-measurement-prose.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 8.279030533041805,
+  "usage": {
+    "prompt_tokens": 897,
+    "completion_tokens": 240,
+    "total_tokens": 1137,
+    "input_tokens": 897,
+    "output_tokens": 240,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 3.23,
+    "total_time": 8.27,
+    "prompt_eval_duration": 3.23,
+    "generation_duration": 5.04,
+    "prompt_tokens_per_second": 277.7,
+    "generation_tokens_per_second": 47.59
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_batching_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"obs_benchmark_setup\",\n      \"facet\": \"other\",\n      \"statement\": \"A benchmark varies batch size from 1 to 1024 under the sustained-write workload to measure where batching becomes faster than one-by-one writes.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_missing_transition_point\",\n      \"facet\": \"other\",\n      \"statement\": \"The passage does not report the measured transition point where batching becomes faster than one-by-one writes.\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

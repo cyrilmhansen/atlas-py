@@ -1,0 +1,56 @@
+[
+  {
+    "id": "a1-unresolved",
+    "pair": "A",
+    "expected_question_state": "RETAIN",
+    "expected_evidence_needed": null,
+    "rationale": "Explicit question; the bounded passage gives no answer or result.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/a1-unresolved.md",
+    "content_hash": "af05b7f337e771ec94d2437eda42b895fdf0613b72806ad4ed847a51294051b2"
+  },
+  {
+    "id": "a2-resolved",
+    "pair": "A",
+    "expected_question_state": "SUPPRESS",
+    "expected_evidence_needed": null,
+    "rationale": "Same question form, followed by a local answer and result.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/a2-resolved.md",
+    "content_hash": "115b212d1ca163f8afeedf317ff8597c5d7a06eb1ef453fea866cd8ea950b809"
+  },
+  {
+    "id": "b1-evidence-request",
+    "pair": "B",
+    "expected_question_state": "RETAIN",
+    "expected_evidence_needed": "a benchmark varying batch size from 1 to 1024 under the sustained-write workload",
+    "rationale": "Unresolved question with a literal Evidence needed request.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/b1-evidence-request.md",
+    "content_hash": "9ece4a2b60b80f9a31563f9c2a209b7eb31b5a1bd192d74c3432e4b1fc17de34"
+  },
+  {
+    "id": "b2-measurement-prose",
+    "pair": "B",
+    "expected_question_state": "OPTIONAL",
+    "expected_evidence_needed": null,
+    "rationale": "Matched measurement description in ordinary prose, with no evidence request or question.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/b2-measurement-prose.md",
+    "content_hash": "c8079e2796d94109078dc2fdbbfd1c4b18c3851c15787130bd4df036d383251e"
+  },
+  {
+    "id": "c1-bounded",
+    "pair": "C",
+    "expected_question_state": "SUPPRESS",
+    "expected_evidence_needed": null,
+    "rationale": "Bounded technical statement with no missing decision-relevant information.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/c1-bounded.md",
+    "content_hash": "d294d10591ca972de0e0215283b5174b64c9d39d9f4bbbf9e96338ba4547a661"
+  },
+  {
+    "id": "c2-irrelevant-absence",
+    "pair": "C",
+    "expected_question_state": "SUPPRESS",
+    "expected_evidence_needed": null,
+    "rationale": "One implementation detail is absent, but the absence has no stated consequence for the bounded behavior.",
+    "local_path": "/home/john/luna/20260812/question_semantics_v4_pilot/sources/c2-irrelevant-absence.md",
+    "content_hash": "3d30e25f7aa8c9920fc81401b751118d6630aaccb048465fae814c5854e94b31"
+  }
+]
