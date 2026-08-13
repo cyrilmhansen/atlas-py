@@ -11,6 +11,53 @@ QuickDraw complète.
 
 ## Concepts retenus
 
+### Segment géométrique
+
+- ID : `classic_2d_graphics.geometric_segment`
+- FR : **segment géométrique**
+- en-GB : **geometric segment**
+- Définition : segment défini dans l'espace géométrique continu par deux
+  extrémités, avant sa discrétisation sur une grille.
+- Statut : **forcé par l'expédition Bresenham**.
+- Relations locales établies :
+  - une rastérisation de ligne digitale opère sur lui.
+- Justification Atlas : les sources Bresenham distinguent le segment continu
+  de l'ensemble discret produit ; le clipping géométrique et le clipping dans
+  l'espace raster ne sont pas interchangeables.
+
+### Ligne digitale
+
+- ID : `classic_2d_graphics.digital_line`
+- FR : **ligne digitale**
+- en-GB : **digital line**
+- Définition : objet géométrique discret produit selon un contrat de
+  rastérisation ; il est distinct de toute représentation concrète ou de tout
+  mode de consommation de ses points.
+- Statut : **forcé par l'expédition Bresenham**.
+- Relations locales établies :
+  - est produit par une rastérisation de ligne digitale ;
+  - est représenté par une représentation ou une forme de sortie consommée
+    par une primitive raster.
+- Justification Atlas : les implémentations étudiées produisent des ensembles
+  de points, spans ou caractères selon des contrats différents ; confondre le
+  résultat discret avec sa représentation consommée masque ces différences.
+
+### Rastérisation de ligne digitale
+
+- ID : `classic_2d_graphics.digital_line_rasterisation`
+- FR : **rastérisation de ligne digitale**
+- en-GB : **digital line rasterisation**
+- Définition : opération qui transforme un segment géométrique en ligne
+  digitale selon une convention de grille et un contrat de sortie.
+- Statut : **forcé par l'expédition Bresenham**.
+- Relations locales établies :
+  - opère sur un segment géométrique ;
+  - produit une ligne digitale.
+- Justification Atlas : l'expédition distingue l'opération de rastérisation,
+  son état incrémental et son résultat ; cette distinction explique le
+  contre-exemple où pré-clipper puis relancer la rastérisation ne reproduit
+  pas le suffixe de la ligne complète.
+
 ### Région
 
 - ID : `classic_2d_graphics.region`
@@ -311,6 +358,13 @@ réalise. Elles ne sont pas proposées comme classes transversales obligatoires.
 
 ### Candidats
 
+- **Règle de départage, réversibilité, invariance par translation, politique
+  d'extrémités et état incrémental** : connaissances ou propriétés de contrat
+  documentées par l'expédition Bresenham, mais non promues comme concepts à ce
+  stade. Elles ne sont pas nécessaires pour identifier les trois objets
+  ci-dessus et leur formalisation risquerait de figer des variantes encore
+  dépendantes du contrat de consommation.
+
 - **motif / pattern** (`pattern`) : présent dans le contrat historique de
   BitBlt, mais exclu du sous-ensemble expérimental `srcCopy` ;
 - **mode de transfert** (`transfer_mode`) : `srcCopy` est mesuré, mais aucun
@@ -328,6 +382,10 @@ réalise. Elles ne sont pas proposées comme classes transversales obligatoires.
 Patterns complets, scaling, régions géométriques complexes, polygones,
 lignes, ovales, texte, autres opérations QuickDraw et GPU ne sont pas des
 concepts retenus : aucune expérience présente ne les rend nécessaires.
+
+Le nom **Bresenham** n'est pas un concept ni un parent taxonomique : il peut
+désigner l'algorithme historique, une famille de variantes ou un usage
+contemporain dont les contrats diffèrent.
 
 Les concepts `workload`, `scenario`, `reuse_count`, `memory constraint`,
 `measurement`, `platform` et `protocol` qualifient les expériences et les
@@ -348,6 +406,24 @@ Ces relations restent propres au domaine `classic_2d_graphics` :
 | applique | applies | Application de région → BitBlt ou copie `srcCopy`. |
 | spécialise | specialises | Représentation rectangulaire ou fast path aligné → cas général local. |
 | fusionne | merges | Opération B1/B2 → flux de segments ou transitions ordonnées. |
+
+Les nouveaux concepts réutilisent les relations déjà établies `opère sur`,
+`produit` et `est représentée par`. Aucune relation générique supplémentaire
+n'est introduite par cette promotion.
+
+## Connaissances Bresenham conservées hors vocabulaire promu
+
+Les artefacts de l'expédition conservent, avec leur provenance, les
+distinctions suivantes : règle de départage des égalités, réversibilité,
+invariance par translation, politique d'extrémités, interaction clipping /
+rastérisation et conservation de l'état incrémental. Elles restent des
+propriétés de contrat, des relations entre exécutions ou des informations
+contextuelles, plutôt que des concepts locaux autonomes.
+
+Cette promotion ne suppose ni bitmap, ni spans, ni ordre particulier des
+points, ni framebuffer, ni l'implémentation Bresenham. Une ligne digitale peut
+être consommée par différentes représentations et la rastérisation peut être
+réalisée par d'autres mécanismes.
 
 Ces relations ne disent rien des relations avec le domaine algorithmique.
 Une future inférence pourra rapprocher `fusionne` de `ordered merge` sans
