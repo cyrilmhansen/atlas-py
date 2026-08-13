@@ -753,3 +753,16 @@ inchangées du POC 11. Aucune dépendance externe. Reproduction :
 ## Misc Sol
 
 Le contexte QuickDraw B0→B1 de réutilisation peut être décrit et décidé sans mobiliser l'ontologie algorithmique élémentaire. Le rapprochement B1 ↔ séquence ordonnée explique un mécanisme, mais n'est pas nécessaire à la décision de conversion/amortissement. L'activation de plusieurs domaines ne doit donc pas être recherchée comme un objectif en soi.
+
+## Semantic Spider — stabilité d'une décision de conversion
+
+- Un break-even B0→B1 calculé par addition de médianes ne doit pas être
+  présenté automatiquement comme un entier physique stable.
+- Dans le harness C homogène, le cas sparse/intersection donne le même seuil
+  `N=3` et le même changement de classement dans cinq reruns.
+- Le cas fragmented/intersection donne `N=4` ou `N=5` selon le rerun : la
+  frontière exacte est instable, même si le régime juste avant reste défavorable
+  et le régime à la frontière calculée favorable dans les cinq passages.
+- La connaissance durable est donc une frontière locale assortie d'une
+  précision expérimentale, et non une constante universelle de la représentation.
+- Provenance : `investigations/b0-b1-break-even-stability/`.
