@@ -1,0 +1,36 @@
+{
+  "curve": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      3.0
+    ],
+    [
+      3.0,
+      3.0
+    ],
+    [
+      3.0,
+      0.0
+    ]
+  ],
+  "subdivision_parameter": 0.5,
+  "exact_checks": {
+    "left_midpoint_equals_original_quarter": true,
+    "right_midpoint_equals_original_three_quarters": true
+  },
+  "points": {
+    "curve_at_0.5": [
+      1.5,
+      2.25
+    ],
+    "chord_midpoint": [
+      1.5,
+      0.0
+    ]
+  },
+  "chord_midpoint_euclidean_error": 2.25
+}
