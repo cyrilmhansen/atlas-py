@@ -1,0 +1,29 @@
+{
+  "fixture": "depth-first-search.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 32.162247477972414,
+  "usage": {
+    "prompt_tokens": 1873,
+    "completion_tokens": 1323,
+    "total_tokens": 3196,
+    "input_tokens": 1873,
+    "output_tokens": 1323,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 6.39,
+    "total_time": 32.15,
+    "prompt_eval_duration": 6.39,
+    "generation_duration": 25.76,
+    "prompt_tokens_per_second": 293.03,
+    "generation_tokens_per_second": 51.35
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_dfs_def_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Depth-first search is a search algorithm that considers outgoing edges (children) of a vertex before any of the vertex's siblings (outgoing edges of the vertex's predecessor in the search).\",\n      \"start_line\": 5,\n      \"end_line\": 13\n    },\n    {\n      \"key\": \"obs_dfs_extremes\",\n      \"facet\": \"property\",\n      \"statement\": \"In depth-first search, extremes are searched first.\",\n      \"start_line\": 13,\n      \"end_line\": 13\n    },\n    {\n      \"key\": \"obs_dfs_recursion\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Depth-first search is easily implemented with recursion.\",\n      \"start_line\": 13,\n      \"end_line\": 14\n    },\n    {\n      \"key\": \"obs_dfs_def_2\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Depth-first search is an algorithm that marks all vertices in a directed graph in the order they are discovered and finished, partitioning the graph into a forest.\",\n      \"start_line\": 15,\n      \"end_line\": 19\n    },\n    {\n      \"key\": \"obs_dfs_alias\",\n      \"facet\": \"term\",\n      \"statement\": \"Depth-first search is also known as DFS.\",\n      \"start_line\": 20,\n      \"end_line\": 21\n    },\n    {\n      \"key\": \"obs_dfs_specializations\",\n      \"facet\": \"relation\",\n      \"statement\": \"Preorder traversal, in-order traversal, and postorder traversal are specializations of depth-first search.\",\n      \"start_line\": 22,\n      \"end_line\": 29\n    },\n    {\n      \"key\": \"obs_dfs_timing_ambiguity\",\n      \"facet\": \"property\",\n      \"statement\": \"Depth-first search does not specify if a vertex is considered before, during, or after its outgoing edges or children.\",\n      \"start_line\": 40,\n      \"end_line\": 40\n    },\n    {\n      \"key\": \"obs_dfs_traversal_types\",\n      \"facet\": \"relation\",\n      \"statement\": \"Because of the timing ambiguity, depth-first search can be preorder, in-order, or postorder traversal.\",\n      \"start_line\": 40,\n      \"end_line\": 46\n    },\n    {\n      \"key\": \"obs_ref_clr\",\n      \"facet\": \"reference\",\n      \"statement\": \"CLR90, pages 477-485 is a reference for depth-first search.\",\n      \"start_line\": 47,\n      \"end_line\": 47\n    },\n    {\n      \"key\": \"obs_impl_java_cpp\",\n      \"facet\": \"reference\",\n      \"statement\": \"Algorithms and Data Structures provides explanation and implementation (Java and C++) for undirected graphs.\",\n      \"start_line\": 50,\n      \"end_line\": 54\n    },\n    {\n      \"key\": \"obs_impl_sedgewick\",\n      \"facet\": \"reference\",\n      \"statement\": \"Sedgewick and Wayne 'Algorithms' 4th edition provides many algorithms using depth-first search (Java).\",\n      \"start_line\": 54,\n      \"end_line\": 55\n    },\n    {\n      \"key\": \"obs_ref_green_raphael\",\n      \"facet\": \"reference\",\n      \"statement\": \"C. Cordell Green and Bertram Raphael, 'The use of theorem-proving techniques in question-answering systems', Proc. 1968 23rd ACM national conference, pages 169-181, 1968, is an early mention of depth-first search.\",\n      \"start_line\": 65,\n      \"end_line\": 72\n    },\n    {\n      \"key\": \"obs_ref_golomb_baumert\",\n      \"facet\": \"reference\",\n      \"statement\": \"Solomon W. Golomb and Leonard D. Baumert, 'Backtrack Programming', Journal of ACM, 12(4):516-524, Oct 1965, is an earlier description of what would be called depth-first search with pruning of infeasible solutions.\",\n      \"start_line\": 73,\n      \"end_line\": 79\n    },\n    {\n      \"key\": \"obs_related_bfs\",\n      \"facet\": \"relation\",\n      \"statement\": \"Breadth-first search is related to depth-first search.\",\n      \"start_line\": 31,\n      \"end_line\": 31\n    },\n    {\n      \"key\": \"obs_related_best_first\",\n      \"facet\": \"relation\",\n      \"statement\": \"Best-first search is related to depth-first search.\",\n      \"start_line\": 33,\n      \"end_line\": 33\n    },\n    {\n      \"key\": \"obs_related_schorr_waite\",\n      \"facet\": \"relation\",\n      \"statement\": \"Schorr-Waite graph marking algorithm is related to depth-first search.\",\n      \"start_line\": 35,\n      \"end_line\": 35\n    },\n    {\n      \"key\": \"obs_related_cupif_giannini\",\n      \"facet\": \"relation\",\n      \"statement\": \"Cupif-Giannini tree traversal is related to depth-first search.\",\n      \"start_line\": 37,\n      \"end_line\": 37\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

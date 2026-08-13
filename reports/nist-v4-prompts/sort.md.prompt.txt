@@ -1,0 +1,204 @@
+You are extracting bounded local knowledge for Atlas.
+Use only the numbered source below for SOURCE FACTS. Do not silently complete it
+with pretrained knowledge. Unsupported ideas must be HYPOTHESIS or QUESTION.
+Do not build an Atlas ontology or taxonomy. Preserve local vocabulary where a
+translation would change meaning. Extract only useful distinctions, not a full
+summary. Return JSON only, with schema_version 1 and keys observations, claims,
+questions.
+
+Every observation needs key, facet, statement, start_line, end_line. The facet
+MUST be exactly one of: mechanism, other, precondition, property, reference, relation, term.
+Facet meanings:
+- mechanism: procedure or mechanism
+- other: useful fact that does not fit elsewhere
+- precondition: required condition
+- property: asserted property
+- reference: reference or citation
+- relation: relation between elements
+- term: local vocabulary or term
+Claims must
+have status DERIVED_INTERPRETATION or HYPOTHESIS and supported_by observation
+keys. Claims and questions are NOT quotas. Empty `claims` and `questions`
+arrays are preferred when the source does not justify useful entries. A claim
+must combine or interpret observations in a useful way; do not create one just
+to restate an observation.
+
+If the source only says "X is not always faster than Y" or "no universal
+winner is established", preserve that non-affirmation. Do not turn it into
+"performance depends on workload/context/conditions" unless the source also
+supports that dependence. Unsupported interpretation must be HYPOTHESIS or be
+omitted.
+
+A missing piece of information does not by itself justify a question. Every
+generated question must pass CONSEQUENCE_IF_UNKNOWN: explain in `reason` how
+the missing information could affect understanding a mechanism, distinguish
+mechanisms or representations, determine a property or precondition, resolve a
+contradiction, test an equivalence, design or interpret an experiment, or make
+a relevant decision. Questions explicitly asked by the source may be retained
+with `derived_from: []`; preserve their requested evidence when provided.
+Questions are not a quota, and do not invent questions about absent definitions
+or subtle term differences without a concrete consequence. Every question object
+MUST use exactly these semantic fields: `question`, `reason`,
+`evidence_needed`, and `derived_from`. When the source explicitly provides
+"Evidence needed", preserve it in `evidence_needed`; never use
+`requested_evidence` or `statement` for a question.
+
+SOURCE answers: "What is supported?"
+REFERENCE CONTEXT answers: "What is worth extracting?"
+
+REFERENCE CONTEXT
+Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.
+
+Prefer knowledge useful for understanding, implementing, testing, comparing,
+maintaining, diagnosing, optimising, or selecting production-quality software
+mechanisms.
+
+Particularly relevant knowledge includes:
+- mechanisms and algorithms;
+- data structures and representations;
+- invariants and preconditions;
+- behavioural and correctness properties;
+- failure modes and limitations;
+- implementation trade-offs;
+- performance-relevant mechanisms;
+- workload or platform dependencies;
+- interface and behavioural contracts;
+- transformations between representations;
+- experimentally testable distinctions;
+- primary references that may provide stronger evidence.
+
+Production-quality usefulness does not mean modern-only: historical algorithms,
+old implementations, academic papers, unusual architectures, and obsolete
+systems remain relevant when their knowledge is reusable for engineering
+reasoning.
+
+The Reference Context guides relevance only. It is NOT evidence. Never
+introduce a fact, assumption, terminology, relation, mechanism, property, or
+conclusion merely because it is common engineering knowledge or appears in the
+Reference Context. SOURCE FACTS must still be supported only by the numbered
+SOURCE. Do not turn the Reference Context into an ontology, taxonomy, closed
+vocabulary, or domain assignment.
+
+SOURCE:
+[L1] sort
+[L2] sort
+[L3] (algorithm)
+[L4] Definition:
+[L5] Arrange items in a predetermined order. There are dozens of algorithms, the choice of which depends on factors such as the number of items relative to working memory, knowledge of the orderliness of the items or the range of the
+[L6] keys
+[L7] , the cost of comparing keys vs. the cost of moving items, etc. Most algorithms can be implemented as an
+[L8] in-place sort
+[L9] , and many can be implemented so they are
+[L10] stable
+[L11] , too.
+[L12] Formal Definition:
+[L13] The sort operation may be defined in terms of an initial array, S, of N items and a final array, S′, as follows.
+[L14] S′
+[L15] i
+[L16] ≤ S′
+[L17] i+1
+[L18] , 0 < i < N
+[L19] (the items are in order) and
+[L20] S′ is a
+[L21] permutation
+[L22] of S.
+[L23] Generalization
+[L24] (I am a kind of ...)
+[L25] permutation
+[L26] .
+[L27] Specialization
+[L28] (... is a kind of me.)
+[L29] quicksort
+[L30] ,
+[L31] heapsort
+[L32] ,
+[L33] Shell sort
+[L34] ,
+[L35] comb sort
+[L36] ,
+[L37] radix sort
+[L38] ,
+[L39] bucket sort
+[L40] ,
+[L41] insertion sort
+[L42] ,
+[L43] selection sort
+[L44] ,
+[L45] merge sort
+[L46] ,
+[L47] counting sort
+[L48] ,
+[L49] histogram sort
+[L50] ,
+[L51] strand sort
+[L52] ,
+[L53] q sort
+[L54] ,
+[L55] J sort
+[L56] ,
+[L57] shuffle sort
+[L58] ,
+[L59] American flag sort
+[L60] ,
+[L61] gnome sort
+[L62] ,
+[L63] bubble sort
+[L64] ,
+[L65] bidirectional bubble sort
+[L66] ,
+[L67] treesort (1)
+[L68] ,
+[L69] adaptive heap sort
+[L70] ,
+[L71] multikey Quicksort
+[L72] ,
+[L73] topological sort
+[L74] .
+[L75] See also
+[L76] external sort
+[L77] ,
+[L78] internal sort
+[L79] ,
+[L80] comparison sort
+[L81] ,
+[L82] distribution sort
+[L83] ,
+[L84] easy split, hard merge
+[L85] ,
+[L86] hard split, easy merge
+[L87] ,
+[L88] derangement
+[L89] .
+[L90] Note:
+[L91] Any sorting algorithm can be made stable by appending the original position to the
+[L92] key
+[L93] . When otherwise-equal keys are compared, the positions "break the tie" and the original order is maintained.
+[L94] Knuth notes
+[L95] [Knuth98, 3:1, Chap. 5]
+[L96] that this operation might be called "order". In standard English, "to sort" means to arrange by kind or to classify. The term "sort" came to be used in Computer Science because the earliest automated ordering procedures used punched card machines, which classified cards by their holes, to implement
+[L97] radix sort
+[L98] .
+[L99] Author:
+[L100] PEB
+[L101] Implementation
+[L102] Specific implementations can be found under the specific sort routines or at
+[L103] (Pascal, C++, Fortran, and Mathematica)
+[L104] . Thomas Baudel's
+[L105] sort algorithm visualizer (Java)
+[L106] with a dozen algorithms.
+[L107] Go to the
+[L108] Dictionary of Algorithms and Data
+[L109] Structures
+[L110] home page.
+[L111] If you have suggestions, corrections, or comments, please get in touch
+[L112] with
+[L113] Paul Black
+[L114] .
+[L115] Entry modified 2 November 2020.
+[L116] HTML page formatted Wed Oct 30 12:15:31 2024.
+[L117] Cite this as:
+[L118] Paul E. Black, "sort", in
+[L119] Dictionary of Algorithms and Data Structures
+[L120] [online], Paul E. Black, ed. 2 November 2020. (accessed TODAY)
+[L121] Available from:
+[L122] https://www.nist.gov/dads/HTML/sort.html

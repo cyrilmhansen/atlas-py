@@ -1,0 +1,29 @@
+{
+  "fixture": "counting-sort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 19.140682592988014,
+  "usage": {
+    "prompt_tokens": 1359,
+    "completion_tokens": 666,
+    "total_tokens": 2025,
+    "input_tokens": 1359,
+    "output_tokens": 666,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 4.77,
+    "total_time": 19.13,
+    "prompt_eval_duration": 4.77,
+    "generation_duration": 14.37,
+    "prompt_tokens_per_second": 285.11,
+    "generation_tokens_per_second": 46.36
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_counting_sort_definition\",\n      \"facet\": \"term\",\n      \"statement\": \"Counting sort is a 2-pass sort algorithm.\",\n      \"start_line\": 1,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_efficiency_condition\",\n      \"facet\": \"precondition\",\n      \"statement\": \"Counting sort is efficient when the number of distinct keys is small compared to the number of items.\",\n      \"start_line\": 7,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_pass1_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The first pass counts the occurrences of each key in an auxiliary array and makes a running total so each auxiliary entry is the number of preceding keys.\",\n      \"start_line\": 9,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_pass2_mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The second pass puts each item in its final place according to the auxiliary entry for that key.\",\n      \"start_line\": 11,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_generalization\",\n      \"facet\": \"relation\",\n      \"statement\": \"Counting sort is a kind of histogram sort.\",\n      \"start_line\": 12,\n      \"end_line\": 15\n    },\n    {\n      \"key\": \"obs_bucket_vs_histogram\",\n      \"facet\": \"property\",\n      \"statement\": \"A bucket sort uses fixed-size buckets, whereas a histogram sort sets up buckets of exactly the right size in a first pass.\",\n      \"start_line\": 24,\n      \"end_line\": 24\n    },\n    {\n      \"key\": \"obs_counting_vs_histogram\",\n      \"facet\": \"property\",\n      \"statement\": \"A counting sort is a histogram sort with one bucket per possible key value.\",\n      \"start_line\": 24,\n      \"end_line\": 24\n    },\n    {\n      \"key\": \"obs_counting_vs_pigeonhole\",\n      \"facet\": \"property\",\n      \"statement\": \"A pigeonhole sort is a counting sort that moves items to the auxiliary array instead of counting them.\",\n      \"start_line\": 24,\n      \"end_line\": 24\n    },\n    {\n      \"key\": \"obs_reference_source\",\n      \"facet\": \"reference\",\n      \"statement\": \"The entry is from the Dictionary of Algorithms and Data Structures, edited by Paul E. Black, authored by Art S. Kagel.\",\n      \"start_line\": 40,\n      \"end_line\": 45\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

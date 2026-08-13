@@ -1,0 +1,177 @@
+You are extracting bounded local knowledge for Atlas.
+Use only the numbered source below for SOURCE FACTS. Do not silently complete it
+with pretrained knowledge. Unsupported ideas must be HYPOTHESIS or QUESTION.
+Do not build an Atlas ontology or taxonomy. Preserve local vocabulary where a
+translation would change meaning. Extract only useful distinctions, not a full
+summary. Return JSON only, with schema_version 1 and keys observations, claims,
+questions.
+
+Every observation needs key, facet, statement, start_line, end_line. The facet
+MUST be exactly one of: mechanism, other, precondition, property, reference, relation, term.
+Facet meanings:
+- mechanism: procedure or mechanism
+- other: useful fact that does not fit elsewhere
+- precondition: required condition
+- property: asserted property
+- reference: reference or citation
+- relation: relation between elements
+- term: local vocabulary or term
+Claims must
+have status DERIVED_INTERPRETATION or HYPOTHESIS and supported_by observation
+keys. Claims and questions are NOT quotas. Empty `claims` and `questions`
+arrays are preferred when the source does not justify useful entries. A claim
+must combine or interpret observations in a useful way; do not create one just
+to restate an observation.
+
+If the source only says "X is not always faster than Y" or "no universal
+winner is established", preserve that non-affirmation. Do not turn it into
+"performance depends on workload/context/conditions" unless the source also
+supports that dependence. Unsupported interpretation must be HYPOTHESIS or be
+omitted.
+
+A missing piece of information does not by itself justify a question. Every
+generated question must pass CONSEQUENCE_IF_UNKNOWN: explain in `reason` how
+the missing information could affect understanding a mechanism, distinguish
+mechanisms or representations, determine a property or precondition, resolve a
+contradiction, test an equivalence, design or interpret an experiment, or make
+a relevant decision. Questions explicitly asked by the source may be retained
+with `derived_from: []`; preserve their requested evidence when provided.
+Questions are not a quota, and do not invent questions about absent definitions
+or subtle term differences without a concrete consequence. Every question object
+MUST use exactly these semantic fields: `question`, `reason`,
+`evidence_needed`, and `derived_from`. When the source explicitly provides
+"Evidence needed", preserve it in `evidence_needed`; never use
+`requested_evidence` or `statement` for a question.
+
+SOURCE answers: "What is supported?"
+REFERENCE CONTEXT answers: "What is worth extracting?"
+
+REFERENCE CONTEXT
+Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.
+
+Prefer knowledge useful for understanding, implementing, testing, comparing,
+maintaining, diagnosing, optimising, or selecting production-quality software
+mechanisms.
+
+Particularly relevant knowledge includes:
+- mechanisms and algorithms;
+- data structures and representations;
+- invariants and preconditions;
+- behavioural and correctness properties;
+- failure modes and limitations;
+- implementation trade-offs;
+- performance-relevant mechanisms;
+- workload or platform dependencies;
+- interface and behavioural contracts;
+- transformations between representations;
+- experimentally testable distinctions;
+- primary references that may provide stronger evidence.
+
+Production-quality usefulness does not mean modern-only: historical algorithms,
+old implementations, academic papers, unusual architectures, and obsolete
+systems remain relevant when their knowledge is reusable for engineering
+reasoning.
+
+The Reference Context guides relevance only. It is NOT evidence. Never
+introduce a fact, assumption, terminology, relation, mechanism, property, or
+conclusion merely because it is common engineering knowledge or appears in the
+Reference Context. SOURCE FACTS must still be supported only by the numbered
+SOURCE. Do not turn the Reference Context into an ontology, taxonomy, closed
+vocabulary, or domain assignment.
+
+SOURCE:
+[L1] depth-first search
+[L2] depth-first search
+[L3] (algorithm)
+[L4] Definition:
+[L5] (1) Any search algorithm that considers outgoing
+[L6] edges
+[L7] (
+[L8] children
+[L9] ) of a
+[L10] vertex
+[L11] before any of the vertex's
+[L12] siblings
+[L13] , that is, outgoing edges of the vertex's predecessor in the search. Extremes are searched first. This is easily implemented with
+[L14] recursion
+[L15] . (2) An algorithm that marks all vertices in a
+[L16] directed graph
+[L17] in the order they are discovered and finished, partitioning the graph into a
+[L18] forest
+[L19] .
+[L20] Also known as
+[L21] DFS.
+[L22] Specialization
+[L23] (... is a kind of me.)
+[L24] preorder traversal
+[L25] ,
+[L26] in-order traversal
+[L27] ,
+[L28] postorder traversal
+[L29] .
+[L30] See also
+[L31] breadth-first search
+[L32] ,
+[L33] best-first search
+[L34] ,
+[L35] Schorr-Waite graph marking algorithm
+[L36] ,
+[L37] Cupif-Giannini tree traversal
+[L38] .
+[L39] Note:
+[L40] Depth-first search doesn't specify if a vertex is considered before, during, or after its outgoing edges or children. Thus it can be
+[L41] preorder
+[L42] ,
+[L43] in-order
+[L44] , or
+[L45] postorder traversal
+[L46] .
+[L47] [CLR90, pages 477-485]
+[L48] Author:
+[L49] PEB
+[L50] Implementation
+[L51] Algorithms and Data Structures'
+[L52] explanation and implementation (Java and C++)
+[L53] for undirected graphs. Many algorithms using
+[L54] depth-first search (Java)
+[L55] using Sedgewick and Wayne "Algorithms" 4th edition.
+[L56] More information
+[L57] Lecture notes from Design and Analysis of Algorithms on
+[L58] Breadth-first search and depth-first search
+[L59] .
+[L60] From
+[L61] xkcd 761
+[L62] by Randall Munroe.
+[L63] Creative Commons Attribution-NonCommercial 2.5 License
+[L64] .
+[L65] An early mention of depth-first search:
+[L66] C. Cordell Green
+[L67] and
+[L68] Bertram Raphael
+[L69] ,
+[L70] The use of theorem-proving techniques in question-answering systems
+[L71] , Proc. 1968 23rd ACM national conference, pages 169-181, 1968.
+[L72] Uses just "depth-first search" in the body (page 5), but contrasts depth-first with breadth-first search in a footnote.
+[L73] An earlier description of what we would call depth-first search with pruning of infeasible solutions.
+[L74] Solomon W. Golomb
+[L75] and
+[L76] Leonard D. Baumert
+[L77] ,
+[L78] Backtrack Programming
+[L79] , Journal of ACM, 12(4):516-524, Oct 1965.
+[L80] Go to the
+[L81] Dictionary of Algorithms and Data
+[L82] Structures
+[L83] home page.
+[L84] If you have suggestions, corrections, or comments, please get in touch
+[L85] with
+[L86] Paul Black
+[L87] .
+[L88] Entry modified 15 October 2021.
+[L89] HTML page formatted Wed Oct 30 12:15:30 2024.
+[L90] Cite this as:
+[L91] Paul E. Black, "depth-first search", in
+[L92] Dictionary of Algorithms and Data Structures
+[L93] [online], Paul E. Black, ed. 15 October 2021. (accessed TODAY)
+[L94] Available from:
+[L95] https://www.nist.gov/dads/HTML/depthfirst.html

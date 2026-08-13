@@ -1,0 +1,167 @@
+You are extracting bounded local knowledge for Atlas.
+Use only the numbered source below for SOURCE FACTS. Do not silently complete it
+with pretrained knowledge. Unsupported ideas must be HYPOTHESIS or QUESTION.
+Do not build an Atlas ontology or taxonomy. Preserve local vocabulary where a
+translation would change meaning. Extract only useful distinctions, not a full
+summary. Return JSON only, with schema_version 1 and keys observations, claims,
+questions.
+
+Every observation needs key, facet, statement, start_line, end_line. The facet
+MUST be exactly one of: mechanism, other, precondition, property, reference, relation, term.
+Facet meanings:
+- mechanism: procedure or mechanism
+- other: useful fact that does not fit elsewhere
+- precondition: required condition
+- property: asserted property
+- reference: reference or citation
+- relation: relation between elements
+- term: local vocabulary or term
+Claims must
+have status DERIVED_INTERPRETATION or HYPOTHESIS and supported_by observation
+keys. Claims and questions are NOT quotas. Empty `claims` and `questions`
+arrays are preferred when the source does not justify useful entries. A claim
+must combine or interpret observations in a useful way; do not create one just
+to restate an observation.
+
+If the source only says "X is not always faster than Y" or "no universal
+winner is established", preserve that non-affirmation. Do not turn it into
+"performance depends on workload/context/conditions" unless the source also
+supports that dependence. Unsupported interpretation must be HYPOTHESIS or be
+omitted.
+
+A missing piece of information does not by itself justify a question. Every
+generated question must pass CONSEQUENCE_IF_UNKNOWN: explain in `reason` how
+the missing information could affect understanding a mechanism, distinguish
+mechanisms or representations, determine a property or precondition, resolve a
+contradiction, test an equivalence, design or interpret an experiment, or make
+a relevant decision. Questions explicitly asked by the source may be retained
+with `derived_from: []`; preserve their requested evidence when provided.
+Questions are not a quota, and do not invent questions about absent definitions
+or subtle term differences without a concrete consequence. Every question object
+MUST use exactly these semantic fields: `question`, `reason`,
+`evidence_needed`, and `derived_from`. When the source explicitly provides
+"Evidence needed", preserve it in `evidence_needed`; never use
+`requested_evidence` or `statement` for a question.
+
+SOURCE answers: "What is supported?"
+REFERENCE CONTEXT answers: "What is worth extracting?"
+
+REFERENCE CONTEXT
+Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.
+
+Prefer knowledge useful for understanding, implementing, testing, comparing,
+maintaining, diagnosing, optimising, or selecting production-quality software
+mechanisms.
+
+Particularly relevant knowledge includes:
+- mechanisms and algorithms;
+- data structures and representations;
+- invariants and preconditions;
+- behavioural and correctness properties;
+- failure modes and limitations;
+- implementation trade-offs;
+- performance-relevant mechanisms;
+- workload or platform dependencies;
+- interface and behavioural contracts;
+- transformations between representations;
+- experimentally testable distinctions;
+- primary references that may provide stronger evidence.
+
+Production-quality usefulness does not mean modern-only: historical algorithms,
+old implementations, academic papers, unusual architectures, and obsolete
+systems remain relevant when their knowledge is reusable for engineering
+reasoning.
+
+The Reference Context guides relevance only. It is NOT evidence. Never
+introduce a fact, assumption, terminology, relation, mechanism, property, or
+conclusion merely because it is common engineering knowledge or appears in the
+Reference Context. SOURCE FACTS must still be supported only by the numbered
+SOURCE. Do not turn the Reference Context into an ontology, taxonomy, closed
+vocabulary, or domain assignment.
+
+SOURCE:
+[L1] binary search
+[L2] binary search
+[L3] (algorithm)
+[L4] Definition:
+[L5] Search a
+[L6] sorted array
+[L7] by repeatedly dividing the search interval in half. Begin with an interval covering the whole array. If the value of the search
+[L8] key
+[L9] is less than the item in the middle of the interval, narrow the interval to the lower half. Otherwise narrow it to the upper half. Repeatedly check until the value is found or the interval is empty.
+[L10] Generalization
+[L11] (I am a kind of ...)
+[L12] dichotomic search
+[L13] ,
+[L14] search
+[L15] .
+[L16] Aggregate parent
+[L17] (I am a part of or used in ...)
+[L18] binary insertion sort
+[L19] ,
+[L20] ideal merge
+[L21] ,
+[L22] suffix array
+[L23] ,
+[L24] inversion list
+[L25] .
+[L26] Aggregate child
+[L27] (... is a part of or used in me.)
+[L28] divide and conquer
+[L29] .
+[L30] See also
+[L31] linear search
+[L32] ,
+[L33] interpolation search
+[L34] ,
+[L35] Fibonaccian search
+[L36] ,
+[L37] jump search
+[L38] .
+[L39] Note:
+[L40] Run time is
+[L41] O(ln n)
+[L42] .
+[L43] Finding the middle is often coded as
+[L44] mid = (high + low)/2;
+[L45] This overflows if high and low are close to the largest expressible integer. The following gives the same result and never overflows, if high and low are non-negative.
+[L46] mid = low + (high - low)/2;
+[L47] Thanks to Colin D. Wright, 1 June 2005.
+[L48] Binary search may be effective with an
+[L49] ordered linked list
+[L50] . It makes O(n) traversals, as does
+[L51] linear search
+[L52] , but it only performs O(log n) comparisons.
+[L53] Author:
+[L54] PEB
+[L55] Implementation
+[L56] recursive and iterative implementation (Python)
+[L57] .
+[L58] search (C)
+[L59] , which uses
+[L60] 0-based indexing
+[L61] . Flower Brackets
+[L62] explanation (Java)
+[L63] . Algorithms and Data Structures'
+[L64] explanation (Java and C++)
+[L65] . Worst-case behavior
+[L66] annotated for real time (WOOP/ADA)
+[L67] , including bibliography.
+[L68] More information
+[L69] explanation
+[L70] Go to the
+[L71] Dictionary of Algorithms and Data
+[L72] Structures
+[L73] home page.
+[L74] If you have suggestions, corrections, or comments, please get in touch
+[L75] with
+[L76] Paul Black
+[L77] .
+[L78] Entry modified 21 April 2022.
+[L79] HTML page formatted Wed Oct 30 12:15:30 2024.
+[L80] Cite this as:
+[L81] Paul E. Black, "binary search", in
+[L82] Dictionary of Algorithms and Data Structures
+[L83] [online], Paul E. Black, ed. 21 April 2022. (accessed TODAY)
+[L84] Available from:
+[L85] https://www.nist.gov/dads/HTML/binarySearch.html

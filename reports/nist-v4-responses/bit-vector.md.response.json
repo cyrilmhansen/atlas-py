@@ -1,0 +1,29 @@
+{
+  "fixture": "bit-vector.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 11.608557040977757,
+  "usage": {
+    "prompt_tokens": 1128,
+    "completion_tokens": 357,
+    "total_tokens": 1485,
+    "input_tokens": 1128,
+    "output_tokens": 357,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 4.1,
+    "total_time": 11.6,
+    "prompt_eval_duration": 4.1,
+    "generation_duration": 7.5,
+    "prompt_tokens_per_second": 274.95,
+    "generation_tokens_per_second": 47.61
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"term\",\n      \"statement\": \"bit vector\",\n      \"start_line\": 1,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"property\",\n      \"statement\": \"A bit vector is an array of bits.\",\n      \"start_line\": 4,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"A bit vector can often be handled very efficiently since a computer word is an array of bits.\",\n      \"start_line\": 8,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"reference\",\n      \"statement\": \"Paul E. Black, 'bit vector', in Dictionary of Algorithms and Data Structures [online], Paul E. Black, ed. 17 December 2004.\",\n      \"start_line\": 22,\n      \"end_line\": 25\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"reference\",\n      \"statement\": \"Available from: https://www.nist.gov/dads/HTML/bitVector.html\",\n      \"start_line\": 26,\n      \"end_line\": 27\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

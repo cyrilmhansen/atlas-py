@@ -1,0 +1,29 @@
+{
+  "fixture": "breadth-first-search.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 12.818068885011598,
+  "usage": {
+    "prompt_tokens": 1306,
+    "completion_tokens": 377,
+    "total_tokens": 1683,
+    "input_tokens": 1306,
+    "output_tokens": 377,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 4.58,
+    "total_time": 12.81,
+    "prompt_eval_duration": 4.58,
+    "generation_duration": 8.23,
+    "prompt_tokens_per_second": 285.3,
+    "generation_tokens_per_second": 45.79
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_bfs_def\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Breadth-first search is a search algorithm that considers neighbors of a vertex (outgoing edges of the vertex's predecessor in the search) before any outgoing edges of the vertex itself.\",\n      \"start_line\": 1,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_bfs_extremes\",\n      \"facet\": \"property\",\n      \"statement\": \"In breadth-first search, extremes are searched last.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_bfs_impl\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Breadth-first search is typically implemented with a queue.\",\n      \"start_line\": 9,\n      \"end_line\": 11\n    },\n    {\n      \"key\": \"obs_bfs_tree_equiv\",\n      \"facet\": \"relation\",\n      \"statement\": \"In a tree, breadth-first search is equivalent to a level-order traversal.\",\n      \"start_line\": 22,\n      \"end_line\": 24\n    },\n    {\n      \"key\": \"obs_ref_dads\",\n      \"facet\": \"reference\",\n      \"statement\": \"The entry is from the Dictionary of Algorithms and Data Structures, edited by Paul E. Black.\",\n      \"start_line\": 32,\n      \"end_line\": 44\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

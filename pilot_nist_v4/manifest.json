@@ -1,0 +1,134 @@
+[
+  {
+    "source_id": "binary-search",
+    "title": "binary search",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/binarySearch.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "13befddd3b69bbf700857c023f5d1f3f2c133436487b56b81c666625544d0b16",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/binary-search.txt",
+    "selection_rationale": "named search algorithm",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "quicksort",
+    "title": "quicksort",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/quicksort.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "a4aa16e24dbeb38651a542ed71dc05f723644d1cadb3e73f516f871726d78075",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/quicksort.txt",
+    "selection_rationale": "named sorting algorithm with variants and complexity",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "binary-search-tree",
+    "title": "binary search tree",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/binarySearchTree.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "3a024155bf44cdd1c5201a8663e6e3630b5029b66982906eef4ce6ef57dd1068",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/binary-search-tree.txt",
+    "selection_rationale": "data structure and search/update concept",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "heap-sort",
+    "title": "heap sort",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/heapSort.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "f1e79049b686dac3005b94dc3b06294c789f89dfe2ba156376c28754378ee4c3",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/heap-sort.txt",
+    "selection_rationale": "sorting algorithm linked to a data structure",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "data-structure",
+    "title": "data structure",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/dataStructure.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "a59ddc19348e5776a4eb96a37f553f6d24696b10b05b828f5ae34bbf99576fa0",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/data-structure.txt",
+    "selection_rationale": "sparse definitional entry",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "bit-vector",
+    "title": "bit vector",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/bitVector.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "4b4ac9d32eacd404eef1abb90c8b8417e563abfd7a674b169285c5139e1d9bfb",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/bit-vector.txt",
+    "selection_rationale": "representation-related data structure",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "search",
+    "title": "search",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/search.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "91cf368769f76c5e5ab432d98581881bb1a70d6a3d884aa67a40b293ad23d618",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/search.txt",
+    "selection_rationale": "general mechanism with alternatives",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "breadth-first-search",
+    "title": "breadth first search",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/breadthfirst.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "8707c936a3509abbfc9b446e1725152466f9bf4078520deaa09ff20e24e0630a",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/breadth-first-search.txt",
+    "selection_rationale": "graph search using a queue",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "depth-first-search",
+    "title": "depth first search",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/depthfirst.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "bc11537231107c900ab8fd0bd9299ede37e3a9318e6deacb7fcf25e0c32b2b13",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/depth-first-search.txt",
+    "selection_rationale": "graph search with ambiguity and references",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "counting-sort",
+    "title": "counting sort",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/countingsort.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "2768ff9bb889c181cbf543ffb37ef01894c4db97d2187f9633f4a9bac1417f9c",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/counting-sort.txt",
+    "selection_rationale": "restricted-universe sort with auxiliary storage",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "sort",
+    "title": "sort",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/sort.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "b2f2ac893a361ad68ea4f5328bc8b063b7c2bb20f8e9809b4d32a4dc9d0b0e7a",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/sort.txt",
+    "selection_rationale": "contract, stability and workload-dependent choices",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  },
+  {
+    "source_id": "histogram-sort",
+    "title": "histogram sort",
+    "kind": "NIST DADS reference entry",
+    "url": "https://xlinux.nist.gov/dads/HTML/histogramSort.html",
+    "retrieved_at": "2026-08-13",
+    "content_hash": "8e77776b342b9d478ac1ff2591a538dede8e010de1dd0ad309e5d336c7549196",
+    "local_path": "/home/john/luna/20260812/pilot_nist_v4/sources/histogram-sort.txt",
+    "selection_rationale": "performance and memory trade-offs",
+    "cleanup": "HTML tags, scripts/styles and repeated whitespace removed mechanically; no related entry followed."
+  }
+]

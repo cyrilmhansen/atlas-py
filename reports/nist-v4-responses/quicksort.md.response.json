@@ -1,0 +1,29 @@
+{
+  "fixture": "quicksort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 32.64133150904672,
+  "usage": {
+    "prompt_tokens": 1881,
+    "completion_tokens": 1298,
+    "total_tokens": 3179,
+    "input_tokens": 1881,
+    "output_tokens": 1298,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 6.51,
+    "total_time": 32.63,
+    "prompt_eval_duration": 6.51,
+    "generation_duration": 26.12,
+    "prompt_tokens_per_second": 288.78,
+    "generation_tokens_per_second": 49.7
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_quicksort_def\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Quicksort picks a pivot element, partitions remaining elements into those greater than and less than the pivot, and recursively sorts the partitions.\",\n      \"start_line\": 4,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_quicksort_variants\",\n      \"facet\": \"other\",\n      \"statement\": \"Variants of quicksort exist for pivot selection, array partitioning, stopping recursion, or switching algorithms for small partitions.\",\n      \"start_line\": 9,\n      \"end_line\": 9\n    },\n    {\n      \"key\": \"obs_quicksort_inplace\",\n      \"facet\": \"property\",\n      \"statement\": \"Quicksort is a generalization of in-place sort.\",\n      \"start_line\": 10,\n      \"end_line\": 12\n    },\n    {\n      \"key\": \"obs_quicksort_las_vegas\",\n      \"facet\": \"property\",\n      \"statement\": \"Quicksort is a Las Vegas algorithm when the pivot is picked randomly.\",\n      \"start_line\": 14,\n      \"end_line\": 15\n    },\n    {\n      \"key\": \"obs_quicksort_specializations\",\n      \"facet\": \"relation\",\n      \"statement\": \"Balanced quicksort, multikey Quicksort, and introspective sort are specializations of quicksort.\",\n      \"start_line\": 16,\n      \"end_line\": 23\n    },\n    {\n      \"key\": \"obs_quicksort_aggregate_parent\",\n      \"facet\": \"relation\",\n      \"statement\": \"Quicksort is a part of or used in q sort.\",\n      \"start_line\": 24,\n      \"end_line\": 27\n    },\n    {\n      \"key\": \"obs_quicksort_aggregate_child\",\n      \"facet\": \"relation\",\n      \"statement\": \"Partition, divide and conquer, recursion, Select, and sublinear time algorithm are parts of or used in quicksort.\",\n      \"start_line\": 28,\n      \"end_line\": 39\n    },\n    {\n      \"key\": \"obs_quicksort_see_also\",\n      \"facet\": \"reference\",\n      \"statement\": \"External quicksort and dual-pivot quicksort are related topics.\",\n      \"start_line\": 40,\n      \"end_line\": 44\n    },\n    {\n      \"key\": \"obs_quicksort_worst_case\",\n      \"facet\": \"property\",\n      \"statement\": \"Quicksort has a worst-case running time of Θ(n²).\",\n      \"start_line\": 46,\n      \"end_line\": 49\n    },\n    {\n      \"key\": \"obs_quicksort_typical_case\",\n      \"facet\": \"property\",\n      \"statement\": \"Quicksort typically has a running time of O(n log n).\",\n      \"start_line\": 50,\n      \"end_line\": 52\n    },\n    {\n      \"key\": \"obs_quicksort_practical_performance\",\n      \"facet\": \"property\",\n      \"statement\": \"In practical situations, a finely tuned implementation of quicksort beats most sort algorithms, including those with O(n log n) worst-case complexity.\",\n      \"start_line\": 52,\n      \"end_line\": 52\n    },\n    {\n      \"key\": \"obs_select_pivot_variant\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Using Select to always pick good pivots creates a quicksort variant with O(n log n) worst-case running time.\",\n      \"start_line\": 53,\n      \"end_line\": 56\n    },\n    {\n      \"key\": \"obs_dual_pivot_speed\",\n      \"facet\": \"property\",\n      \"statement\": \"Dual-pivot quicksort is faster because it accesses less memory.\",\n      \"start_line\": 57,\n      \"end_line\": 59\n    },\n    {\n      \"key\": \"obs_references\",\n      \"facet\": \"reference\",\n      \"statement\": \"References include Wikipedia entry, Java/C++ explanations, Flower Brackets explanation, and comparisons with heapsort, merge sort, and bubble sort.\",\n      \"start_line\": 62,\n      \"end_line\": 85\n    },\n    {\n      \"key\": \"obs_source_citation\",\n      \"facet\": \"reference\",\n      \"statement\": \"Source is Dictionary of Algorithms and Data Structures, edited by Paul E. Black, entry by Conrado Martinez, modified 6 April 2023.\",\n      \"start_line\": 96,\n      \"end_line\": 101\n    }\n  ],\n  \"claims\": [\n    {\n      \"key\": \"claim_select_improves_worst_case\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"supported_by\": [\n        \"obs_quicksort_worst_case\",\n        \"obs_select_pivot_variant\"\n      ],\n      \"statement\": \"The standard quicksort worst-case complexity of Θ(n²) can be improved to O(n log n) by using the Select algorithm for pivot selection.\"\n    },\n    {\n      \"key\": \"claim_dual_pivot_mechanism\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"supported_by\": [\n        \"obs_dual_pivot_speed\"\n      ],\n      \"statement\": \"The performance advantage of dual-pivot quicksort over standard quicksort is attributed to reduced memory access.\"\n    }\n  ],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

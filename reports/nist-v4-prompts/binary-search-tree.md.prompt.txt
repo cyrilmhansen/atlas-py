@@ -1,0 +1,158 @@
+You are extracting bounded local knowledge for Atlas.
+Use only the numbered source below for SOURCE FACTS. Do not silently complete it
+with pretrained knowledge. Unsupported ideas must be HYPOTHESIS or QUESTION.
+Do not build an Atlas ontology or taxonomy. Preserve local vocabulary where a
+translation would change meaning. Extract only useful distinctions, not a full
+summary. Return JSON only, with schema_version 1 and keys observations, claims,
+questions.
+
+Every observation needs key, facet, statement, start_line, end_line. The facet
+MUST be exactly one of: mechanism, other, precondition, property, reference, relation, term.
+Facet meanings:
+- mechanism: procedure or mechanism
+- other: useful fact that does not fit elsewhere
+- precondition: required condition
+- property: asserted property
+- reference: reference or citation
+- relation: relation between elements
+- term: local vocabulary or term
+Claims must
+have status DERIVED_INTERPRETATION or HYPOTHESIS and supported_by observation
+keys. Claims and questions are NOT quotas. Empty `claims` and `questions`
+arrays are preferred when the source does not justify useful entries. A claim
+must combine or interpret observations in a useful way; do not create one just
+to restate an observation.
+
+If the source only says "X is not always faster than Y" or "no universal
+winner is established", preserve that non-affirmation. Do not turn it into
+"performance depends on workload/context/conditions" unless the source also
+supports that dependence. Unsupported interpretation must be HYPOTHESIS or be
+omitted.
+
+A missing piece of information does not by itself justify a question. Every
+generated question must pass CONSEQUENCE_IF_UNKNOWN: explain in `reason` how
+the missing information could affect understanding a mechanism, distinguish
+mechanisms or representations, determine a property or precondition, resolve a
+contradiction, test an equivalence, design or interpret an experiment, or make
+a relevant decision. Questions explicitly asked by the source may be retained
+with `derived_from: []`; preserve their requested evidence when provided.
+Questions are not a quota, and do not invent questions about absent definitions
+or subtle term differences without a concrete consequence. Every question object
+MUST use exactly these semantic fields: `question`, `reason`,
+`evidence_needed`, and `derived_from`. When the source explicitly provides
+"Evidence needed", preserve it in `evidence_needed`; never use
+`requested_evidence` or `statement` for a question.
+
+SOURCE answers: "What is supported?"
+REFERENCE CONTEXT answers: "What is worth extracting?"
+
+REFERENCE CONTEXT
+Atlas builds reusable engineering knowledge about software, algorithms, computer systems, data representations, and their implementations.
+
+Prefer knowledge useful for understanding, implementing, testing, comparing,
+maintaining, diagnosing, optimising, or selecting production-quality software
+mechanisms.
+
+Particularly relevant knowledge includes:
+- mechanisms and algorithms;
+- data structures and representations;
+- invariants and preconditions;
+- behavioural and correctness properties;
+- failure modes and limitations;
+- implementation trade-offs;
+- performance-relevant mechanisms;
+- workload or platform dependencies;
+- interface and behavioural contracts;
+- transformations between representations;
+- experimentally testable distinctions;
+- primary references that may provide stronger evidence.
+
+Production-quality usefulness does not mean modern-only: historical algorithms,
+old implementations, academic papers, unusual architectures, and obsolete
+systems remain relevant when their knowledge is reusable for engineering
+reasoning.
+
+The Reference Context guides relevance only. It is NOT evidence. Never
+introduce a fact, assumption, terminology, relation, mechanism, property, or
+conclusion merely because it is common engineering knowledge or appears in the
+Reference Context. SOURCE FACTS must still be supported only by the numbered
+SOURCE. Do not turn the Reference Context into an ontology, taxonomy, closed
+vocabulary, or domain assignment.
+
+SOURCE:
+[L1] binary search tree
+[L2] binary search tree
+[L3] (data structure)
+[L4] Definition:
+[L5] A
+[L6] binary tree
+[L7] where every
+[L8] node's
+[L9] left
+[L10] subtree
+[L11] has
+[L12] keys
+[L13] less than the node's key, and every right subtree has keys greater than the node's key.
+[L14] Generalization
+[L15] (I am a kind of ...)
+[L16] binary tree
+[L17] ,
+[L18] search tree
+[L19] .
+[L20] Specialization
+[L21] (... is a kind of me.)
+[L22] AVL tree
+[L23] ,
+[L24] splay tree
+[L25] ,
+[L26] threaded tree
+[L27] ,
+[L28] randomized binary search tree
+[L29] ,
+[L30] discrete interval encoding tree
+[L31] .
+[L32] Aggregate parent
+[L33] (I am a part of or used in ...)
+[L34] treesort (1)
+[L35] .
+[L36] See also
+[L37] relaxed balance
+[L38] ,
+[L39] ternary search tree
+[L40] ,
+[L41] move-to-root heuristic
+[L42] ,
+[L43] jump list
+[L44] .
+[L45] Note:
+[L46] A binary search tree is almost always implemented with pointers, but may have a variety of constraints on how it is composed.
+[L47] Author:
+[L48] PEB
+[L49] Implementation
+[L50] Ben Pfaff's
+[L51] insert, delete, search, copy, etc. (literate C)
+[L52] ; Maksim Goleta's C# Collections uses it to
+[L53] implement sorted set (C#)
+[L54] .
+[L55] insert (C)
+[L56] ,
+[L57] search (C)
+[L58] . Algorithms and Data Structures'
+[L59] explanation with links to add, delete, search, and output values in order (Java and C++)
+[L60] .
+[L61] Go to the
+[L62] Dictionary of Algorithms and Data
+[L63] Structures
+[L64] home page.
+[L65] If you have suggestions, corrections, or comments, please get in touch
+[L66] with
+[L67] Paul Black
+[L68] .
+[L69] Entry modified 30 August 2021.
+[L70] HTML page formatted Wed Oct 30 12:15:30 2024.
+[L71] Cite this as:
+[L72] Paul E. Black, "binary search tree", in
+[L73] Dictionary of Algorithms and Data Structures
+[L74] [online], Paul E. Black, ed. 30 August 2021. (accessed TODAY)
+[L75] Available from:
+[L76] https://www.nist.gov/dads/HTML/binarySearchTree.html

@@ -1,0 +1,29 @@
+{
+  "fixture": "search.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 29.14688065595692,
+  "usage": {
+    "prompt_tokens": 1382,
+    "completion_tokens": 1209,
+    "total_tokens": 2591,
+    "input_tokens": 1382,
+    "output_tokens": 1209,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 4.9,
+    "total_time": 29.14,
+    "prompt_eval_duration": 4.9,
+    "generation_duration": 24.24,
+    "prompt_tokens_per_second": 281.91,
+    "generation_tokens_per_second": 49.88
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_search_def\",\n      \"facet\": \"term\",\n      \"statement\": \"Search is defined as looking for a value or item in a data structure.\",\n      \"start_line\": 4,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_search_variety\",\n      \"facet\": \"property\",\n      \"statement\": \"There are dozens of algorithms, data structures, and approaches for search.\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"obs_binary_search_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"Binary search is a specialization of search.\",\n      \"start_line\": 8,\n      \"end_line\": 8\n    },\n    {\n      \"key\": \"obs_linear_search_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"Linear search is a specialization of search.\",\n      \"start_line\": 10,\n      \"end_line\": 10\n    },\n    {\n      \"key\": \"obs_string_matching_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"String matching is a specialization of search.\",\n      \"start_line\": 12,\n      \"end_line\": 12\n    },\n    {\n      \"key\": \"obs_dfs_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"Depth-first search is a specialization of search.\",\n      \"start_line\": 14,\n      \"end_line\": 14\n    },\n    {\n      \"key\": \"obs_bond_seq_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"Bond Sequential Search is a specialization of search.\",\n      \"start_line\": 16,\n      \"end_line\": 16\n    },\n    {\n      \"key\": \"obs_jump_search_spec\",\n      \"facet\": \"relation\",\n      \"statement\": \"Jump search is a specialization of search.\",\n      \"start_line\": 18,\n      \"end_line\": 18\n    },\n    {\n      \"key\": \"obs_related_array\",\n      \"facet\": \"relation\",\n      \"statement\": \"Array is related to search.\",\n      \"start_line\": 21,\n      \"end_line\": 21\n    },\n    {\n      \"key\": \"obs_related_btree\",\n      \"facet\": \"relation\",\n      \"statement\": \"B-tree is related to search.\",\n      \"start_line\": 23,\n      \"end_line\": 23\n    },\n    {\n      \"key\": \"obs_related_dict\",\n      \"facet\": \"relation\",\n      \"statement\": \"Dictionary is related to search.\",\n      \"start_line\": 25,\n      \"end_line\": 25\n    },\n    {\n      \"key\": \"obs_related_hash\",\n      \"facet\": \"relation\",\n      \"statement\": \"Hash table is related to search.\",\n      \"start_line\": 27,\n      \"end_line\": 27\n    },\n    {\n      \"key\": \"obs_related_heap\",\n      \"facet\": \"relation\",\n      \"statement\": \"Heap is related to search.\",\n      \"start_line\": 29,\n      \"end_line\": 29\n    },\n    {\n      \"key\": \"obs_related_inverted\",\n      \"facet\": \"relation\",\n      \"statement\": \"Inverted index is related to search.\",\n      \"start_line\": 31,\n      \"end_line\": 31\n    },\n    {\n      \"key\": \"obs_related_linked\",\n      \"facet\": \"relation\",\n      \"statement\": \"Linked list is related to search.\",\n      \"start_line\": 33,\n      \"end_line\": 33\n    },\n    {\n      \"key\": \"obs_related_quadtree\",\n      \"facet\": \"relation\",\n      \"statement\": \"Quadtree is related to search.\",\n      \"start_line\": 35,\n      \"end_line\": 35\n    },\n    {\n      \"key\": \"obs_related_select_k\",\n      \"facet\": \"relation\",\n      \"statement\": \"Select kth element is related to search.\",\n      \"start_line\": 37,\n      \"end_line\": 39\n    },\n    {\n      \"key\": \"obs_related_select_partition\",\n      \"facet\": \"relation\",\n      \"statement\": \"Select and partition is related to search.\",\n      \"start_line\": 41,\n      \"end_line\": 41\n    },\n    {\n      \"key\": \"obs_ref_dads\",\n      \"facet\": \"reference\",\n      \"statement\": \"The entry is from the Dictionary of Algorithms and Data Structures, edited by Paul E. Black.\",\n      \"start_line\": 60,\n      \"end_line\": 62\n    },\n    {\n      \"key\": \"obs_ref_url\",\n      \"facet\": \"reference\",\n      \"statement\": \"The source is available at https://www.nist.gov/dads/HTML/search.html.\",\n      \"start_line\": 63,\n      \"end_line\": 64\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

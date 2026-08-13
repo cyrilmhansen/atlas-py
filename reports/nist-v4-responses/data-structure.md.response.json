@@ -1,0 +1,29 @@
+{
+  "fixture": "data-structure.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 16.404271587030962,
+  "usage": {
+    "prompt_tokens": 1429,
+    "completion_tokens": 528,
+    "total_tokens": 1957,
+    "input_tokens": 1429,
+    "output_tokens": 528,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 4.97,
+    "total_time": 16.4,
+    "prompt_eval_duration": 4.97,
+    "generation_duration": 11.43,
+    "prompt_tokens_per_second": 287.63,
+    "generation_tokens_per_second": 46.2
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_def\",\n      \"facet\": \"term\",\n      \"statement\": \"A data structure is defined as an organization of information, usually in memory, for better algorithm efficiency.\",\n      \"start_line\": 4,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"obs_examples\",\n      \"facet\": \"reference\",\n      \"statement\": \"Examples of data structures include queue, stack, linked list, heap, dictionary, and tree.\",\n      \"start_line\": 8,\n      \"end_line\": 19\n    },\n    {\n      \"key\": \"obs_conceptual\",\n      \"facet\": \"property\",\n      \"statement\": \"A data structure may represent a conceptual unity, such as the name and address of a person.\",\n      \"start_line\": 19,\n      \"end_line\": 20\n    },\n    {\n      \"key\": \"obs_redundancy\",\n      \"facet\": \"property\",\n      \"statement\": \"Data structures may include redundant information, such as the length of the list or the number of nodes in a subtree.\",\n      \"start_line\": 20,\n      \"end_line\": 26\n    },\n    {\n      \"key\": \"obs_specializations\",\n      \"facet\": \"relation\",\n      \"statement\": \"Specializations of data structures include external memory, concurrent, passive, active, persistent, recursive, and compact data structures.\",\n      \"start_line\": 27,\n      \"end_line\": 42\n    },\n    {\n      \"key\": \"obs_associated_algos\",\n      \"facet\": \"relation\",\n      \"statement\": \"Most data structures have associated algorithms to perform operations, such as search, insert, or balance, that maintain the properties of the data structure.\",\n      \"start_line\": 46,\n      \"end_line\": 47\n    },\n    {\n      \"key\": \"obs_ref_source\",\n      \"facet\": \"reference\",\n      \"statement\": \"The entry is from the Dictionary of Algorithms and Data Structures, edited by Paul E. Black.\",\n      \"start_line\": 50,\n      \"end_line\": 52\n    }\n  ],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}

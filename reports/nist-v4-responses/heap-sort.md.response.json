@@ -1,0 +1,29 @@
+{
+  "fixture": "heap-sort.md",
+  "model": "Qwen3.6-27B-oQ4e-fp16-mtp",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 25.61607680201996,
+  "usage": {
+    "prompt_tokens": 1749,
+    "completion_tokens": 986,
+    "total_tokens": 2735,
+    "input_tokens": 1749,
+    "output_tokens": 986,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "time_to_first_token": 6.06,
+    "total_time": 25.61,
+    "prompt_eval_duration": 6.06,
+    "generation_duration": 19.54,
+    "prompt_tokens_per_second": 288.45,
+    "generation_tokens_per_second": 50.45
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"obs_1\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Heapsort is a sort algorithm that builds a heap, then repeatedly extracts the maximum item.\",\n      \"start_line\": 5,\n      \"end_line\": 10\n    },\n    {\n      \"key\": \"obs_2\",\n      \"facet\": \"property\",\n      \"statement\": \"The run time of heapsort is O(n log n).\",\n      \"start_line\": 9,\n      \"end_line\": 10\n    },\n    {\n      \"key\": \"obs_3\",\n      \"facet\": \"relation\",\n      \"statement\": \"Heapsort is a kind of in-place sort.\",\n      \"start_line\": 12,\n      \"end_line\": 14\n    },\n    {\n      \"key\": \"obs_4\",\n      \"facet\": \"relation\",\n      \"statement\": \"Adaptive heap sort and smoothsort are specializations of heapsort.\",\n      \"start_line\": 16,\n      \"end_line\": 21\n    },\n    {\n      \"key\": \"obs_5\",\n      \"facet\": \"relation\",\n      \"statement\": \"Build-heap, heap, and sift up are aggregate children of heapsort (parts of or used in it).\",\n      \"start_line\": 22,\n      \"end_line\": 29\n    },\n    {\n      \"key\": \"obs_6\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Heapsort can be seen as a variant of selection sort in which sorted items are arranged in a heap to quickly find the next item.\",\n      \"start_line\": 33,\n      \"end_line\": 38\n    },\n    {\n      \"key\": \"obs_7\",\n      \"facet\": \"term\",\n      \"statement\": \"Heapsort is sometimes called 'tournament sort' by analogy between a heap (with its heap property) and a tree of matches in a sports tournament.\",\n      \"start_line\": 39,\n      \"end_line\": 41\n    },\n    {\n      \"key\": \"obs_8\",\n      \"facet\": \"reference\",\n      \"statement\": \"Robert W. Floyd published 'Algorithm 245 Treesort 3' in CACM, 7(12):701, December 1964.\",\n      \"start_line\": 64,\n      \"end_line\": 67\n    },\n    {\n      \"key\": \"obs_9\",\n      \"facet\": \"reference\",\n      \"statement\": \"J. W. J. Williams published 'Algorithm 232 Heapsort' in CACM, 7(6):378-348, June 1964.\",\n      \"start_line\": 68,\n      \"end_line\": 71\n    },\n    {\n      \"key\": \"obs_10\",\n      \"facet\": \"other\",\n      \"statement\": \"Although Williams clearly stated the idea of heapsort, Floyd gave a complete, efficient implementation nearly identical to what is used today.\",\n      \"start_line\": 72,\n      \"end_line\": 72\n    }\n  ],\n  \"claims\": [\n    {\n      \"key\": \"claim_1\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"statement\": \"Heapsort combines the structural efficiency of a heap for finding extrema with the iterative extraction strategy of selection sort, resulting in an O(n log n) in-place sorting algorithm.\",\n      \"supported_by\": [\n        \"obs_1\",\n        \"obs_2\",\n        \"obs_3\",\n        \"obs_6\"\n      ]\n    },\n    {\n      \"key\": \"claim_2\",\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"statement\": \"The modern standard implementation of heapsort is attributed to Robert W. Floyd, who provided the efficient complete implementation, while J. W. J. Williams is credited with stating the original idea.\",\n      \"supported_by\": [\n        \"obs_8\",\n        \"obs_9\",\n        \"obs_10\"\n      ]\n    }\n  ],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null,
+  "finish_reason": "stop"
+}
