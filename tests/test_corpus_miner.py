@@ -2,6 +2,7 @@ import json
 import io
 import sqlite3
 import tempfile
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -9,7 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from corpus_miner.backend import BackendError, FakeBackend, OpenAICompatibleBackend
-from corpus_miner.cli import ingest_file, numbered_source
+from corpus_miner.cli import ingest_file, numbered_source, main as cli_main
 from corpus_miner.evaluate import evaluate
 from corpus_miner.markdown import markdown_filename, render
 from corpus_miner.models import ValidatedExtraction
@@ -325,16 +326,16 @@ class CorpusMinerTests(unittest.TestCase):
             with redirect_stdout(output):
                 evaluate(str(corpus), str(self.root / "report.md"), f"http://127.0.0.1:{server.server_port}", "test", None,
                          stream=False, show_prompt=True, save_prompts=str(prompts), only=["02-second.md", "01-first.md"],
-                         thinking=True, save_responses=str(responses))
+                         thinking=True, save_responses=str(responses), concurrency=2)
         finally:
             server.shutdown(); thread.join(); server.server_close()
         self.assertEqual(len(requests), 2)
         self.assertIn("[prompt]", output.getvalue())
         self.assertIn(build_prompt(numbered_source("first", "first").text), output.getvalue())
-        self.assertEqual([request["messages"][0]["content"] for request in requests], [
+        self.assertEqual({request["messages"][0]["content"] for request in requests}, {
             (prompts / "01-first.md.prompt.txt").read_text(encoding="utf-8"),
             (prompts / "02-second.md.prompt.txt").read_text(encoding="utf-8"),
-        ])
+        })
         self.assertTrue(all(request["chat_template_kwargs"] == {"enable_thinking": True} for request in requests))
         artifact = json.loads((responses / "01-first.md.response.json").read_text(encoding="utf-8"))
         self.assertEqual(artifact["reasoning_content"], "private reasoning")
@@ -343,12 +344,118 @@ class CorpusMinerTests(unittest.TestCase):
         report = (self.root / "report.md").read_text(encoding="utf-8")
         self.assertIn("- thinking: `on`", report)
         self.assertIn("- streaming: `no`", report)
+        self.assertIn("- concurrency: `2`", report)
         self.assertIn("- prompt: `corpus-miner-v4`", report)
 
     def test_evaluation_unknown_fixture_is_rejected(self):
         with self.assertRaises(ValueError):
             evaluate(str(self.root), str(self.root / "report.md"), "http://127.0.0.1:1", "test", None,
                      only=["missing.md"])
+
+    def test_concurrency_default_one_and_parallel_results_are_ordered(self):
+        corpus = self.root / "concurrent-corpus"
+        corpus.mkdir()
+        for marker in "ABC":
+            (corpus / f"{marker}.md").write_text(marker, encoding="utf-8")
+
+        class ControlledResponse:
+            def __init__(self, barrier=None, delays=None, fail=None):
+                self.barrier = barrier
+                self.delays = delays or {}
+                self.fail = fail
+                self.lock = threading.Lock()
+                self.active = 0
+                self.max_active = 0
+                self.completed = []
+                self.prompts = []
+
+            def __call__(self, prompt):
+                marker = next(value for value in "ABC" if f"[L1] {value}" in prompt)
+                with self.lock:
+                    self.prompts.append(prompt)
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                try:
+                    if self.fail == marker:
+                        raise RuntimeError(f"synthetic failure for {marker}")
+                    if self.barrier:
+                        self.barrier.wait(timeout=3)
+                    time.sleep(self.delays.get(marker, 0))
+                    return json.dumps({
+                        "schema_version": 1,
+                        "observations": [{"key": "o1", "facet": "term",
+                                           "statement": f"fixture {marker}",
+                                           "start_line": 1, "end_line": 1}],
+                        "claims": [], "questions": [],
+                    })
+                finally:
+                    with self.lock:
+                        self.active -= 1
+                        self.completed.append(marker)
+
+        sequential = ControlledResponse()
+        sequential_report = self.root / "sequential.md"
+        evaluate(str(corpus), str(sequential_report), "unused", "test", None,
+                 save_prompts=str(self.root / "sequential-prompts"),
+                 save_responses=str(self.root / "sequential-responses"),
+                 reference_context="concurrency test context", backend_factory=lambda: FakeBackend(sequential))
+        self.assertEqual(sequential.max_active, 1)
+        self.assertIn("- concurrency: `1`", sequential_report.read_text(encoding="utf-8"))
+
+        parallel = ControlledResponse(barrier=threading.Barrier(3), delays={"A": 0.08, "B": 0.04, "C": 0.0})
+        parallel_report = self.root / "parallel.md"
+        evaluate(str(corpus), str(parallel_report), "unused", "test", None, concurrency=3,
+                 save_prompts=str(self.root / "parallel-prompts"),
+                 save_responses=str(self.root / "parallel-responses"),
+                 thinking=False, reference_context="concurrency test context",
+                 backend_factory=lambda: FakeBackend(parallel))
+        self.assertGreaterEqual(parallel.max_active, 2)
+        self.assertEqual(parallel.completed, ["C", "B", "A"])
+        report = parallel_report.read_text(encoding="utf-8")
+        self.assertLess(report.index("| A.md |"), report.index("| B.md |"))
+        self.assertLess(report.index("| B.md |"), report.index("| C.md |"))
+        self.assertIn("- concurrency: `3`", report)
+        for marker in "ABC":
+            prompt = (self.root / "parallel-prompts" / f"{marker}.md.prompt.txt").read_text(encoding="utf-8")
+            self.assertIn(f"[L1] {marker}", prompt)
+            artifact = json.loads((self.root / "parallel-responses" / f"{marker}.md.response.json").read_text(encoding="utf-8"))
+            self.assertIn(f'"statement": "fixture {marker}"', artifact["content"])
+            self.assertEqual(artifact["thinking"], "off")
+            self.assertEqual(artifact["validation_status"], "valid")
+        self.assertEqual(len(list((self.root / "parallel-responses").glob("*.json"))), 3)
+
+    def test_concurrent_failure_isolated_and_reference_context_preserved(self):
+        corpus = self.root / "failure-corpus"
+        corpus.mkdir()
+        for marker in "ABC":
+            (corpus / f"{marker}.md").write_text(marker, encoding="utf-8")
+
+        class Response:
+            def __call__(self, prompt):
+                marker = next(value for value in "ABC" if f"[L1] {value}" in prompt)
+                if "Only this reference context" not in prompt:
+                    raise AssertionError("reference context was not applied")
+                if marker == "B":
+                    raise RuntimeError("synthetic backend failure")
+                return json.dumps({"schema_version": 1, "observations": [], "claims": [], "questions": []})
+
+        report = self.root / "failure.md"
+        evaluate(str(corpus), str(report), "unused", "test", None, concurrency=3,
+                 save_responses=str(self.root / "failure-responses"),
+                 reference_context="Only this reference context", backend_factory=lambda: FakeBackend(Response()))
+        content = report.read_text(encoding="utf-8")
+        self.assertIn("| A.md | yes |", content)
+        self.assertIn("| B.md | no |", content)
+        self.assertIn("synthetic backend failure", content)
+        self.assertIn("| C.md | yes |", content)
+        self.assertEqual(len(list((self.root / "failure-responses").glob("*.json"))), 3)
+
+    def test_invalid_concurrency_is_rejected(self):
+        with self.assertRaises(ValueError):
+            evaluate(str(self.root), str(self.root / "report.md"), "unused", "test", None, concurrency=0)
+        with self.assertRaises(SystemExit):
+            cli_main(["evaluate", str(self.root), str(self.root / "report.md"),
+                      "--base-url", "unused", "--model", "test", "--concurrency", "0"])
 
     def test_stream_sse_reconstructs_reasoning_content_and_usage(self):
         chunks = [

@@ -77,3 +77,11 @@ exact prompts with `--save-prompts DIR`, and save per-fixture response
 telemetry with `--save-responses DIR`. `--thinking on` or `--thinking off`
 adds the corresponding `chat_template_kwargs.enable_thinking`; omitting it
 does not force a value.
+
+Evaluation uses one request at a time by default. `--concurrency N` enables a
+bounded thread pool with at most N independent HTTP requests active at once.
+Results, reports, and prompt/response artifact names remain in fixture order.
+When streaming is combined with concurrency greater than one, token output is
+buffered in the response artifacts and only concise completion progress is
+printed, avoiding interleaved terminal streams. A request failure is recorded
+for its fixture while unrelated requests continue.

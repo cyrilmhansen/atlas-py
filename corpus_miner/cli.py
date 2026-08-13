@@ -15,6 +15,16 @@ from .validate import ValidationError, parse_and_validate
 MAX_SOURCE_CHARS = 100_000
 
 
+def _positive_concurrency(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("concurrency must be an integer >= 1") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("concurrency must be an integer >= 1")
+    return parsed
+
+
 def numbered_source(source_id: str, text: str) -> NumberedSource:
     lines = tuple(text.splitlines())
     numbered = "\n".join(f"[L{i}] {line}" for i, line in enumerate(lines, 1))
@@ -93,6 +103,7 @@ def main(argv=None) -> int:
     evaluate_parser.add_argument("--save-responses")
     evaluate_parser.add_argument("--only", action="append")
     evaluate_parser.add_argument("--thinking", choices=["on", "off"])
+    evaluate_parser.add_argument("--concurrency", type=_positive_concurrency, default=1)
     evaluate_parser.add_argument("--reference-context")
     evaluate_parser.add_argument("--reference-context-file")
     args = parser.parse_args(argv)
@@ -119,7 +130,8 @@ def main(argv=None) -> int:
             evaluate(args.corpus_dir, args.report, args.base_url, args.model, args.api_key, args.stream, args.quiet,
                      args.show_prompt, args.save_prompts, args.only,
                      None if args.thinking is None else args.thinking == "on", args.save_responses,
-                     DEFAULT_REFERENCE_CONTEXT if context is None else context)
+                     DEFAULT_REFERENCE_CONTEXT if context is None else context,
+                     args.concurrency)
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
     return 0
