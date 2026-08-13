@@ -1,0 +1,22 @@
+{
+  "fixture": "c2-irrelevant-absence.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.9564826149726287,
+  "usage": {
+    "prompt_tokens": 902,
+    "completion_tokens": 512,
+    "total_tokens": 1414,
+    "input_tokens": 902,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.95
+  },
+  "content": "{\n  \"observations\": [\n    {\n      \"key\": \"lookup routine\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The lookup routine performs a sequential search on an ordered index to retrieve the first matching record.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"ordered index\",\n      \"facet\": \"reference\",\n      \"statement\": \"The lookup routine operates on an ordered index, implying a specific ordering mechanism.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"sequential search\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The lookup routine executes a sequential search on the ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"first matching record\",\n      \"facet\": \"term\",\n      \"statement\": \"The lookup routine returns the first matching record from the ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"ordered index\",\n      \"facet\": \"reference\",\n      \"statement\": \"The lookup routine operates on an ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"sequential search\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The lookup routine executes a sequential search on the ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"first matching record\",\n      \"facet\": \"term\",\n      \"statement\": \"The lookup routine returns the first matching record from the ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"ordered index\",\n      \"facet\": \"reference\",\n      \"statement\": \"The lookup routine operates on an ordered index.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Unterminated string starting at: line 60 column 7 (char 1773)"
+}

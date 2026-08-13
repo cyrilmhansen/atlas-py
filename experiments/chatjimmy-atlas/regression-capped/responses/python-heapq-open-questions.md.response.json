@@ -1,0 +1,22 @@
+{
+  "fixture": "python-heapq-open-questions.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.9294504359713756,
+  "usage": {
+    "prompt_tokens": 1016,
+    "completion_tokens": 512,
+    "total_tokens": 1528,
+    "input_tokens": 1016,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.92
+  },
+  "content": "{\n  \"observations\": [\n    {\n      \"key\": \"priority\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"priority is a key used to store task ordering in the heap\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"entry_count\",\n      \"facet\": \"property\",\n      \"statement\": \"entry count serves as a tie-breaker to prevent tuple comparison from directly comparing tasks\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"priority\",\n      \"facet\": \"property\",\n      \"statement\": \"priority is a key used to store task ordering in the heap\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"entry_count\",\n      \"facet\": \"property\",\n      \"statement\": \"entry count serves as a tie-breaker to prevent tuple comparison from directly comparing tasks\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"priority\",\n      \"facet\": \"property\",\n      \"statement\": \"priority is a key used to store task ordering in the heap\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"entry_count\",\n      \"facet\": \"property\",\n      \"statement\": \"entry count serves as a tie-breaker to prevent tuple comparison from directly comparing tasks\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"priority\",\n      \"facet\": \"property\",\n      \"statement\": \"priority is a key used to store task ordering in the heap\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"entry_count\",\n      \"facet\": \"property\",\n      \"statement\": \"entry count serves as a tie-breaker to prevent tuple comparison from directly comparing tasks\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Unterminated string starting at: line 57 column 19 (char 1719)"
+}

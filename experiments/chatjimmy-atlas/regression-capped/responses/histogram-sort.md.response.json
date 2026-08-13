@@ -1,0 +1,22 @@
+{
+  "fixture": "histogram-sort.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 2.0685282729682513,
+  "usage": {
+    "prompt_tokens": 1850,
+    "completion_tokens": 512,
+    "total_tokens": 2362,
+    "input_tokens": 1850,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.06
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"bucket sort\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"Bucket sort uses fixed-size buckets. A histogram sort sets up buckets of exactly the right size in a first pass.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\",\n      \"source\": \"L1\",\n      \"source_note\": \"L2\",\n      \"source_note\": \"L3\",\n      \"source_note\": \"L4\",\n      \"source_note\": \"L5\",\n      \"source_note\": \"L6\",\n      \"source_note\": \"L7\",\n      \"source_note\": \"L8\",\n      \"source_note\": \"L9\",\n      \"source_note\": \"L10\",\n      \"source_note\": \"L11\",\n      \"source_note\": \"L12\",\n      \"source_note\": \"L13\",\n      \"source_note\": \"L14\",\n      \"source_note\": \"L15\",\n      \"source_note\": \"L16\",\n      \"source_note\": \"L17\",\n      \"source_note\": \"L18\",\n      \"source_note\": \"L19\",\n      \"source_note\": \"L20\",\n      \"source_note\": \"L21\",\n      \"source_note\": \"L22\",\n      \"source_note\": \"L23\",\n      \"source_note\": \"L24\",\n      \"source_note\": \"L25\",\n      \"source_note\": \"L26\",\n      \"source_note\": \"L27\",\n      \"source_note\": \"L28\",\n      \"source_note\": \"L29\",\n      \"source_note\": \"L30\",\n      \"source_note\": \"L31\",\n      \"source_note\": \"L32\",\n      \"source_note\": \"L33\",\n      \"source_note\": \"L34\",\n      \"source_note\": \"L35\",\n      \"source_note\": \"L36\",\n      \"source_note\": \"L37\",\n      \"source_note\": \"L38\",\n      \"source_note\": \"L39\",\n      \"source_note\": \"",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Unterminated string starting at: line 49 column 22 (char 1391)"
+}

@@ -1,0 +1,19 @@
+{
+  "item": "claim-scope",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "thinking": "off",
+  "max_tokens": 256,
+  "duration": 1.6456931899883784,
+  "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 256,
+    "total_tokens": 298,
+    "input_tokens": 42,
+    "output_tokens": 256,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.63
+  },
+  "content": "To determine whether a derived engineering claim broadens the scope of local evidence, Atlas must perform a rigorous comparison between the **local evidence** (the specific facts observed in a single instance) and the **derived claim** (the general rule or specification that the evidence supports).\n\nHere is the step-by-step analysis and the required candidates.\n\n### 1. The Core Criterion\nAtlas tests broadening by checking if the **derived claim** is a superset of the **local evidence**.\n*   **If the derived claim is a superset:** The local evidence supports the derived claim. The claim is broadened.\n*   **If the derived claim is a subset:** The local evidence does not support the derived claim. The claim is not broadened (or is narrower than the evidence).\n\n### 2. Candidate Counterexamples\nThese examples illustrate the difference between a broadening claim and a non-broadening claim.\n\n#### Counterexample A: The \"Standard\" Claim (Non-Broadening)\n*   **Derived Claim:** \"A device is a standard if it meets the specific performance specifications listed in the patent specification.\"\n*   **Local Evidence:** A device meets the specifications.\n*   **Analysis:** The local evidence supports the derived"
+}

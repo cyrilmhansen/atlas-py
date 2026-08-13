@@ -1,0 +1,22 @@
+{
+  "fixture": "sqlite-indexed-sort.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.9453155850060284,
+  "usage": {
+    "prompt_tokens": 990,
+    "completion_tokens": 512,
+    "total_tokens": 1502,
+    "input_tokens": 990,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.94
+  },
+  "content": "{\n  \"observations\": [\n    {\n      \"key\": \"ORDER BY query\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"When no appropriate index is available, an ORDER BY query gathers the output and runs it through a sorter, which can require substantial temporary storage. If an index is available on the ORDER BY column, SQLite can scan that index and perform rowid lookups instead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    {\n      \"key\": \"Index scan\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The index scan and the indexless sort can both require work proportional to N log N.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    {\n      \"key\": \"Indexless sort\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The indexless sort can both require work proportional to N log N.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    {\n      \"key\": \"Temporary storage\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The indexed sort generally uses less temporary storage because it does not accumulate the entire result before sorting.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    {\n      \"key\": \"Cost-based query planner\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"SQLite uses a cost-based query planner and estimates the total time for each plan.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    {\n      \"key\": \"WHERE-clause constraints\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The choice can therefore depend on table size and WHERE-clause constraints.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    {\n      \"key\": \"Indexed sort\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The indexed sort generally uses less temporary storage because it does not accumulate the entire result before sorting.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting ',' delimiter: line 50 column 23 (char 1849)"
+}

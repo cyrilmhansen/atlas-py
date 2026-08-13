@@ -1,0 +1,22 @@
+{
+  "fixture": "binary-search.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 2.0398686989792623,
+  "usage": {
+    "prompt_tokens": 1721,
+    "completion_tokens": 512,
+    "total_tokens": 2233,
+    "input_tokens": 1721,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.03
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"binary search\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The algorithm divides the search interval in half repeatedly until the value is found or the interval is empty.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",\n      \"source_line\": \"L1\",\n      \"source\": \"binary search\",",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 54 column 33 (char 1645)"
+}

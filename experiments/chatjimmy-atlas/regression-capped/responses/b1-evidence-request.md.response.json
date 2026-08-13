@@ -1,0 +1,22 @@
+{
+  "fixture": "b1-evidence-request.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.9331338069750927,
+  "usage": {
+    "prompt_tokens": 904,
+    "completion_tokens": 512,
+    "total_tokens": 1416,
+    "input_tokens": 904,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.93
+  },
+  "content": "{\n  \"observations\": {\n    \"1\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"2\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"3\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"4\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"5\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"6\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"7\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"8\": {\n      \"key\": \"batch size\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation batches writes to reduce per-operation overhead.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 58 column 7 (char 1717)"
+}

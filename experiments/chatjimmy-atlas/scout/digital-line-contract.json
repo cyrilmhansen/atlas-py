@@ -1,0 +1,19 @@
+{
+  "item": "digital-line-contract",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "thinking": "off",
+  "max_tokens": 256,
+  "duration": 0.9514437139732763,
+  "usage": {
+    "prompt_tokens": 43,
+    "completion_tokens": 256,
+    "total_tokens": 299,
+    "input_tokens": 43,
+    "output_tokens": 256,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 0.95
+  },
+  "content": "Here are three distinct implementation-level cases that distinguish digital-line contracts involving clipping, endpoint policy, and tie-breaking.\n\n### Case 1: The \"Clipping\" Discrepancy (Policy vs. Actual Value)\n**The Scenario:** A contract specifies a clipping threshold (e.g., \"max value = 100\"). The system enforces this policy. However, the actual value received by the client is 105. The system rejects the request, but the client expects the value to be capped at 100.\n*   **Why it distinguishes:** This case highlights that the **policy** (the contract rule) is not the *only* thing that matters. It forces the system to verify that the client's request adheres to the contract's constraints before proceeding. If the client bypasses the policy (e.g., by sending a value > 100), the system must reject the request, creating a conflict between the client's expectation and the system's enforcement of the policy.\n\n### Case 2: The \"Endpoint Policy\" Violation (State vs. Stateless)\n**The Scenario:** The contract defines an endpoint policy (e.g., \"Only allow POST requests\"). The system enforces this."
+}

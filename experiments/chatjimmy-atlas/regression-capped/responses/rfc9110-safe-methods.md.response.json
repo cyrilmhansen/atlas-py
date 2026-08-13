@@ -1,0 +1,22 @@
+{
+  "fixture": "rfc9110-safe-methods.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.8232414709636942,
+  "usage": {
+    "prompt_tokens": 1003,
+    "completion_tokens": 479,
+    "total_tokens": 1482,
+    "input_tokens": 1003,
+    "output_tokens": 479,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.82
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"request methods\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"GET, HEAD, OPTIONS, and TRACE are defined to be safe.\"\n    },\n    {\n      \"key\": \"client does not request\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client does not request additional behavior.\"\n    },\n    {\n      \"key\": \"client does not expect\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client does not expect any state change on the origin server.\"\n    },\n    {\n      \"key\": \"client does not hold accountable\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client cannot be held accountable for additional behavior.\"\n    },\n    {\n      \"key\": \"client does not request\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client does not request that additional behavior.\"\n    },\n    {\n      \"key\": \"client does not expect\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client does not expect any state change on the origin server.\"\n    },\n    {\n      \"key\": \"client does not hold accountable\",\n      \"facet\": \"precondition\",\n      \"statement\": \"The client cannot be held accountable for additional behavior.\"\n    }\n  ],\n  \"claims\": [\n    {\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"text\": \"The definition of safe methods relies on the client not requesting additional behavior, which is a precondition for the method to be considered safe.\"\n    }\n  ],\n  \"questions\": [\n    {\n      \"question\": \"What is the condition under which a request method is considered safe?\",\n      \"reason\": \"The source states that request methods are safe if their defined semantics are essentially read-only. This implies that the client does not request additional behavior, which is a precondition for the method to be considered safe.\",\n      \"evidence_needed\": \"None\",\n      \"derived_from\": []\n    }\n  ]\n}",
+  "validation_status": "invalid",
+  "validation_error": "observation missing required field"
+}

@@ -1,0 +1,22 @@
+{
+  "fixture": "python-heapq-merge.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.9522334730136208,
+  "usage": {
+    "prompt_tokens": 942,
+    "completion_tokens": 512,
+    "total_tokens": 1454,
+    "input_tokens": 942,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.94
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [\n    {\n      \"key\": \"heapq.merge\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.merge merges multiple sorted inputs into a single sorted output\",\n      \"start_line\": 1,\n      \"end_line\": 1\n    },\n    {\n      \"key\": \"heapq.nsmallest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nsmallest performs best for smaller values of n\",\n      \"start_line\": 2,\n      \"end_line\": 2\n    },\n    {\n      \"key\": \"heapq.nlargest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nlargest performs best for smaller values of n\",\n      \"start_line\": 3,\n      \"end_line\": 3\n    },\n    {\n      \"key\": \"heapq.nsmallest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nsmallest and heapq.nlargest perform best for smaller values of n\",\n      \"start_line\": 4,\n      \"end_line\": 4\n    },\n    {\n      \"key\": \"heapq.nsmallest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nsmallest is more efficient for larger values of n\",\n      \"start_line\": 5,\n      \"end_line\": 5\n    },\n    {\n      \"key\": \"heapq.nlargest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nlargest is more efficient for larger values of n\",\n      \"start_line\": 6,\n      \"end_line\": 6\n    },\n    {\n      \"key\": \"heapq.nsmallest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nsmallest is more efficient for repeated usage\",\n      \"start_line\": 7,\n      \"end_line\": 7\n    },\n    {\n      \"key\": \"heapq.nlargest\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"heapq.nlargest is more efficient for repeated usage\",\n      \"start_line\": 8,",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 57 column 23 (char 1581)"
+}

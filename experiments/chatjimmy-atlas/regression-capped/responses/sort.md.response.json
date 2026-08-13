@@ -1,0 +1,22 @@
+{
+  "fixture": "sort.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 2.0974571920232847,
+  "usage": {
+    "prompt_tokens": 2035,
+    "completion_tokens": 512,
+    "total_tokens": 2547,
+    "input_tokens": 2035,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.09
+  },
+  "content": "{\n  \"observations\": [\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a generalization of permutation that arranges items in a predetermined order.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L25\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented as an in-place sort.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable, too.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable, too.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable, too.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable, too.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L10\"\n    },\n    {\n      \"key\": \"sort\",\n      \"facet\": \"term\",\n      \"statement\": \"sort is a specialization of permutation that can be implemented so that it is stable, too",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Unterminated string starting at: line 55 column 20 (char 1615)"
+}

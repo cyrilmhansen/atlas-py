@@ -1,0 +1,22 @@
+{
+  "fixture": "quicksort.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 0.5135338050313294,
+  "usage": {
+    "prompt_tokens": 1881,
+    "completion_tokens": 30,
+    "total_tokens": 1911,
+    "input_tokens": 1881,
+    "output_tokens": 30,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 0.5
+  },
+  "content": "{\n  \"schema_version\": 1,\n  \"observations\": [],\n  \"claims\": [],\n  \"questions\": []\n}",
+  "validation_status": "valid",
+  "validation_error": null
+}

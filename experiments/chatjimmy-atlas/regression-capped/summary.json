@@ -1,0 +1,230 @@
+[
+  {
+    "fixture": "a1-unresolved.md",
+    "valid": false,
+    "duration": 2.5299724609940313,
+    "usage": {
+      "prompt_tokens": 896,
+      "completion_tokens": 469,
+      "total_tokens": 1365,
+      "input_tokens": 896,
+      "output_tokens": 469,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 2.5
+    },
+    "validation_error": "schema_version must be 1",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "a2-resolved.md",
+    "valid": false,
+    "duration": 1.935806441004388,
+    "usage": {
+      "prompt_tokens": 914,
+      "completion_tokens": 512,
+      "total_tokens": 1426,
+      "input_tokens": 914,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.93
+    },
+    "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 59 column 11 (char 1644)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "b1-evidence-request.md",
+    "valid": false,
+    "duration": 1.9331338069750927,
+    "usage": {
+      "prompt_tokens": 904,
+      "completion_tokens": 512,
+      "total_tokens": 1416,
+      "input_tokens": 904,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.93
+    },
+    "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 58 column 7 (char 1717)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "binary-search.md",
+    "valid": false,
+    "duration": 2.0398686989792623,
+    "usage": {
+      "prompt_tokens": 1721,
+      "completion_tokens": 512,
+      "total_tokens": 2233,
+      "input_tokens": 1721,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 2.03
+    },
+    "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 54 column 33 (char 1645)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "c2-irrelevant-absence.md",
+    "valid": false,
+    "duration": 1.9564826149726287,
+    "usage": {
+      "prompt_tokens": 902,
+      "completion_tokens": 512,
+      "total_tokens": 1414,
+      "input_tokens": 902,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.95
+    },
+    "validation_error": "invalid JSON: Unterminated string starting at: line 60 column 7 (char 1773)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "histogram-sort.md",
+    "valid": false,
+    "duration": 2.0685282729682513,
+    "usage": {
+      "prompt_tokens": 1850,
+      "completion_tokens": 512,
+      "total_tokens": 2362,
+      "input_tokens": 1850,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 2.06
+    },
+    "validation_error": "invalid JSON: Unterminated string starting at: line 49 column 22 (char 1391)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "python-heapq-merge.md",
+    "valid": false,
+    "duration": 1.9522334730136208,
+    "usage": {
+      "prompt_tokens": 942,
+      "completion_tokens": 512,
+      "total_tokens": 1454,
+      "input_tokens": 942,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.94
+    },
+    "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 57 column 23 (char 1581)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "python-heapq-open-questions.md",
+    "valid": false,
+    "duration": 1.9294504359713756,
+    "usage": {
+      "prompt_tokens": 1016,
+      "completion_tokens": 512,
+      "total_tokens": 1528,
+      "input_tokens": 1016,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.92
+    },
+    "validation_error": "invalid JSON: Unterminated string starting at: line 57 column 19 (char 1719)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "quicksort.md",
+    "valid": true,
+    "duration": 0.5135338050313294,
+    "usage": {
+      "prompt_tokens": 1881,
+      "completion_tokens": 30,
+      "total_tokens": 1911,
+      "input_tokens": 1881,
+      "output_tokens": 30,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 0.5
+    },
+    "validation_error": null,
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "rfc9110-safe-methods.md",
+    "valid": false,
+    "duration": 1.8232414709636942,
+    "usage": {
+      "prompt_tokens": 1003,
+      "completion_tokens": 479,
+      "total_tokens": 1482,
+      "input_tokens": 1003,
+      "output_tokens": 479,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.82
+    },
+    "validation_error": "observation missing required field",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "sort.md",
+    "valid": false,
+    "duration": 2.0974571920232847,
+    "usage": {
+      "prompt_tokens": 2035,
+      "completion_tokens": 512,
+      "total_tokens": 2547,
+      "input_tokens": 2035,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 2.09
+    },
+    "validation_error": "invalid JSON: Unterminated string starting at: line 55 column 20 (char 1615)",
+    "claims": 0,
+    "questions": 0
+  },
+  {
+    "fixture": "sqlite-indexed-sort.md",
+    "valid": false,
+    "duration": 1.9453155850060284,
+    "usage": {
+      "prompt_tokens": 990,
+      "completion_tokens": 512,
+      "total_tokens": 1502,
+      "input_tokens": 990,
+      "output_tokens": 512,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_time": 1.94
+    },
+    "validation_error": "invalid JSON: Expecting ',' delimiter: line 50 column 23 (char 1849)",
+    "claims": 0,
+    "questions": 0
+  }
+]

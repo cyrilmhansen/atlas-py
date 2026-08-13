@@ -1,0 +1,24 @@
+{
+  "fixture": "a1-unresolved.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "reference_context_sha256": "15b9ce1a268b666e6d31d4598ee79b95da3a68eca2eee2b49a88d1623b81ebab",
+  "thinking": "off",
+  "duration": 2.532847220019903,
+  "usage": {
+    "prompt_tokens": 896,
+    "completion_tokens": 469,
+    "total_tokens": 1365,
+    "input_tokens": 896,
+    "output_tokens": 469,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 2.5
+  },
+  "reasoning_content": "",
+  "content": "{\n  \"observations\": {\n    \"1\": {\n      \"key\": \"Index lookup order\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"An ordered index is used to answer lookups.\"\n    },\n    \"2\": {\n      \"key\": \"Update latency\",\n      \"facet\": \"other\",\n      \"statement\": \"The implementation description does not report a latency measurement or a policy for sustained writes.\"\n    },\n    \"3\": {\n      \"key\": \"Sustained writes\",\n      \"facet\": \"other\",\n      \"statement\": \"The implementation description does not report a latency measurement or a policy for sustained writes.\"\n    },\n    \"4\": {\n      \"key\": \"Rebuilding index\",\n      \"facet\": \"other\",\n      \"statement\": \"The implementation description does not report a latency measurement or a policy for sustained writes.\"\n    },\n    \"5\": {\n      \"key\": \"Sustained writes\",\n      \"facet\": \"other\",\n      \"statement\": \"The implementation description does not report a latency measurement or a policy for sustained writes.\"\n    }\n  },\n  \"claims\": [\n    {\n      \"status\": \"DERIVED_INTERPRETATION\",\n      \"text\": \"The ordered index mechanism is used to answer lookups, implying a mechanism-based lookup strategy exists.\"\n    }\n  ],\n  \"questions\": [\n    {\n      \"question\": \"Does rebuilding the index after each update preserve latency under sustained writes?\",\n      \"reason\": \"The source explicitly states that the implementation description does not report a latency measurement or a policy for sustained writes. Without this specific data point, it is impossible to determine if the ordered index mechanism maintains latency under sustained writes, as the source provides no evidence to support or refute the claim.\"\n    },\n    {\n      \"question\": \"What is worth extracting?\",\n      \"reason\": \"The source provides a clear reference context that guides relevance, but it does not contain any factual evidence, data points, or specific claims that can be used to derive the extracted knowledge. The reference context is not evidence itself.\"\n    }\n  ]\n}",
+  "validation_status": "invalid",
+  "validation_error": "schema_version must be 1",
+  "finish_reason": "stop"
+}

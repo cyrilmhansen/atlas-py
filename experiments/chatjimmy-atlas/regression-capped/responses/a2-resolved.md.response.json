@@ -1,0 +1,22 @@
+{
+  "fixture": "a2-resolved.md",
+  "model": "Qwen3.5-0.8B-OptiQ-4bit",
+  "prompt_version": "corpus-miner-v4",
+  "thinking": "off",
+  "max_tokens": 512,
+  "duration": 1.935806441004388,
+  "usage": {
+    "prompt_tokens": 914,
+    "completion_tokens": 512,
+    "total_tokens": 1426,
+    "input_tokens": 914,
+    "output_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_time": 1.93
+  },
+  "content": "{\n  \"observations\": {\n    \"1\": {\n      \"key\": \"bounded workload test\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The implementation uses a bounded workload test to verify latency stability under sustained writes.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"2\": {\n      \"key\": \"rebuilding mechanism\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The index is rebuilt after each update, which is the mechanism enabling the bounded workload test.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"3\": {\n      \"key\": \"stable latency\",\n      \"facet\": \"property\",\n      \"statement\": \"The test reports stable latency under sustained writes.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"4\": {\n      \"key\": \"bounded workload\",\n      \"facet\": \"property\",\n      \"statement\": \"The implementation uses a bounded workload test.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"5\": {\n      \"key\": \"sustained writes\",\n      \"facet\": \"property\",\n      \"statement\": \"The test is designed for sustained writes.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"6\": {\n      \"key\": \"rebuilding\",\n      \"facet\": \"mechanism\",\n      \"statement\": \"The index is rebuilt after each update.\",\n      \"start_line\": \"L1\",\n      \"end_line\": \"L1\"\n    },\n    \"7\": {\n      \"key\": \"bounded\",\n      \"facet\": \"property\",\n      \"statement\": \"The workload is bounded.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"8\": {\n      \"key\": \"stable\",\n      \"facet\": \"property\",\n      \"statement\": \"The latency is stable.\",\n      \"start_line\": \"L2\",\n      \"end_line\": \"L2\"\n    },\n    \"9\": {",
+  "validation_status": "invalid",
+  "validation_error": "invalid JSON: Expecting property name enclosed in double quotes: line 59 column 11 (char 1644)"
+}
