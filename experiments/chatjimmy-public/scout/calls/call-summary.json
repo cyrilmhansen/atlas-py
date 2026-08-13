@@ -1,0 +1,114 @@
+[
+  {
+    "tension": "region-lifecycle",
+    "call": 1,
+    "status": 200,
+    "duration": 0.31719861301826313,
+    "error": null
+  },
+  {
+    "tension": "region-lifecycle",
+    "call": 2,
+    "status": 200,
+    "duration": 0.34109274996444583,
+    "error": null
+  },
+  {
+    "tension": "region-lifecycle",
+    "call": 3,
+    "status": 200,
+    "duration": 0.3316978379734792,
+    "error": null
+  },
+  {
+    "tension": "region-lifecycle",
+    "call": 4,
+    "status": 200,
+    "duration": 0.3422256140038371,
+    "error": null
+  },
+  {
+    "tension": "claim-scope",
+    "call": 1,
+    "status": 200,
+    "duration": 0.3439949629828334,
+    "error": null
+  },
+  {
+    "tension": "claim-scope",
+    "call": 2,
+    "status": 200,
+    "duration": 0.333653075969778,
+    "error": null
+  },
+  {
+    "tension": "claim-scope",
+    "call": 3,
+    "status": 200,
+    "duration": 0.3405112089822069,
+    "error": null
+  },
+  {
+    "tension": "claim-scope",
+    "call": 4,
+    "status": 200,
+    "duration": 0.3364583280053921,
+    "error": null
+  },
+  {
+    "tension": "digital-line-contract",
+    "call": 1,
+    "status": 200,
+    "duration": 0.394419701944571,
+    "error": null
+  },
+  {
+    "tension": "digital-line-contract",
+    "call": 2,
+    "status": 200,
+    "duration": 0.33849864499643445,
+    "error": null
+  },
+  {
+    "tension": "digital-line-contract",
+    "call": 3,
+    "status": 200,
+    "duration": 0.3413141259807162,
+    "error": null
+  },
+  {
+    "tension": "digital-line-contract",
+    "call": 4,
+    "status": 200,
+    "duration": 0.3593349760049023,
+    "error": null
+  },
+  {
+    "tension": "cross-domain-transfer",
+    "call": 1,
+    "status": 200,
+    "duration": 0.3393077820073813,
+    "error": null
+  },
+  {
+    "tension": "cross-domain-transfer",
+    "call": 2,
+    "status": 200,
+    "duration": 0.33378548600012437,
+    "error": null
+  },
+  {
+    "tension": "cross-domain-transfer",
+    "call": 3,
+    "status": 200,
+    "duration": 0.3444119970081374,
+    "error": null
+  },
+  {
+    "tension": "cross-domain-transfer",
+    "call": 4,
+    "status": 200,
+    "duration": 0.3408032889710739,
+    "error": null
+  }
+]
