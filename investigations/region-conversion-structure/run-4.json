@@ -1,5 +1,5 @@
 [
-{"shape":"horizontal_bands","area":65536,"density":0.5,"input_runs":128,"converted_storage_bytes":3128,"conversion_median_ns":232579,"apply_b0_ns":64189,"apply_b1_ns":1293,"point_estimate_N":4,"b0_canonical_hash":"26978c7e2fad0383","b1_canonical_hash":"26978c7e2fad0383","logical_identity":true}
+{"shape":"horizontal_bands","area":65536,"density":0.5,"input_runs":128,"b1_storage_bytes":3128,"b2_storage_bytes":552,"conversion_b1_median_ns":237468,"apply_b0_ns":63483,"apply_b1_ns":1313,"apply_b2_ns":81151,"b1_point_estimate_N":4,"b0_canonical_hash":"26978c7e2fad0383","b1_canonical_hash":"26978c7e2fad0383","logical_identity":true}
 ,
-{"shape":"checker","area":65536,"density":0.5,"input_runs":65536,"converted_storage_bytes":526392,"conversion_median_ns":300578,"apply_b0_ns":838641,"apply_b1_ns":765396,"point_estimate_N":5,"b0_canonical_hash":"4a2e725fa5e50383","b1_canonical_hash":"4a2e725fa5e50383","logical_identity":true}
+{"shape":"checker","area":65536,"density":0.5,"input_runs":65536,"b1_storage_bytes":526392,"b2_storage_bytes":4136,"conversion_b1_median_ns":298253,"apply_b0_ns":848985,"apply_b1_ns":771197,"apply_b2_ns":915909,"b1_point_estimate_N":4,"b0_canonical_hash":"4a2e725fa5e50383","b1_canonical_hash":"4a2e725fa5e50383","logical_identity":true}
 ]

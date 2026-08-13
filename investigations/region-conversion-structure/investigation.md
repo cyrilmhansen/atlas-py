@@ -51,16 +51,18 @@ Les sorties brutes sont `run-1.json` à `run-5.json`; `summary.json` les
 rassemble. Le code expérimental est `experiment.c`. Il ne modifie aucun code
 QuickDraw et appelle les implémentations existantes.
 
-| résultat B0 | aire | densité | runs | stockage B1 | application B0 | application B1 | seuil point-estimate |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| bandes horizontales | 65 536 | 0,5 | 128 | 3 128 octets | ~64–66 µs | ~1,3 µs | `N=4–7` |
-| damier | 65 536 | 0,5 | 65 536 | 526 392 octets | ~849–883 µs | ~778–800 µs | `N=4–5` |
+| résultat B0 | aire | densité | runs | stockage B1/B2 | application B0/B1/B2 |
+|---|---:|---:|---:|---:|---:|
+| bandes horizontales | 65 536 | 0,5 | 128 | 3 128 / 552 octets | ~63 / 1,3 / 81 µs |
+| damier | 65 536 | 0,5 | 65 536 | 526 392 / 4 136 octets | ~846 / 771 / 908 µs |
 
 Les deux formes conservent leur identité logique après conversion dans les
 5 passages (`logical_identity=true`). Les bandes ont 512 fois moins de runs
 et environ 168 fois moins de stockage B1 que le damier, malgré la même aire
 et la même densité. Le gain d'application est massif pour les bandes et faible
-pour le damier.
+pour le damier. B2 est le challenge de représentation : il réduit le stockage
+à 552/4 136 octets, mais son application reste beaucoup plus lente que B1 sur
+les bandes et plus lente que B0/B1 sur le damier.
 
 ## CONFIRMED
 
@@ -71,6 +73,9 @@ pour le damier.
   propriétés décisionnelles indépendantes du gain temporel par application.
 - Une conversion peut être temporellement amortissable et néanmoins mauvaise
   sous une contrainte mémoire. Le test du damier fournit ce contre-exemple.
+- B2 est une alternative réelle au mauvais cas mémoire de B1 : il est beaucoup
+  plus compact sur les deux formes, mais ne remplace pas B1 pour une décision
+  de latence. La compacité seule ne suffit donc pas davantage.
 - Le raisonnement doit donc conserver au moins deux axes séparés : coût du
   cycle de vie et coût/limite de stockage. Un seuil temporel unique ne peut
   pas représenter les deux.
@@ -81,6 +86,8 @@ pour le damier.
 - « Atteindre le break-even temporel » comme condition suffisante de conversion.
 - L'idée que le nom de workload `sparse` ou `fragmented` soit une propriété
   assez précise pour remplacer les mesures structurelles du résultat.
+- « Choisir B2 dès que B1 devient volumineux » comme règle suffisante : le coût
+  d'application B2 est un contre-exemple mesuré.
 
 ## UNKNOWN
 
@@ -98,24 +105,28 @@ pour le damier.
   contrainte avec le temps.
 - Chercher si `run_count`, stockage prédit et gain d'application suffisent à
   construire une bande de décision locale.
-- Comparer le même résultat logique sous B1 et B2 seulement si le conflit
-  mémoire/temps le rend nécessaire.
+- Comparer le même résultat logique sous B1 et B2 avec une limite mémoire et
+  une contrainte de latence explicites.
 
 ## CHALLENGE
 
-Le challenge a maintenu la plateforme, l'univers, l'opération, le protocole,
-la densité et l'aire ; seule la structure spatiale a changé. Il réfute donc
-une explication par la densité seule. Il ne réfute pas une politique qui
-utiliserait explicitement le nombre de runs et une limite mémoire : cette
-politique est précisément la distinction nouvellement retenue.
+Le premier challenge a maintenu la plateforme, l'univers, l'opération, le
+protocole, la densité et l'aire ; seule la structure spatiale a changé. Il
+réfute donc une explication par la densité seule. Le second challenge a testé
+B2 comme représentation compacte concurrente. Il évite l'extrapolation
+« B1 mauvais en mémoire ⇒ B2 meilleur » : B2 gagne fortement en stockage mais
+perd en application. La connaissance retenue est donc un choix multi-
+contrainte entre B1 et B2, pas une préférence universelle pour la représentation
+la plus compacte.
 
 ## STOP
 
 La tension est résolue au niveau matériel : la même densité peut produire une
 conversion B1 compacte et très utile, ou une conversion volumineuse avec un
-gain temporel marginal. Une source supplémentaire générale ne devrait pas
-changer cette distinction locale ; les seuils exacts et la fonction d'objectif
-restent dans la FRONTIER.
+gain temporel marginal. B2 peut restaurer la compacité sans restaurer la
+latence. Une source supplémentaire générale ne devrait pas changer cette
+distinction locale ; les seuils exacts et la fonction d'objectif restent dans
+la FRONTIER.
 
 ## Architecture Spider
 

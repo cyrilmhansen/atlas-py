@@ -778,3 +778,10 @@ Le contexte QuickDraw B0→B1 de réutilisation peut être décrit et décidé s
 - Pour cette décision locale, `run_count` et le stockage de la représentation
   cible sont des propriétés plus discriminantes que la densité seule.
 - Provenance : `investigations/region-conversion-structure/`.
+- Le challenge B2 nuance cette règle : B2 réduit le stockage à 552 octets pour
+  les bandes et 4 136 octets pour le damier, mais son application est mesurée
+  autour de 81/908 µs, contre 1,3/771 µs pour B1. Une représentation plus
+  compacte n'est donc pas automatiquement le meilleur substitut temporel.
+- La décision de conversion doit conserver séparément une contrainte mémoire
+  et une contrainte de latence ; B1 et B2 peuvent être des réponses différentes
+  au même résultat logique.
