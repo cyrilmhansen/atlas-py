@@ -33,6 +33,12 @@ catalogues:
     PYTHONPATH=experiments/candidate-discovery \
       python3 experiments/candidate-discovery/step3_explosion.py
 
+Step 4 adds the optional OR-Tools CP-SAT counter-experiment:
+
+    /tmp/atlas-semantic-kernel-venv/bin/pip install -r experiments/candidate-discovery/requirements-step4.txt
+    PYTHONPATH=experiments/candidate-discovery \
+      /tmp/atlas-semantic-kernel-venv/bin/python experiments/candidate-discovery/step4_solver.py
+
 From the repository root:
 
     PYTHONPATH=experiments/candidate-discovery \

@@ -646,6 +646,88 @@ dans le catalogue pourrait encore rendre ce pruning trop agressif.
 - Les interactions entre profondeur, producteurs concurrents et partage plus
   grands n'ont pas été explorées au-delà des bornes retenues.
 
+## Candidate discovery — étape 4, formulation CP-SAT
+
+### Configuration
+
+Une contre-expérience séparée est implémentée dans
+`experiments/candidate-discovery/step4_solver.py` avec OR-Tools CP-SAT. La
+dépendance est isolée dans `requirements-step4.txt`; le catalogue et les
+topologies sont ceux du générateur synthétique de l'étape 3.
+
+Le modèle ne connaît aucun nom de domaine. Il crée :
+
+- une variable booléenne par réalisation ;
+- une variable booléenne par producteur ;
+- une variable booléenne par ressource satisfaite.
+
+Les contraintes imposent une réalisation par intention, activent les ressources
+requises, sélectionnent au moins un producteur pour une ressource produite et
+activent récursivement les dépendances des producteurs. Le coût est la somme
+des réalisations et des producteurs sélectionnés ; une ressource partagée n'a
+donc qu'une variable de producteur dans le plan.
+
+### Oracle croisé
+
+Sur les cas où l'énumérateur mémoïsé termine, CP-SAT retrouve le même coût et
+la même signature sémantique (réalisations, ressources produites, dépendances
+et propriétés des producteurs), même si deux producteurs de même profil ont
+des identifiants différents. Les cas complets suivants ont concordé :
+
+| G | A | D | P | S | plans énumérés | coût | variables CP-SAT | contraintes | temps CP-SAT |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 2 | 0 | 1 | 1 | 4 | 20 | 8 | 10 | 0.0016 s |
+| 3 | 2 | 1 | 2 | 3 | 29 | 30 | 12 | 15 | 0.0008 s |
+| 4 | 3 | 1 | 2 | 2 | 1 089 | 40 | 24 | 30 | 0.0011 s |
+| 4 | 2 | 2 | 2 | 1 | 6 561 | 40 | 44 | 64 | 0.0018 s |
+| 6 | 2 | 3 | 3 | 6 | 5 104 | 60 | 28 | 38 | 0.0014 s |
+
+Les cas G=6/A=3/D=2 et G=8/A=3/D=3 ont atteint la borne de 200 000 plans
+de l'énumérateur. CP-SAT les a néanmoins résolus à l'optimum, respectivement
+avec 72 variables/102 contraintes en 0.0025 s et 40 variables/50 contraintes
+en 0.0017 s. Ils sont classés `enumerator_bounded`, pas comme une preuve que
+le solveur est toujours scalable.
+
+### Partage obligatoire
+
+Trois cas dérivés de la même topologie, avec les alternatives partagées
+rendues préférables, valident explicitement :
+
+- trois consommateurs d'une même chaîne de ressource : coût 13 ;
+- deux intentions sur deux ressources distinctes : coût 12 ;
+- quatre intentions sur deux ressources partagées : coût 24.
+
+Dans chaque cas l'énumérateur et CP-SAT concordent, les producteurs sont
+sélectionnés une seule fois par ressource, et aucun candidat spécial S, H+D ou
+multi-partage n'existe dans la formulation.
+
+### Confirmed
+
+- Le catalogue relationnel suffit à produire une formulation booléenne qui
+  sélectionne directement un plan sans matérialiser tous les plans candidats.
+- Le partage par identité est exprimable par les variables de ressource et de
+  producteur, sans contrainte métier spécifique.
+- CP-SAT traite les premiers cas où l'énumérateur atteint sa borne avec un
+  modèle encore petit ; cela montre une différence de représentation entre
+  espace des plans et espace des contraintes.
+
+### Refuted
+
+- Il n'est pas nécessaire de programmer des contraintes séparées pour trois
+  consommateurs, H+D ou plusieurs ressources partagées.
+- Le solveur ne remplace pas l'oracle : l'accord observé est limité aux
+  catalogues et coûts exacts de cette expérience.
+
+### Uncertain
+
+- Les résultats ne disent pas encore si la formulation reste fidèle avec des
+  cycles, des durées de vie, de la mutation, des contraintes globales ou des
+  coûts incertains.
+- Le coût de construction du modèle et la qualité de la formulation n'ont pas
+  été comparés à une implémentation egglog.
+- La recherche CP-SAT utilise ici une fermeture acyclique et des contraintes
+  statiques ; elle ne constitue pas encore un moteur de planification Atlas.
+
 ## Tests de clôture — troisième consommateur et ressources coexistantes
 
 ### Test A — troisième consommateur de S
