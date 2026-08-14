@@ -342,6 +342,310 @@ La découverte automatique de factorisations, la gestion d'une troisième
 intention, des graphes de dépendances plus longs et des ressources concurrentes
 restent `Uncertain`. Aucune extension du noyau n'est justifiée par ces tests.
 
+## Candidate discovery — étape 1
+
+### Confirmed
+
+Le nouvel espace `experiments/candidate-discovery/` remplace l'usage de
+`composition_paths` pour les cas simples déjà connus. Son point d'entrée est
+`discover_plans(goals, catalog, scenario)`. Le moteur reçoit les intentions,
+les relations de catalogue portées par les données (`realizes`, `requires`,
+`builds`) et les faits locaux du scénario.
+
+Le moteur découvre génériquement :
+
+- les réalisations correspondant à chaque intention ;
+- les ressources requises par ces réalisations ;
+- les ressources déjà présentes ;
+- les producteurs activés du scénario ;
+- les prérequis récursifs des producteurs ;
+- le coût total des réalisations et des producteurs réellement inclus.
+
+La résolution est indépendante des noms du domaine. Elle ne contient aucune
+branche métier pour `hash`, `sorted`, `dense`, `lookup` ou `scan`. Une inspection
+automatique de la source de découverte vérifie cette absence ; ces termes ne
+figurent que dans la fixture et les assertions de régression.
+
+Le plan candidat est une petite valeur canonique contenant les objectifs, les
+réalisations, les producteurs, les ressources présentes utilisées, les
+ressources produites et le coût. Une ressource requise deux fois est résolue
+par son identité et son producteur n'est inclus qu'une fois. Dans le cas
+lookup+scan, le plan `binary_lookup + scan_sorted + build_sorted` est découvert
+avec un coût de 43, et non assemblé par une règle spéciale de partage.
+
+La même résolution traite une ressource présente et une ressource produite :
+la première ne génère aucun producteur, la seconde en sélectionne un si le
+scénario l'active. Une réalisation dont la ressource n'est ni présente ni
+productible n'apparaît simplement dans aucun plan. Les coûts sont additionnés
+à partir des réalisations et producteurs du plan, pas via une formule propre à
+une famille d'algorithmes.
+
+La validation 1.5 couvre les régressions suivantes :
+
+- lookup sans ressource : linear_lookup ;
+- lookup avec producteur S : binary_lookup ;
+- lookup avec H présent : hash_lookup ;
+- scan sans ressource : linear_scan ;
+- scan avec D productible : scan_dense est découvert ;
+- scan avec S présente : scan_sorted ;
+- lookup+scan avec S productible : le producteur partagé est unique.
+
+Une chaîne artificielle `goal -> R -> Q` vérifie également la fermeture des
+dépendances de producteurs sans cas métier.
+
+Resource sharing currently relies on strict Description identity. Semantic
+equivalence between distinct resource descriptions is not used for
+deduplication. Whether e-class identity can safely serve as plan-level
+canonical identity remains untested.
+
+### Validation 1.5 — audit ciblé
+
+| Question | Résultat |
+|---|---|
+| Une liste de candidats métier subsiste-t-elle dans le nouveau moteur ? | Non ; les alternatives sont des données du catalogue. |
+| Les mots métier apparaissent-ils dans la logique de découverte ? | Non ; l’inspection source l’affirme automatiquement. |
+| Une ressource partagée est-elle dédupliquée par identité ? | Oui ; les exigences sont regroupées par description et le producteur est compté une fois. |
+| Présence et production utilisent-elles la même résolution ? | Oui ; la résolution court-circuite une ressource présente et construit une ressource absente avec les producteurs autorisés. |
+| Les réalisations non admissibles disparaissent-elles naturellement ? | Oui ; sans ressource présente ou producteur activé, aucun plan correspondant n’est produit. |
+| Le coût vient-il des éléments du plan ? | Oui ; il est la somme des coûts des réalisations et des producteurs sélectionnés. |
+
+L'ancien `composition_paths` reste présent dans le Semantic Kernel committé
+comme référence historique reproductible. Il n'est pas appelé par le nouveau
+moteur et n'est pas une preuve de découverte générique. Aucun code des étapes
+ultérieures — troisième consommateur, catalogue synthétique, croissance
+combinatoire, canonicalisation expérimentale, mémoïsation ou pruning — n'est
+inclus dans ce POC.
+
+### Refuted
+
+- Une forme composite spéciale n'est pas nécessaire pour découvrir le cas
+  simple à deux intentions.
+- Le partage de S n'est pas limité à un nom ou à une représentation triée dans
+  le moteur ; il découle de l'identité de la ressource et des relations du
+  catalogue.
+
+### Uncertain
+
+- La découverte reste démontrée seulement pour ce petit modèle statique et ces
+  cas simples.
+- Les plans de producteurs avec cycles, plusieurs chaînes concurrentes et
+  contraintes globales n'ont pas encore été étudiés.
+- La croissance de l'espace de plans, la mémoïsation et le pruning sont
+  volontairement réservés à une étape ultérieure.
+
+### Limites explicitement hors périmètre
+
+Les premiers essais locaux contenaient une esquisse de résultats à trois
+intentions et de catalogues synthétiques de croissance. Ils ont été retirés du
+code de ce POC avant validation : ils appartiennent aux étapes futures et ne
+doivent pas être interprétés comme des résultats expérimentaux actuels.
+
+## Candidate discovery — étape 2
+
+### Confirmed
+
+Le moteur générique de l'étape 1 découvre maintenant sans modification de sa
+logique le cas principal à trois intentions : `lookup`, `scan` et `summary`
+peuvent tous sélectionner une réalisation qui requiert S, et le plan retenu
+contient `build_shared` une seule fois.
+
+Le même test paramétré avec 1, 2, 3, 5 et 10 consommateurs donne
+respectivement 2, 4, 8, 32 et 1 024 candidats. Dans chaque cas, le plan retenu
+utilise les réalisations partagées et une seule occurrence du producteur de S.
+L'ajout d'un consommateur n'a exigé aucune modification de `discover_plans`.
+
+Un catalogue joint H/D produit également automatiquement le plan :
+
+    build_H + lookup_hash + build_D + scan_dense
+
+Dans le scénario où S n'est pas activable et où H/D le sont, ce plan est le
+meilleur des quatre plans produits, avec un coût de 55. Dans le scénario où
+toutes les alternatives sont activées, neuf plans sont produits, dont les
+combinaisons linear, hash, dense et shared sorted ; le plan partagé S est alors
+sélectionné avec un coût de 43. Aucun candidat `hash+dense` ou `shared sorted`
+n'est programmé dans la recherche.
+
+### Validation 2.5
+
+| Question | Résultat |
+|---|---|
+| Generic discovery : le troisième consommateur est-il découvert ? | Oui, sans modification du planner ; le plan contient un seul producteur de S. |
+| Joint plans : H+D apparaît-il sans candidat spécifique ? | Oui ; quatre plans sont produits dans le scénario H/D et hash+dense est sélectionné. |
+| Sharing : l'identité déduplique-t-elle les producteurs ? | Oui ; S est produite une fois pour 1 à 10 consommateurs. |
+| Number of candidates | 2, 4, 8, 32, 1 024 pour 1, 2, 3, 5, 10 consommateurs ; 4 pour H/D ; 9 avec toutes les alternatives. |
+| Duplicate plans avant canonicalisation éventuelle | 0 dans les scénarios mesurés. Le planner n'ajoute pas de canonicalisation ou mémoïsation expérimentale. |
+| Search responsibility | La fermeture des dépendances, l'expansion des réalisations, le partage et la sélection sont assurés par Python dans ce harnais ; egglog n'est pas utilisé par cette étape. |
+| New ontology | Aucun nouveau concept sémantique fondamental n'a été nécessaire. |
+
+### Search-space observation
+
+Le nombre de candidats croît déjà comme 2 puissance le nombre de
+consommateurs dans le catalogue paramétré, avant d'introduire des producteurs
+alternatifs ou des chaînes plus longues. Le partage réduit le coût du plan,
+mais ne réduit pas automatiquement le nombre de choix de réalisations.
+Cette observation est conservée comme signal de l'étape suivante, sans
+introduire ici de pruning, de mémoïsation ou de solveur.
+
+### Uncertain
+
+- Les comptes de doublons sont nuls dans ces catalogues sans chemins
+  structurellement redondants ; le comportement face à des descriptions
+  équivalentes distinctes reste non testé.
+- La croissance au-delà de ces petits cas et les stratégies de réduction de
+  l'espace restent à étudier séparément.
+- L'absence d'egglog dans ce harnais ne réfute pas son utilité comme stockage ou
+  moteur de dérivation ; elle montre seulement que la découverte de plans est
+  actuellement exécutée par Python.
+
+## Candidate discovery — étape 3, explosion synthétique
+
+### Générateur et stratégies
+
+`experiments/candidate-discovery/step3_explosion.py` introduit un générateur
+paramétrique sans vocabulaire QuickDraw ni clé-valeur. Ses paramètres sont :
+
+- G : nombre d'intentions ;
+- A : alternatives par intention ;
+- D : profondeur de la chaîne de producteurs ;
+- P : producteurs concurrents par ressource ;
+- S : nombre d'intentions partageant un groupe de ressources.
+
+Les cycles sont exclus. Chaque intention possède une alternative directe et des
+alternatives qui requièrent une ressource ; les producteurs peuvent eux-mêmes
+requérir la ressource du niveau précédent.
+
+Trois traitements sont comparés :
+
+- `naive_search`, combinaison et expansion indépendantes servant de témoin ;
+- `canonicalize`, qui retire les expansions invalides ou structurellement
+  identiques et recompte les producteurs par identité ;
+- `memoized_search`, qui résout chaque ressource distincte une fois avant de
+  combiner les choix d'intentions.
+
+Un pruning générique supplémentaire conserve le producteur de moindre coût
+pour une même sélection de réalisations et de ressources produites. Aucun nom
+de domaine ni cas métier n'intervient dans ces stratégies.
+
+### Table de croissance observée
+
+Les temps sont en secondes sur l'environnement Python local ; les limites sont
+50 000 états pour le témoin naïf et 200 000 plans pour la recherche mémoïsée.
+Un résultat marqué interrompu est donc une borne observée, pas un décompte
+complet.
+
+| G | A | D | P | S | descriptions | relations | naïf | canonique | mémo | pruning | naïf s | mémo s |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 2 | 0 | 1 | 1 | 10 | 8 | 4 | 4 | 4 | 4 | 0.00007 | 0.00005 |
+| 3 | 2 | 1 | 2 | 3 | 15 | 15 | 125 | 29 | 29 | 8 | 0.00044 | 0.00012 |
+| 4 | 2 | 2 | 2 | 1 | 48 | 52 | 6 561 | 6 561 | 6 561 | 16 | 0.0356 | 0.0307 |
+| 5 | 2 | 2 | 2 | 5 | 24 | 25 | 26 281* | 241* | 249 | 32 | 0.1278 | 0.00064 |
+| 6 | 3 | 2 | 2 | 1 | 78 | 90 | 40 121* | 40 121* | 200 000* | 123 | 0.1401 | 0.5517 |
+| 6 | 2 | 3 | 3 | 6 | 34 | 39 | 19 927* | 487* | 5 104 | 64 | 0.0651 | 0.0074 |
+
+`*` indique qu'une limite a été atteinte ou que la canonisation porte sur une
+entrée naïve incomplète. Les colonnes `descriptions`, `relations`, `states`,
+`max_frontier`, `duplicates_eliminated` et `aborted` sont également émises par
+le JSON du runner, afin de ne pas réduire l'observation au seul nombre final.
+
+Les tests de sensibilité mémoïsés donnent, à paramètres constants sauf celui
+indiqué :
+
+| dimension | valeurs de plans terminaux observées |
+|---|---|
+| G = 1..5 | 5, 25, 125, 625, 3 125 |
+| A = 1..4 | 1, 29, 105, 253 |
+| D = 0..3 | 15, 29, 57, 113 |
+| P = 1..3 | 8, 29, 64 |
+| S = 1,2,3 | 125, 65, 29 |
+
+Dans cette famille, G est la croissance exponentielle la plus immédiate ; A,
+D et P augmentent aussi fortement la base ou la profondeur de l'espace. Le
+partage S réduit le nombre de ressources distinctes et donc le nombre de plans
+mémoïsés, sans supprimer les alternatives de réalisation.
+
+### Confirmed
+
+- Un générateur paramétrique peut produire des graphes indépendants, partagés,
+  profonds et dotés de producteurs concurrents sans branches de domaine.
+- La recherche naïve devient mauvaise dès les petits cas combinés : le cas
+  G=6, A=3, D=2, P=2 atteint sa limite de 50 000 états.
+- Le partage structurel réduit fortement les résolutions répétées : pour
+  G=6, A=2, D=3, P=3, S=6, la recherche mémoïsée termine avec 5 104 plans,
+  tandis que le témoin naïf est borné à 19 927 expansions observées et reste
+  incomplet.
+- La réduction observée dans les catalogues générés vient surtout du filtrage
+  d'expansions invalides issues du témoin naïf : 19 440 dans le dernier cas et
+  26 040 dans le cas G=5. Les compteurs de doublons canoniques et stricts sont
+  séparés et nuls dans ces cas.
+- Le pruning par coût réduit par exemple 29 plans à 8 dans le cas G=3 et 487
+  à 64 dans le dernier cas, parce que plusieurs producteurs sont
+  interchangeables pour les mêmes ressources dans ce générateur.
+
+### Validation conceptuelle des réductions
+
+Les compteurs sont séparés :
+
+- `invalid_expansions_filtered` : une expansion contient plusieurs producteurs
+  pour une même ressource et ne constitue donc pas un plan valide ;
+- `canonical_equivalents_merged` : plusieurs ordres ou représentations valides
+  ont la même signature canonique ;
+- `exact_duplicates_removed` : la même représentation brute apparaît plusieurs
+  fois à l'identique.
+
+Le micro-test de classification donne respectivement `1`, `1` et `1`. Dans les
+catalogues générés, les doublons stricts et les équivalents canoniques restent
+nuls ; les réductions observées dans les cas partagés sont principalement des
+expansions invalides. Il serait incorrect de les attribuer à la seule
+canonicalisation.
+
+### Validité du pruning
+
+Le pruning actuel peut éliminer un producteur plus cher uniquement si les plans
+comparés ont :
+
+- la même sélection de réalisations ;
+- les mêmes identités de ressources produites ;
+- les mêmes propriétés de producteurs pertinentes pour les consommateurs et
+  les contraintes du plan ;
+- les mêmes préconditions et effets utiles au modèle courant.
+
+Dans ce cas seulement, le coût plus élevé est le seul critère qui distingue les
+plans et le producteur moins cher domine l'autre. Le code encode désormais les
+propriétés dans la signature de dominance minimale du générateur.
+
+Le contre-test fournit deux producteurs de R : `cheap_R` et `rich_R` ont le
+même résultat principal, mais `rich_R` expose en plus la propriété `also_Q`.
+Les deux sont conservés. Lorsque les propriétés sont identiques et que seul le
+coût diffère, `cheap_R` est conservé seul.
+
+Cette expérience ne démontre donc pas une dominance générale. Elle démontre
+seulement un pruning local conditionné par l'identité du résultat et par
+l'égalité des propriétés pertinentes modélisées. Une propriété non représentée
+dans le catalogue pourrait encore rendre ce pruning trop agressif.
+
+### Refuted
+
+- Un espace de descriptions compact n'implique pas un espace de plans compact :
+  le cas à 48 descriptions produit 6 561 plans.
+- Le partage ne rend pas automatiquement le nombre de choix constant : il
+  réduit les sous-problèmes de ressources mais laisse les alternatives des
+  intentions.
+- Trouver rapidement les petits cas ne permet pas de conclure à la
+  scalabilité : les mesures bornées montrent déjà des recherches incomplètes.
+
+### Uncertain
+
+- Les décomptes naïfs interrompus ne donnent pas encore une loi générale de
+  croissance.
+- Le pruning testé repose sur l'équivalence structurelle explicitement définie
+  par le générateur ; sa validité pour des descriptions sémantiquement
+  équivalentes reste inconnue.
+- Egglog n'a pas été utilisé dans cette expérience synthétique : son aide
+  éventuelle pour compacter les descriptions ne mesure pas automatiquement la
+  réduction de l'espace des plans.
+- Les interactions entre profondeur, producteurs concurrents et partage plus
+  grands n'ont pas été explorées au-delà des bornes retenues.
+
 ## Tests de clôture — troisième consommateur et ressources coexistantes
 
 ### Test A — troisième consommateur de S
