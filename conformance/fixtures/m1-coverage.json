@@ -1,0 +1,173 @@
+{
+  "schema": "atlas.conformance.core-v1/1",
+  "fixture_id": "m1-coverage",
+  "description": "M1 persisted grounded coverage choice",
+  "vocabulary": {
+    "predicates": [
+      {
+        "id": "realizes",
+        "version": "1",
+        "arity": 2,
+        "roles": ["realization", "intention"]
+      },
+      {
+        "id": "covers",
+        "version": "1",
+        "arity": 2,
+        "roles": ["candidate", "request"]
+      }
+    ],
+    "properties": [
+      {"id": "available-capabilities", "version": "1", "value": "finite_set<symbol>"},
+      {"id": "search-requirements", "version": "1", "value": "finite_set<symbol>"},
+      {"id": "output-requirements", "version": "1", "value": "finite_set<symbol>"},
+      {"id": "cost", "version": "1", "value": "integer"},
+      {"id": "unused-property", "version": "1", "value": "symbol"}
+    ]
+  },
+  "descriptions": [
+    {"id": "intent:selection", "label": "selection intent"},
+    {"id": "request:q1", "label": "request"},
+    {"id": "realization:r1", "label": "cheap candidate"},
+    {"id": "realization:r2", "label": "covering candidate"}
+  ],
+  "facts": [
+    {
+      "id": "fact:q1-search",
+      "kind": "property",
+      "description": "request:q1",
+      "property": "search-requirements",
+      "value": {"kind": "finite_set<symbol>", "items": ["a"]},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:q1-output",
+      "kind": "property",
+      "description": "request:q1",
+      "property": "output-requirements",
+      "value": {"kind": "finite_set<symbol>", "items": ["b"]},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:r1-capabilities",
+      "kind": "property",
+      "description": "realization:r1",
+      "property": "available-capabilities",
+      "value": {"kind": "finite_set<symbol>", "items": ["a"]},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:r2-capabilities",
+      "kind": "property",
+      "description": "realization:r2",
+      "property": "available-capabilities",
+      "value": {"kind": "finite_set<symbol>", "items": ["a", "b"]},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:r1-cost",
+      "kind": "property",
+      "description": "realization:r1",
+      "property": "cost",
+      "value": {"kind": "integer", "value": "1"},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:r2-cost",
+      "kind": "property",
+      "description": "realization:r2",
+      "property": "cost",
+      "value": {"kind": "integer", "value": "2"},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "fact:r1-unused",
+      "kind": "property",
+      "description": "realization:r1",
+      "property": "unused-property",
+      "value": {"kind": "symbol", "value": "not-read-by-coverage"},
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    }
+  ],
+  "relations": [
+    {
+      "id": "rel:r1-realizes",
+      "predicate": "realizes",
+      "version": "1",
+      "participants": ["realization:r1", "intent:selection"],
+      "polarity": "positive",
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    },
+    {
+      "id": "rel:r2-realizes",
+      "predicate": "realizes",
+      "version": "1",
+      "participants": ["realization:r2", "intent:selection"],
+      "polarity": "positive",
+      "scope": "catalog",
+      "epistemic_status": "exact",
+      "provenance": ["source:m1-fixture"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "coverage:v1",
+      "version": "1",
+      "participants": ["candidate", "request"],
+      "when": {
+        "op": "set_subset",
+        "left": {
+          "op": "set_union",
+          "left": {"op": "property", "participant": "request", "property": "search-requirements"},
+          "right": {"op": "property", "participant": "request", "property": "output-requirements"}
+        },
+        "right": {"op": "property", "participant": "candidate", "property": "available-capabilities"}
+      },
+      "head": {
+        "predicate": "covers",
+        "version": "1",
+        "participants": ["candidate", "request"],
+        "polarity": "positive"
+      }
+    }
+  ],
+  "contexts": [
+    {
+      "id": "context:m1",
+      "visible_scopes": ["catalog"],
+      "enabled_rules": ["coverage:v1"]
+    }
+  ],
+  "snapshots": [
+    {"id": "snapshot:m1", "parent": null, "active_records": "all"}
+  ],
+  "decision": {
+    "intent": "intent:selection",
+    "request": "request:q1",
+    "context": "context:m1",
+    "snapshot": "snapshot:m1",
+    "manifest_version": "m1-grounding/1"
+  },
+  "supersession": {
+    "future_snapshot": "snapshot:m1-revised",
+    "replaces": "fact:r2-capabilities",
+    "replacement_id": "fact:r2-capabilities-v2",
+    "replacement_value": {"kind": "finite_set<symbol>", "items": ["a"]}
+  }
+}
