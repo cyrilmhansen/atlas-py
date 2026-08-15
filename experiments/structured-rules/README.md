@@ -55,3 +55,56 @@ prover, a complete constraint language, versioned state model, or a general
 algebra of contracts. Term/Rule/NotEqual are currently a candidate structured
 representation for Atlas knowledge; they are not yet integrated into the
 `Description / Relation / Fact` corpus or kernel.
+
+## Bisect-left postcondition extension
+
+This second experiment tests only the observable postcondition of
+`bisect_left`. `bisect_rules.json` persists one postcondition containing
+structured comparisons, half-open `Interval` expressions and two universal
+quantifiers. The law is stored once; concrete bindings are created only while
+validating finite instances.
+
+The generic extension adds `Interval`, `Comparison`, `Forall`, and a structured
+predicate for environmental facts, plus tri-valued expression evaluation. It
+has no knowledge of bisect, sorted arrays or Python.
+An evaluator supplied by the runner gives opaque applications such as `get`,
+`key` and `succ` their concrete meaning. A bound variable shadows an outer
+binding only in its quantified body and does not alter the persisted rule.
+
+`Forall` aggregates exactly as follows: any `false` makes the result `false`;
+otherwise any `unknown` makes it `unknown`; otherwise it is `true`. This makes
+the result independent of whether an unknown element is visited before or
+after a false element. A non-boolean body or postcondition constraint is an
+explicit error: only the identities `True`, `False` and `UNKNOWN` are accepted,
+not merely values equal to them such as `0` or `1`. A domain must be an `Interval`; `[start,end)` is half-open,
+`start == end` is empty and true, unknown bounds produce `unknown`, while
+reversed or non-integer (including boolean) ground bounds are rejected.
+
+The persisted postcondition includes the structured fact
+`sorted_slice(a, lo, hi, key)`. Its applicability is true only when the
+environment explicitly marks that slice as sorted, false when explicitly
+marked non-sorted, and unknown when no fact is supplied. No mechanism proving
+sortedness is introduced.
+
+The independent oracle uses the normal `bisect_left` behavior on seven cases:
+duplicates, `ip == lo`, `ip == hi`, non-zero `lo`, `hi < len(a)`, `lo == hi`,
+including a non-empty `ip == hi` case, identity keys, and a non-trivial `len`
+key.
+The structured postcondition is checked against the oracle-provided `ip`.
+The runner also verifies that an ungrounded interval/body is `unknown`, never
+implicitly true.
+
+Counter-tests cover weakening `<` to `<=`, weakening `>=` to `>`, extending an
+interval by one element, an out-of-range `ip`, checking one passing element
+instead of a universal property, bound-variable capture, both orders of
+`unknown`/`false` aggregation, nested and successive reuse of `p`, invalid
+intervals, explicit sortedness states, and strict rejection of non-boolean
+values in quantified bodies and postconditions.
+
+Instrumentation reports one persisted postcondition, seven concrete instances,
+38 quantified elements visited, and seven verified postconditions. The narrow
+verdict is **SUPPORTED**: finite universal quantification and explicit
+applicability facts remain a small generic extension in this validation scope.
+This does not establish a general theorem prover, symbolic quantifier
+reasoning, a sortedness prover, or a complete contract language; integration
+with `Description / Relation / Fact` remains untested.

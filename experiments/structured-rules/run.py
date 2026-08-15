@@ -3,14 +3,24 @@
 
 import copy
 import json
+from dataclasses import replace
+from bisect import bisect_left
 from pathlib import Path
 
 from structured_rules import (
     ConcreteArray,
+    Comparison,
+    Forall,
+    Interval,
+    Postcondition,
+    UNKNOWN,
     all_substitutions,
     condition_status,
     extend_substitution,
     instantiate,
+    evaluate_expression,
+    evaluate_postcondition,
+    postcondition_from_data,
     rule_from_data,
     substitute,
     term_from_data,
@@ -29,6 +39,231 @@ def load_rules():
 
 def load_rule_data():
     return json.loads((ROOT / "rules.json").read_text(encoding="utf-8"))["rules"]
+
+
+def load_postconditions():
+    data = json.loads((ROOT / "bisect_rules.json").read_text(encoding="utf-8"))
+    return [postcondition_from_data(item) for item in data["rules"]]
+
+
+def application_evaluator(array, key_function):
+    def evaluate(name, arguments):
+        if name == "get":
+            index, concrete_array = arguments
+            return concrete_array.values[index]
+        if name == "key":
+            return key_function(arguments[0])
+        if name == "succ":
+            return arguments[0] + 1
+        raise ValueError(f"unknown application in bisect evaluator: {name}")
+
+    return evaluate
+
+
+def predicate_evaluator(sorted_facts):
+    def evaluate(name, arguments):
+        if name != "sorted_slice":
+            raise ValueError(f"unknown predicate in bisect evaluator: {name}")
+        array, lo, hi, key_name = arguments
+        return sorted_facts.get((id(array), lo, hi, key_name), UNKNOWN)
+
+    return evaluate
+
+
+def bisect_environment(array, x, lo, hi, key_function, key_name):
+    ip = bisect_left(array.values, x, lo, hi, key=key_function)
+    return {
+        "a": array,
+        "x": x,
+        "lo": lo,
+        "ip": ip,
+        "hi": hi,
+        "key": key_name,
+    }, ip
+
+
+def verify_bisect_postcondition(postcondition, array, x, lo, hi, key_function, key_name):
+    environment, ip = bisect_environment(array, x, lo, hi, key_function, key_name)
+    facts = {(id(array), lo, hi, key_name): True}
+    result = evaluate_postcondition(
+        postcondition,
+        environment,
+        application_evaluator(array, key_function),
+        predicate_evaluator(facts),
+    )
+    assert result is True, (environment, result)
+    return ip, 2 * (hi - lo)
+
+
+def run_bisect_checks():
+    postcondition = load_postconditions()[0]
+    cases = [
+        (ConcreteArray((1, 1, 2, 4)), 1, 0, 4, lambda value: value, "identity"),
+        (ConcreteArray((1, 2, 2, 4)), 2, 0, 4, lambda value: value, "identity"),
+        (ConcreteArray((1, 2, 3, 4)), 3, 1, 4, lambda value: value, "identity"),
+        (ConcreteArray((0, 1, 2, 3)), 2, 1, 3, lambda value: value, "identity"),
+        (ConcreteArray((0, 1, 2, 3)), 4, 1, 3, lambda value: value, "identity"),
+        (ConcreteArray((0, 1, 2)), 1, 1, 1, lambda value: value, "identity"),
+        (ConcreteArray(("a", "bb", "ccc", "dddd")), 3, 0, 4, len, "len"),
+    ]
+    instances = 0
+    visited = 0
+    for array, x, lo, hi, key_function, key_name in cases:
+        _, count = verify_bisect_postcondition(postcondition, array, x, lo, hi, key_function, key_name)
+        instances += 1
+        visited += count
+
+    # Replacing < by <= accepts an invalid insertion point in the presence of duplicates.
+    duplicate_env = {"a": ConcreteArray((1, 1, 2)), "x": 1, "lo": 0, "ip": 1, "hi": 3, "key": "identity"}
+    left_forall = postcondition.constraints[3]
+    assert isinstance(left_forall, Forall)
+    weak_left = replace(left_forall, body=replace(left_forall.body, operator="<="))
+    weak_left_rule = replace(postcondition, constraints=(postcondition.constraints[0], postcondition.constraints[1], postcondition.constraints[2], weak_left, postcondition.constraints[4]))
+    duplicate_facts = {(id(duplicate_env["a"]), 0, 3, "identity"): True}
+    duplicate_predicates = predicate_evaluator(duplicate_facts)
+    duplicate_eval = application_evaluator(duplicate_env["a"], lambda value: value)
+    assert evaluate_postcondition(postcondition, duplicate_env, duplicate_eval, duplicate_predicates) is False
+    assert evaluate_postcondition(weak_left_rule, duplicate_env, duplicate_eval, duplicate_predicates) is True
+
+    # Replacing >= by > rejects a valid lower bound containing an equal value.
+    right_forall = postcondition.constraints[4]
+    weak_right = replace(right_forall, body=replace(right_forall.body, operator=">"))
+    weak_right_rule = replace(postcondition, constraints=(postcondition.constraints[0], postcondition.constraints[1], postcondition.constraints[2], postcondition.constraints[3], weak_right))
+    right_env = {"a": ConcreteArray((1, 1, 2)), "x": 1, "lo": 0, "ip": 0, "hi": 3, "key": "identity"}
+    right_facts = {(id(right_env["a"]), 0, 3, "identity"): True}
+    right_eval = application_evaluator(right_env["a"], lambda value: value)
+    right_predicates = predicate_evaluator(right_facts)
+    assert evaluate_postcondition(postcondition, right_env, right_eval, right_predicates) is True
+    assert evaluate_postcondition(weak_right_rule, right_env, right_eval, right_predicates) is False
+
+    # Extending [lo, ip) by one element is detected by the structured forall.
+    valid_env = {"a": ConcreteArray((1, 2, 3)), "x": 2, "lo": 0, "ip": 1, "hi": 3, "key": "identity"}
+    wrong_domain = replace(
+        left_forall,
+        domain=Interval(
+            left_forall.domain.start,
+            term_from_data({"kind": "app", "name": "succ", "args": [{"kind": "var", "name": "ip"}]}),
+        ),
+    )
+    wrong_domain_rule = replace(postcondition, constraints=(postcondition.constraints[0], postcondition.constraints[1], postcondition.constraints[2], wrong_domain, postcondition.constraints[4]))
+    valid_facts = {(id(valid_env["a"]), 0, 3, "identity"): True}
+    valid_eval = application_evaluator(valid_env["a"], lambda value: value)
+    valid_predicates = predicate_evaluator(valid_facts)
+    assert evaluate_postcondition(postcondition, valid_env, valid_eval, valid_predicates) is True
+    assert evaluate_postcondition(wrong_domain_rule, valid_env, valid_eval, valid_predicates) is False
+
+    # A missing bound or a body depending on an unbound variable is explicit unknown.
+    incomplete = dict(valid_env)
+    del incomplete["ip"]
+    assert evaluate_postcondition(postcondition, incomplete, application_evaluator(incomplete["a"], lambda value: value), predicate_evaluator({})) is UNKNOWN
+    unknown_body = replace(
+        right_forall.body,
+        right=term_from_data({"kind": "var", "name": "unbound"}),
+    )
+    assert evaluate_expression(
+        unknown_body,
+        {"a": valid_env["a"], "p": 0},
+        application_evaluator(valid_env["a"], lambda value: value),
+    ) is UNKNOWN
+
+    # An out-of-range ip is rejected by the explicit bounds.
+    out_of_range = dict(valid_env, ip=4)
+    assert evaluate_postcondition(postcondition, out_of_range, application_evaluator(out_of_range["a"], lambda value: value), predicate_evaluator({(id(out_of_range["a"]), 0, 3, "identity"): True})) is False
+
+    # Checking one passing element is not universal verification.
+    right_body = right_forall.body
+    one_element_env = {"a": ConcreteArray((2, 2, 4)), "x": 3, "lo": 0, "ip": 0, "hi": 3, "key": "identity", "p": 2}
+    evaluator = application_evaluator(one_element_env["a"], lambda value: value)
+    assert evaluate_expression(right_body, one_element_env, evaluator) is True
+    assert evaluate_postcondition(postcondition, one_element_env, evaluator, predicate_evaluator({(id(one_element_env["a"]), 0, 3, "identity"): True})) is False
+
+    # The bound p shadows an outer p only while evaluating the body and does not leak.
+    captured = {"a": ConcreteArray((0, 1)), "x": 0, "lo": 0, "ip": 0, "hi": 2, "key": "identity", "p": 99}
+    captured_facts = {(id(captured["a"]), 0, 2, "identity"): True}
+    assert evaluate_postcondition(postcondition, captured, application_evaluator(captured["a"], lambda value: value), predicate_evaluator(captured_facts)) is True
+    assert captured["p"] == 99
+
+    # Unknown is accumulated rather than returned early, and false dominates it.
+    status_term = term_from_data({"kind": "app", "name": "status", "args": [{"kind": "var", "name": "p"}]})
+    status_body = Comparison("<", status_term, term_from_data({"kind": "const", "name": "1"}))
+    status_forall = Forall("p", Interval(term_from_data({"kind": "const", "name": "0"}), term_from_data({"kind": "const", "name": "2"})), status_body)
+    def status_evaluator(statuses):
+        return lambda name, arguments: statuses.get(arguments[0], UNKNOWN) if name == "status" else (_ for _ in ()).throw(ValueError(name))
+
+    # Boolean contracts use identity, not Python equality: 0 and 1 are invalid.
+    literal_body = term_from_data({"kind": "var", "name": "result"})
+    literal_domain = Interval(
+        term_from_data({"kind": "const", "name": "0"}),
+        term_from_data({"kind": "const", "name": "1"}),
+    )
+    for literal in (True, False, UNKNOWN):
+        environment = {"result": literal, "0": 0, "1": 1}
+        assert evaluate_expression(
+            Forall("p", literal_domain, literal_body),
+            environment,
+            status_evaluator({}),
+        ) is literal
+        assert evaluate_postcondition(
+            Postcondition("literal", (literal_body,)),
+            environment,
+            status_evaluator({}),
+        ) is literal
+    for invalid in (0, 1, "true"):
+        environment = {"result": invalid, "0": 0, "1": 1}
+        try:
+            evaluate_expression(Forall("p", literal_domain, literal_body), environment, status_evaluator({}))
+        except TypeError as error:
+            assert "true/false/unknown" in str(error)
+        else:
+            raise AssertionError(f"invalid Forall boolean result accepted: {invalid!r}")
+        try:
+            evaluate_postcondition(Postcondition("literal", (literal_body,)), environment, status_evaluator({}))
+        except TypeError as error:
+            assert "true/false/unknown" in str(error)
+        else:
+            raise AssertionError(f"invalid postcondition boolean result accepted: {invalid!r}")
+
+    numeric_env = {"0": 0, "1": 1, "2": 2}
+    assert evaluate_expression(status_forall, numeric_env, status_evaluator({0: UNKNOWN, 1: 2})) is False
+    assert evaluate_expression(status_forall, numeric_env, status_evaluator({0: 2, 1: UNKNOWN})) is False
+    status_forall3 = replace(status_forall, domain=Interval(status_forall.domain.start, term_from_data({"kind": "const", "name": "3"})))
+    numeric_env["3"] = 3
+    assert evaluate_expression(status_forall3, numeric_env, status_evaluator({0: 0, 1: UNKNOWN, 2: 0})) is UNKNOWN
+    assert evaluate_expression(status_forall, numeric_env, status_evaluator({0: 0, 1: 0})) is True
+    empty_forall = replace(status_forall, domain=Interval(status_forall.domain.start, term_from_data({"kind": "const", "name": "0"})))
+    assert evaluate_expression(empty_forall, numeric_env, status_evaluator({})) is True
+
+    # Nested and successive quantifiers may reuse p without leaking bindings.
+    inner = Forall("p", status_forall.domain, Comparison(">=", term_from_data({"kind": "var", "name": "p"}), term_from_data({"kind": "const", "name": "0"})))
+    nested = Forall("p", status_forall.domain, inner)
+    assert evaluate_expression(nested, {"p": 99, "0": 0, "1": 1, "2": 2}, application_evaluator(ConcreteArray((0, 1)), lambda value: value)) is True
+    successive = Postcondition("successive", (status_forall, replace(status_forall, variable="p")))
+    assert evaluate_postcondition(successive, numeric_env, status_evaluator({0: 0, 1: 0})) is True
+    assert evaluate_expression(nested, {"p": 99, "0": 0, "1": 1, "2": 2}, application_evaluator(ConcreteArray((0, 1)), lambda value: value)) is True
+
+    # Explicitly non-sorted and unknown sortedness do not authorize the law.
+    marked_unsorted = {(id(valid_env["a"]), 0, 3, "identity"): False}
+    assert evaluate_postcondition(postcondition, valid_env, valid_eval, predicate_evaluator(marked_unsorted)) is False
+    assert evaluate_postcondition(postcondition, valid_env, valid_eval, predicate_evaluator({})) is UNKNOWN
+
+    # Invalid and non-ground intervals have distinct behavior.
+    invalid_interval = Interval(term_from_data({"kind": "const", "name": "2"}), term_from_data({"kind": "const", "name": "1"}))
+    try:
+        evaluate_expression(Forall("p", invalid_interval, status_body), {"1": 1, "2": 2}, status_evaluator({}))
+    except ValueError as error:
+        assert "invalid half-open interval" in str(error)
+    else:
+        raise AssertionError("reversed interval was accepted")
+    try:
+        evaluate_expression(Interval(term_from_data({"kind": "const", "name": "true"}), term_from_data({"kind": "const", "name": "2"})), {"true": True, "2": 2}, status_evaluator({}))
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("non-integer interval bound was accepted")
+
+    print(f"bisect postconditions persisted: 1; instances tested: {instances}; quantified elements visited: {visited}; postconditions verified: {instances}")
+    print("bisect counter-tests detected: weak-left-bound, weak-right-bound, wrong-interval, out-of-range-ip, non-universal-single-element, bound-variable-capture, forall-truth-table, nested/successive-binding, invalid-interval, sortedness-precondition")
+    print("bisect verdict: SUPPORTED")
 
 
 def main():
@@ -106,6 +341,7 @@ def main():
     print(f"rules: 2; substitutions checked: {checked}; consequences verified: {derived}")
     print("counter-tests detected: missing condition, ungrounded premise, unknown kind, swapped state, conflicting binding, equal/distinct variables")
     print("verdict: SUPPORTED")
+    run_bisect_checks()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,75 @@
+{
+  "rules": [
+    {
+      "id": "bisect_left_postcondition",
+      "constraints": [
+        {
+          "kind": "predicate",
+          "name": "sorted_slice",
+          "args": [
+            {"kind": "var", "name": "a"},
+            {"kind": "var", "name": "lo"},
+            {"kind": "var", "name": "hi"},
+            {"kind": "var", "name": "key"}
+          ]
+        },
+        {
+          "kind": "comparison",
+          "operator": "<=",
+          "left": {"kind": "var", "name": "lo"},
+          "right": {"kind": "var", "name": "ip"}
+        },
+        {
+          "kind": "comparison",
+          "operator": "<=",
+          "left": {"kind": "var", "name": "ip"},
+          "right": {"kind": "var", "name": "hi"}
+        },
+        {
+          "kind": "forall",
+          "variable": "p",
+          "domain": {
+            "kind": "interval",
+            "start": {"kind": "var", "name": "lo"},
+            "end": {"kind": "var", "name": "ip"}
+          },
+          "body": {
+            "kind": "comparison",
+            "operator": "<",
+            "left": {
+              "kind": "app",
+              "name": "key",
+              "args": [{"kind": "app", "name": "get", "args": [
+                {"kind": "var", "name": "p"},
+                {"kind": "var", "name": "a"}
+              ]}]
+            },
+            "right": {"kind": "var", "name": "x"}
+          }
+        },
+        {
+          "kind": "forall",
+          "variable": "p",
+          "domain": {
+            "kind": "interval",
+            "start": {"kind": "var", "name": "ip"},
+            "end": {"kind": "var", "name": "hi"}
+          },
+          "body": {
+            "kind": "comparison",
+            "operator": ">=",
+            "left": {
+              "kind": "app",
+              "name": "key",
+              "args": [{"kind": "app", "name": "get", "args": [
+                {"kind": "var", "name": "p"},
+                {"kind": "var", "name": "a"}
+              ]}]
+            },
+            "right": {"kind": "var", "name": "x"}
+          }
+        }
+      ]
+    }
+  ]
+}

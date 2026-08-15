@@ -60,16 +60,31 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ### Représentation sémantique
 
-- Dans le périmètre testé, une loi paramétrique simple peut être persistée une
-  seule fois comme expression structurée contenant variables, applications,
-  égalité et prémisses simples, puis instanciée mécaniquement sans matérialiser
-  toutes ses instances.
-- Le mécanisme générique de termes, substitutions et prémisses testé ne dépend
-  pas de la sémantique métier des opérations représentées. La sémantique
-  concrète peut rester séparée dans un oracle de validation.
+#### Règles structurées paramétriques
+
+- Dans le périmètre testé, une connaissance paramétrique peut être persistée
+  une seule fois sous forme d'expression structurée contenant variables,
+  applications, comparaisons et prémisses, puis instanciée mécaniquement sans
+  matérialiser toutes ses instances.
+- Une quantification universelle finie sur un intervalle concret peut être
+  représentée et évaluée par un mécanisme générique sans connaissance métier
+  de l'opération dont elle exprime le contrat.
+- Une variable liée peut rester locale à l'expression structurée : sa portée,
+  son masquage et sa restauration ne nécessitent pas de `Description`
+  nominale persistante pour chaque liaison.
+- Dans une évaluation tri-valuée d'un `forall`, un contre-exemple `false`
+  domine `unknown`. `unknown` n'est le résultat que lorsqu'aucun
+  contre-exemple n'est connu et qu'au moins une instance reste indéterminée.
+- Le domaine d'applicabilité d'une loi doit être représenté structurellement
+  lorsqu'il conditionne sa validité. Dans le cas testé de `bisect_left`, la
+  propriété de tranche triée selon la clé participe à l'applicabilité de la
+  postcondition plutôt que de rester dans une note narrative.
 - Pour le cas fonctionnel `set(A,i,v)`, la relation entre état avant et état
   après peut être exprimée structurellement par composition de termes sans
   créer une `Description` nominale pour chaque état concret.
+- Le mécanisme générique de termes, substitutions et prémisses testé ne dépend
+  pas de la sémantique métier des opérations représentées. La sémantique
+  concrète peut rester séparée dans un oracle de validation.
 
 - Une intention reste stable lorsque ses réalisations disponibles changent.
   L'absence d'une ressource nécessaire à une réalisation ne modifie pas
@@ -247,16 +262,13 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ### Sémantique et identité
 
-- La représentation structurée minimale nécessaire aux règles paramétriques,
-  variables, quantification, collections ordonnées et transitions d'état
-  reste à déterminer.
-- Le POC `structured-rules` ne démontre pas encore comment les expressions
-  structurées s'intègrent effectivement à `Description` / `Relation` / `Fact`.
-  `Term`, `Rule` et les prémisses restent pour l'instant des constituants
-  expérimentaux d'un langage de connaissance candidat.
-- La quantification sur des collections, les intervalles, l'ordre, les
-  mutations avec identité d'état et les règles plus riches restent non
-  démontrés.
+- L'intégration effective de `Term` / `Comparison` / `Interval` / `Forall`
+  dans `Description` / `Relation` / `Fact` reste non démontrée : ils
+  constituent encore un langage expérimental de connaissance structurée
+  candidat.
+- La quantification symbolique non groundée, la preuve automatique des
+  préconditions, les collections ordonnées comme valeurs structurées, les
+  transitions d'état mutables et les règles plus riches restent ouverts.
 - Il reste à déterminer jusqu'où cette couche peut demeurer une extension
   naturelle de `Description` / `Relation` / `Fact` avant de nécessiter une
   algèbre ou un langage de contrat plus explicite.

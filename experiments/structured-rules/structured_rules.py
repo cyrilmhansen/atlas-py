@@ -3,6 +3,7 @@
 
 from dataclasses import dataclass
 from itertools import product
+from operator import ge, gt, le, lt
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,45 @@ class Rule:
     conditions: tuple
 
 
+@dataclass(frozen=True)
+class Interval:
+    start: Term
+    end: Term
+
+
+@dataclass(frozen=True)
+class Comparison:
+    operator: str
+    left: Term
+    right: Term
+
+
+@dataclass(frozen=True)
+class Forall:
+    variable: str
+    domain: Interval
+    body: object
+
+
+@dataclass(frozen=True)
+class Predicate:
+    name: str
+    args: tuple
+
+
+@dataclass(frozen=True)
+class Postcondition:
+    rule_id: str
+    constraints: tuple
+
+
+UNKNOWN = object()
+
+
+def is_boolean_result(value):
+    return value is True or value is False or value is UNKNOWN
+
+
 def term_from_data(data):
     kind = data["kind"]
     if kind in {"var", "const"}:
@@ -38,6 +78,36 @@ def term_from_data(data):
     if kind == "app":
         return Term(kind, data["name"], tuple(term_from_data(arg) for arg in data["args"]))
     raise ValueError(f"unknown term kind: {kind}")
+
+
+def expression_from_data(data):
+    kind = data["kind"]
+    if kind in {"var", "const", "app"}:
+        return term_from_data(data)
+    if kind == "interval":
+        return Interval(term_from_data(data["start"]), term_from_data(data["end"]))
+    if kind == "comparison":
+        if data["operator"] not in {"<", "<=", ">", ">="}:
+            raise ValueError(f"unsupported comparison operator: {data['operator']}")
+        return Comparison(
+            data["operator"],
+            term_from_data(data["left"]),
+            term_from_data(data["right"]),
+        )
+    if kind == "forall":
+        return Forall(
+            data["variable"],
+            expression_from_data(data["domain"]),
+            expression_from_data(data["body"]),
+        )
+    if kind == "predicate":
+        return Predicate(data["name"], tuple(term_from_data(arg) for arg in data["args"]))
+    raise ValueError(f"unknown expression kind: {kind}")
+
+
+def postcondition_from_data(data):
+    constraints = tuple(expression_from_data(item) for item in data["constraints"])
+    return Postcondition(data["id"], constraints)
 
 
 def rule_from_data(data):
@@ -102,6 +172,81 @@ def all_substitutions(rule, domains):
     names = sorted(rule_variables(rule))
     for values in product(*(domains[name] for name in names)):
         yield dict(zip(names, values))
+
+
+def evaluate_term(term, environment, application_evaluator):
+    if term.kind == "var":
+        return environment.get(term.name, UNKNOWN)
+    if term.kind == "const":
+        return environment.get(term.name, term.name)
+    arguments = tuple(evaluate_term(arg, environment, application_evaluator) for arg in term.args)
+    if any(value is UNKNOWN for value in arguments):
+        return UNKNOWN
+    return application_evaluator(term.name, arguments)
+
+
+def evaluate_expression(expression, environment, application_evaluator, predicate_evaluator=None):
+    if isinstance(expression, Term):
+        return evaluate_term(expression, environment, application_evaluator)
+    if isinstance(expression, Interval):
+        start = evaluate_term(expression.start, environment, application_evaluator)
+        end = evaluate_term(expression.end, environment, application_evaluator)
+        if start is UNKNOWN or end is UNKNOWN:
+            return UNKNOWN
+        if isinstance(start, bool) or isinstance(end, bool) or not isinstance(start, int) or not isinstance(end, int):
+            raise TypeError("interval bounds must be non-boolean integers")
+        if start > end:
+            raise ValueError(f"invalid half-open interval: start {start} > end {end}")
+        return range(start, end)
+    if isinstance(expression, Predicate):
+        if predicate_evaluator is None:
+            raise ValueError(f"no predicate evaluator for {expression.name}")
+        arguments = tuple(evaluate_term(arg, environment, application_evaluator) for arg in expression.args)
+        if any(value is UNKNOWN for value in arguments):
+            return UNKNOWN
+        result = predicate_evaluator(expression.name, arguments)
+        if not is_boolean_result(result):
+            raise TypeError(f"predicate {expression.name} did not return true/false/unknown")
+        return result
+    if isinstance(expression, Comparison):
+        left = evaluate_term(expression.left, environment, application_evaluator)
+        right = evaluate_term(expression.right, environment, application_evaluator)
+        if left is UNKNOWN or right is UNKNOWN:
+            return UNKNOWN
+        operators = {"<": lt, "<=": le, ">": gt, ">=": ge}
+        return operators[expression.operator](left, right)
+    if isinstance(expression, Forall):
+        if not isinstance(expression.domain, Interval):
+            raise TypeError("forall domain must be an Interval")
+        domain = evaluate_expression(expression.domain, environment, application_evaluator, predicate_evaluator)
+        if domain is UNKNOWN:
+            return UNKNOWN
+        unknown = False
+        for value in domain:
+            scoped_environment = dict(environment)
+            scoped_environment[expression.variable] = value
+            result = evaluate_expression(expression.body, scoped_environment, application_evaluator, predicate_evaluator)
+            if not is_boolean_result(result):
+                raise TypeError("forall body must return true/false/unknown")
+            if result is UNKNOWN:
+                unknown = True
+            if result is False:
+                return False
+        return UNKNOWN if unknown else True
+    raise TypeError(f"unknown expression: {expression!r}")
+
+
+def evaluate_postcondition(postcondition, environment, application_evaluator, predicate_evaluator=None):
+    unknown = False
+    for constraint in postcondition.constraints:
+        result = evaluate_expression(constraint, environment, application_evaluator, predicate_evaluator)
+        if not is_boolean_result(result):
+            raise TypeError("postcondition constraints must return true/false/unknown")
+        if result is False:
+            return False
+        if result is UNKNOWN:
+            unknown = True
+    return UNKNOWN if unknown else True
 
 
 @dataclass(frozen=True)
