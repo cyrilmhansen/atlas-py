@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "id": "array_get_after_same_index_set",
+      "lhs": {"kind": "app", "name": "get", "args": [
+        {"kind": "var", "name": "i"},
+        {"kind": "app", "name": "set", "args": [
+          {"kind": "var", "name": "i"},
+          {"kind": "var", "name": "v"},
+          {"kind": "var", "name": "A"}
+        ]}
+      ]},
+      "rhs": {"kind": "var", "name": "v"},
+      "conditions": []
+    },
+    {
+      "id": "array_get_after_other_index_set",
+      "lhs": {"kind": "app", "name": "get", "args": [
+        {"kind": "var", "name": "i"},
+        {"kind": "app", "name": "set", "args": [
+          {"kind": "var", "name": "j"},
+          {"kind": "var", "name": "v"},
+          {"kind": "var", "name": "A"}
+        ]}
+      ]},
+      "rhs": {"kind": "app", "name": "get", "args": [
+        {"kind": "var", "name": "i"},
+        {"kind": "var", "name": "A"}
+      ]},
+      "conditions": [
+        {"kind": "not_equal", "left": {"kind": "var", "name": "i"}, "right": {"kind": "var", "name": "j"}}
+      ]
+    }
+  ]
+}

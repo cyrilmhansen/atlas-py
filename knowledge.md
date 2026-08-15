@@ -60,6 +60,17 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ### Représentation sémantique
 
+- Dans le périmètre testé, une loi paramétrique simple peut être persistée une
+  seule fois comme expression structurée contenant variables, applications,
+  égalité et prémisses simples, puis instanciée mécaniquement sans matérialiser
+  toutes ses instances.
+- Le mécanisme générique de termes, substitutions et prémisses testé ne dépend
+  pas de la sémantique métier des opérations représentées. La sémantique
+  concrète peut rester séparée dans un oracle de validation.
+- Pour le cas fonctionnel `set(A,i,v)`, la relation entre état avant et état
+  après peut être exprimée structurellement par composition de termes sans
+  créer une `Description` nominale pour chaque état concret.
+
 - Une intention reste stable lorsque ses réalisations disponibles changent.
   L'absence d'une ressource nécessaire à une réalisation ne modifie pas
   l'intention.
@@ -239,6 +250,13 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 - La représentation structurée minimale nécessaire aux règles paramétriques,
   variables, quantification, collections ordonnées et transitions d'état
   reste à déterminer.
+- Le POC `structured-rules` ne démontre pas encore comment les expressions
+  structurées s'intègrent effectivement à `Description` / `Relation` / `Fact`.
+  `Term`, `Rule` et les prémisses restent pour l'instant des constituants
+  expérimentaux d'un langage de connaissance candidat.
+- La quantification sur des collections, les intervalles, l'ordre, les
+  mutations avec identité d'état et les règles plus riches restent non
+  démontrés.
 - Il reste à déterminer jusqu'où cette couche peut demeurer une extension
   naturelle de `Description` / `Relation` / `Fact` avant de nécessiter une
   algèbre ou un langage de contrat plus explicite.
