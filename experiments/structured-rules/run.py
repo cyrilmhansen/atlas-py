@@ -12,7 +12,10 @@ from structured_rules import (
     Comparison,
     Forall,
     Interval,
+    OrderedSequence,
     Postcondition,
+    OrderedPrefixRule,
+    evaluate_ordered_prefix,
     UNKNOWN,
     all_substitutions,
     condition_status,
@@ -21,6 +24,9 @@ from structured_rules import (
     evaluate_expression,
     evaluate_postcondition,
     postcondition_from_data,
+    ordered_prefix_rule_from_data,
+    ordered_sequence,
+    annotations,
     rule_from_data,
     substitute,
     term_from_data,
@@ -44,6 +50,11 @@ def load_rule_data():
 def load_postconditions():
     data = json.loads((ROOT / "bisect_rules.json").read_text(encoding="utf-8"))
     return [postcondition_from_data(item) for item in data["rules"]]
+
+
+def load_prefix_rules():
+    data = json.loads((ROOT / "prefix_rules.json").read_text(encoding="utf-8"))
+    return [ordered_prefix_rule_from_data(item) for item in data["rules"]]
 
 
 def application_evaluator(array, key_function):
@@ -266,6 +277,154 @@ def run_bisect_checks():
     print("bisect verdict: SUPPORTED")
 
 
+def oracle_ordered_prefix(elements, annotations):
+    if not isinstance(elements, (list, tuple)):
+        raise TypeError("oracle sequence source must be a list or tuple")
+    equality = {"EQ", "IN", "IS"}
+    terminal = {"GT", "GE", "LT", "LE"}
+    by_element = {}
+    for element, category in annotations:
+        if element in by_element:
+            raise ValueError(f"ambiguous annotations for element: {element}")
+        if category not in equality | terminal:
+            raise ValueError(f"unknown annotation category: {category}")
+        by_element[element] = category
+    result = []
+    for element in elements:
+        category = by_element.get(element)
+        if category is None:
+            break
+        if category in equality:
+            result.append(element)
+        elif category in terminal:
+            result.append(element)
+            break
+        else:
+            break
+    return tuple(result)
+
+
+def run_prefix_checks():
+    rule = load_prefix_rules()[0]
+    cases = [
+        (("a", "b", "c", "d"), (("a", "EQ"), ("b", "EQ"), ("c", "EQ"))),
+        (("a", "b", "c", "d"), (("a", "EQ"), ("b", "IN"), ("c", "GT"), ("d", "EQ"))),
+        (("a", "b", "c", "d"), (("a", "EQ"), ("c", "EQ"))),
+        (("a", "b", "c", "d"), (("b", "EQ"),)),
+        (("a", "b", "c", "d"), (("a", "GT"), ("b", "EQ"))),
+        (("a", "b", "c", "d"), (("a", "EQ"), ("b", "GT"), ("c", "EQ"))),
+        (("a", "b"), (("a", "EQ"), ("b", "GT"))),
+        (("a", "b", "c"), (("a", "EQ"),)),
+        (("a", "b", "c", "d"), (("a", "EQ"), ("b", "EQ"), ("c", "EQ"), ("d", "EQ"))),
+    ]
+    verified = 0
+    for index, constraints in cases:
+        structured = evaluate_ordered_prefix(rule, ordered_sequence(index), annotations(constraints))
+        oracle_result = oracle_ordered_prefix(index, constraints)
+        assert structured == oracle_result, (index, constraints, structured, oracle_result)
+        verified += 1
+
+    valid_extra = 0
+    assert evaluate_ordered_prefix(rule, ordered_sequence(("a", "b", "c")), annotations((("a", "EQ"), ("b", "EQ"), ("c", "EQ")))) == ("a", "b", "c")
+    valid_extra += 1
+    assert evaluate_ordered_prefix(rule, ordered_sequence(("a", "b", "c")), annotations((("a", "GT"), ("b", "EQ")))) == ("a",)
+    valid_extra += 1
+    assert evaluate_ordered_prefix(rule, ordered_sequence(()), annotations(())) == ()
+    valid_extra += 1
+    color_rule = OrderedPrefixRule("color_prefix", ("green",), ("amber", "red"))
+    colors = annotations((("a", "green"), ("b", "amber"), ("c", "red")))
+    assert evaluate_ordered_prefix(color_rule, ordered_sequence(("a", "b", "c")), colors) == ("a", "b")
+    valid_extra += 1
+
+    # The rule is about order, not membership in a set.
+    first_order = ordered_sequence(("a", "b", "c"))
+    second_order = ordered_sequence(("b", "a", "c"))
+    order_query = annotations((("a", "EQ"), ("b", "GT"), ("c", "EQ")))
+    assert evaluate_ordered_prefix(rule, first_order, order_query) == ("a", "b")
+    assert evaluate_ordered_prefix(rule, second_order, order_query) == ("b",)
+
+    # Explicit faulty interpretations are all rejected by discriminating cases.
+    def continue_after_gap(index, constraints):
+        matched = {column for column, _ in constraints}
+        return tuple(column for column in index if column in matched)
+
+    assert continue_after_gap(("a", "b", "c", "d"), (("a", "EQ"), ("c", "EQ"))) != ("a",)
+    assert continue_after_gap(("a", "b", "c", "d"), (("a", "EQ"), ("b", "EQ"), ("c", "GT"), ("d", "EQ"))) != ("a", "b", "c")
+    assert continue_after_gap(("a", "b", "c", "d"), (("b", "EQ"),)) != ()
+
+    def treat_all_as_equality(index, constraints):
+        by_column = {column for column, _ in constraints}
+        return tuple(column for column in index if column in by_column)
+
+    assert treat_all_as_equality(("a", "b", "c", "d"), (("a", "GT"), ("b", "EQ"))) != ("a",)
+    assert evaluate_ordered_prefix(rule, first_order, order_query) != evaluate_ordered_prefix(rule, second_order, order_query)
+
+    # Duplicate annotations are ambiguous in either input order and never normalized away.
+    duplicate_errors = []
+    for raw_annotations in (
+        (("a", "green"), ("a", "amber")),
+        (("a", "amber"), ("a", "green")),
+    ):
+        try:
+            evaluate_ordered_prefix(color_rule, ordered_sequence(("a", "b")), annotations(raw_annotations))
+        except ValueError as error:
+            duplicate_errors.append(str(error))
+        else:
+            raise AssertionError("duplicate annotation was accepted")
+    assert duplicate_errors == ["ambiguous annotations for element: a", "ambiguous annotations for element: a"]
+    try:
+        evaluate_ordered_prefix(color_rule, ordered_sequence(("a", "b")), annotations((("a", "green"), ("b", "green"), ("b", "amber"))))
+    except ValueError as error:
+        assert str(error) == "ambiguous annotations for element: b"
+    else:
+        raise AssertionError("duplicate annotation in a larger input was accepted")
+
+    # Unknown categories, overlapping rule categories and unordered sources are rejected.
+    try:
+        evaluate_ordered_prefix(rule, ordered_sequence(("a",)), annotations((("a", "UNKNOWN"),)))
+    except ValueError as error:
+        assert str(error) == "unknown annotation category: UNKNOWN"
+    else:
+        raise AssertionError("unknown annotation category was accepted")
+    try:
+        ordered_prefix_rule_from_data({"id": "bad", "continue_categories": ["EQ"], "terminal_categories": ["EQ"]})
+    except ValueError as error:
+        assert str(error) == "continue and terminal categories must be disjoint"
+    else:
+        raise AssertionError("overlapping rule categories were accepted")
+    for malformed in ("EQ", {"EQ"}, {"category": "EQ"}, ["EQ", 1]):
+        try:
+            ordered_prefix_rule_from_data({"id": "bad", "continue_categories": malformed, "terminal_categories": ["GT"]})
+        except ValueError as error:
+            assert "continue_categories must be a list of non-empty strings" in str(error)
+        else:
+            raise AssertionError(f"malformed category list was accepted: {malformed!r}")
+    for unordered in ({"a", "b"}, {"a": 1, "b": 2}):
+        try:
+            ordered_sequence(unordered)
+        except TypeError as error:
+            assert "list or tuple" in str(error)
+        else:
+            raise AssertionError("unordered sequence source was accepted")
+
+    # The independent oracle checks the same invalid-input contract itself.
+    for raw_annotations in (
+        (("a", "EQ"), ("a", "GT")),
+        (("a", "GT"), ("a", "EQ")),
+    ):
+        try:
+            oracle_ordered_prefix(("a", "b"), raw_annotations)
+        except ValueError as error:
+            assert str(error) == "ambiguous annotations for element: a"
+        else:
+            raise AssertionError("oracle accepted duplicate annotation")
+
+    invalid_count = 2 + 1 + 1 + 2 + 1 + 4
+    print(f"ordered-prefix rules persisted: 1; valid instances tested: {len(cases) + valid_extra}; invalid inputs rejected: {invalid_count}; prefixes verified: {verified + valid_extra}")
+    print("ordered-prefix counter-tests detected: ignored-order, continued-after-gap, continued-after-range, suffix-without-prefix, equality-range-collapse, reordered-index, duplicate-annotations, unknown-category, overlapping-categories, unordered-source")
+    print("ordered-prefix verdict: SUPPORTED")
+
+
 def main():
     same_index, other_index = load_rules()
     arrays = {
@@ -342,6 +501,7 @@ def main():
     print("counter-tests detected: missing condition, ungrounded premise, unknown kind, swapped state, conflicting binding, equal/distinct variables")
     print("verdict: SUPPORTED")
     run_bisect_checks()
+    run_prefix_checks()
 
 
 if __name__ == "__main__":

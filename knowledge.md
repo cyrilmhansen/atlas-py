@@ -86,6 +86,22 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
   pas de la sémantique métier des opérations représentées. La sémantique
   concrète peut rester séparée dans un oracle de validation.
 
+### Séquences ordonnées et règles de préfixe
+
+- Dans le périmètre testé, une séquence ordonnée peut être portée comme valeur
+  structurée d'une connaissance et parcourue mécaniquement par une règle
+  paramétrée calculant un préfixe maximal.
+- Lorsque l'ordre des éléments affecte les conséquences, cet ordre appartient
+  à la sémantique de la connaissance et ne peut pas être remplacé par un
+  ensemble de faits indépendants.
+- Une même règle persistée peut être appliquée à des séquences de longueurs et
+  de vocabulaires différents sans créer une `Description` nominale pour chaque
+  position ou préfixe.
+- Lorsqu'un mécanisme traite une relation comme une fonction
+  élément → annotation, l'unicité requise doit être garantie ou vérifiée
+  explicitement. Une structure d'implémentation telle qu'un dictionnaire ne
+  doit pas créer silencieusement cette propriété.
+
 - Une intention reste stable lorsque ses réalisations disponibles changent.
   L'absence d'une ressource nécessaire à une réalisation ne modifie pas
   l'intention.
@@ -433,6 +449,10 @@ compilation vers un problème de contraintes est possible.
   effets ou contraintes diffèrent.
 - Les dataclasses locales des harnais (`CompositeRealization`, `Call`, fenêtres
   de faits, etc.) sont des commodités expérimentales, pas une API Atlas.
+- Les structures du langage hôte peuvent introduire des propriétés absentes de
+  la connaissance représentée : égalité bool/int, écrasement de doublons par
+  dictionnaire, perte d'ordre par ensemble, etc. Toute conversion vers une
+  représentation hôte doit préserver explicitement le contrat sémantique.
 - Les POC temporels utilisent des temps entiers, des horizons bornés et des
   modèles de concurrence simplifiés.
 - Le peak est parfois dérivé hors solveur selon les mêmes conventions que le

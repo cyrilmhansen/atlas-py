@@ -108,3 +108,40 @@ applicability facts remain a small generic extension in this validation scope.
 This does not establish a general theorem prover, symbolic quantifier
 reasoning, a sortedness prover, or a complete contract language; integration
 with `Description / Relation / Fact` remains untested.
+
+## Ordered index-prefix extension
+
+This third experiment persists one data-driven `OrderedPrefixRule` in
+`prefix_rules.json`. Its inputs are an `OrderedSequence` of elements and an
+order-independent collection of `Annotation` values associating an element
+with a category. The rule data declares which categories are
+continuing (`EQ`, `IN`, `IS`) and which are terminal range categories
+(`GT`, `GE`, `LT`, `LE`). The engine traverses the actual sequence, stops at a
+missing element or terminal category, and returns the maximal prefix. It does
+not contain SQLite branches or hard-code those category sets.
+
+Each element may have at most one applicable annotation. Duplicate annotations
+are rejected with the same explicit error regardless of their input order.
+Rule categories must be non-empty strings in lists, and the continuing and
+terminal sets must be disjoint. Unknown annotation categories and unordered
+sequence sources (`set` or `dict`) are rejected rather than normalized.
+Category fields must be actual lists of non-empty strings; strings, sets,
+dicts, non-text elements, and overlapping category sets are rejected.
+
+The oracle is separate and intentionally concrete. Nine instances cover the
+required gaps, suffixes, range stops, duplicate categories, different index
+lengths, and full-prefix cases. The structured result is compared with the
+oracle without creating a description for each possible prefix. Two sequences
+with the same elements but different order produce different prefixes.
+
+The falsification checks detect ignoring order, continuing after a gap or a
+range, accepting a suffix without its left prefix, collapsing equality and
+range categories, and treating reordered indexes as equivalent.
+
+Instrumentation reports one persisted ordered-prefix rule, 13 valid instances,
+11 invalid inputs rejected, and 13 verified prefixes. The narrow verdict is
+**SUPPORTED**: an ordered sequence can remain an internal structured value and
+a single rule can be applied to concrete sequences of different lengths. No
+collection algebra or SQLite planner was introduced; richer symbolic
+sequences and constraints beyond the uniqueness/category contract remain
+outside this experiment.

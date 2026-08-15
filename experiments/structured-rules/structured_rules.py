@@ -64,6 +64,29 @@ class Postcondition:
     constraints: tuple
 
 
+@dataclass(frozen=True)
+class OrderedSequence:
+    elements: tuple
+
+    def __init__(self, source):
+        if not isinstance(source, (list, tuple)):
+            raise TypeError("ordered sequence source must be a list or tuple")
+        object.__setattr__(self, "elements", tuple(source))
+
+
+@dataclass(frozen=True)
+class Annotation:
+    element: str
+    category: str
+
+
+@dataclass(frozen=True)
+class OrderedPrefixRule:
+    rule_id: str
+    continue_categories: tuple
+    terminal_categories: tuple
+
+
 UNKNOWN = object()
 
 
@@ -108,6 +131,23 @@ def expression_from_data(data):
 def postcondition_from_data(data):
     constraints = tuple(expression_from_data(item) for item in data["constraints"])
     return Postcondition(data["id"], constraints)
+
+
+def ordered_prefix_rule_from_data(data):
+    continue_categories = data.get("continue_categories")
+    terminal_categories = data.get("terminal_categories")
+    for field, value in (("continue_categories", continue_categories), ("terminal_categories", terminal_categories)):
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+            raise ValueError(f"{field} must be a list of non-empty strings")
+        if len(set(value)) != len(value):
+            raise ValueError(f"{field} must not contain duplicates")
+    if set(continue_categories) & set(terminal_categories):
+        raise ValueError("continue and terminal categories must be disjoint")
+    return OrderedPrefixRule(
+        data["id"],
+        tuple(continue_categories),
+        tuple(data["terminal_categories"]),
+    )
 
 
 def rule_from_data(data):
@@ -172,6 +212,39 @@ def all_substitutions(rule, domains):
     names = sorted(rule_variables(rule))
     for values in product(*(domains[name] for name in names)):
         yield dict(zip(names, values))
+
+
+def ordered_sequence(items):
+    return OrderedSequence(items)
+
+
+def annotations(items):
+    return tuple(Annotation(element, category) for element, category in items)
+
+
+def evaluate_ordered_prefix(rule, ordered_elements, annotations):
+    """Return the maximal prefix admitted by a data-driven ordered rule."""
+    by_element = {}
+    known_categories = set(rule.continue_categories) | set(rule.terminal_categories)
+    for annotation in annotations:
+        if annotation.element in by_element:
+            raise ValueError(f"ambiguous annotations for element: {annotation.element}")
+        if annotation.category not in known_categories:
+            raise ValueError(f"unknown annotation category: {annotation.category}")
+        by_element[annotation.element] = annotation
+    result = []
+    for element in ordered_elements.elements:
+        annotation = by_element.get(element)
+        if annotation is None:
+            break
+        if annotation.category in rule.continue_categories:
+            result.append(element)
+            continue
+        if annotation.category in rule.terminal_categories:
+            result.append(element)
+            break
+        raise AssertionError("validated annotation category was not classified")
+    return tuple(result)
 
 
 def evaluate_term(term, environment, application_evaluator):

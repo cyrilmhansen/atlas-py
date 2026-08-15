@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "id": "maximal_ordered_usable_prefix",
+      "continue_categories": ["EQ", "IN", "IS"],
+      "terminal_categories": ["GT", "GE", "LT", "LE"]
+    }
+  ]
+}
