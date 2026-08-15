@@ -8,6 +8,27 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ### Collecte de connaissance réelle
 
+- Un audit indépendant partant des sources plutôt que du corpus a confirmé un
+  biais de sélection : le premier corpus représente principalement des faits
+  binaires, propriétés scalaires et conditions simples, tandis que plusieurs
+  connaissances plus structurées ont été omises ou appauvries.
+- `Description` + `Relation` + `Fact` reste crédible comme substrat, mais les
+  faits nominaux statiques et valeurs scalaires ne suffisent pas à représenter
+  naturellement toutes les connaissances utiles rencontrées.
+- Les premières frictions réelles se concentrent notamment sur :
+  - lois paramétriques et quantification ;
+  - états avant/après, mutation et restauration d'invariants ;
+  - ensembles et séquences ordonnées ;
+  - correspondances point par point entre structures ;
+  - conditions globales de couverture ;
+  - plans dont la structure dépend des données ;
+  - coûts dépendant de partitions ou distributions.
+- Une connaissance conservée seulement dans `scope`, `assumptions` ou
+  `evidence` n'est pas machine-exploitable comme contrainte lorsque son
+  contenu participe à l'admissibilité ou à la correction d'une réalisation.
+- L'absence de difficulté parmi les assertions effectivement collectées ne
+  suffit pas à valider l'expressivité du modèle : les connaissances rejetées,
+  simplifiées ou non collectées doivent également être examinées.
 - La première collecte de connaissances techniques réelles continue de
   soutenir le noyau `Description` + relations/faits : les difficultés
   rencontrées jusqu'ici ont pu être ramenées à l'identité des descriptions,
@@ -22,6 +43,10 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
   multiplicité, position, projection, mutation ou autre propriété pertinente,
   elles doivent rester distinctes ou partager explicitement une abstraction
   dont le contrat commun est défini.
+- La présence de faits compatibles dans un corpus ne représente pas leur
+  obligation de compatibilité. Lorsqu'une composition dépend de l'égalité ou de
+  la correspondance de propriétés entre plusieurs descriptions, cette
+  contrainte doit être représentée explicitement et participer au raisonnement.
 - Transformer une source en connaissance Atlas est une opération sémantique,
   pas une transcription. L'identité, le prédicat, le scope, les hypothèses, le
   statut épistémique et la provenance de l'assertion résultante doivent être
@@ -211,6 +236,12 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ### Sémantique et identité
 
+- La représentation structurée minimale nécessaire aux règles paramétriques,
+  variables, quantification, collections ordonnées et transitions d'état
+  reste à déterminer.
+- Il reste à déterminer jusqu'où cette couche peut demeurer une extension
+  naturelle de `Description` / `Relation` / `Fact` avant de nécessiter une
+  algèbre ou un langage de contrat plus explicite.
 - Comment établir et valider en général les relations sémantiques alimentant
   Atlas (`realizes`, équivalences, préconditions, effets), plutôt que les
   supposer correctes dans un catalogue expérimental ?
