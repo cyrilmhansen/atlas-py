@@ -6,6 +6,33 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ## Confirmed
 
+### Collecte de connaissance réelle
+
+- La première collecte de connaissances techniques réelles continue de
+  soutenir le noyau `Description` + relations/faits : les difficultés
+  rencontrées jusqu'ici ont pu être ramenées à l'identité des descriptions,
+  à la sémantique des relations, au scope, à la provenance et au statut
+  épistémique, sans imposer de nouveau type fondamental.
+- Une identité nominale destinée à participer à des relations sémantiques
+  telles que `realizes` doit correspondre à un contrat observable suffisamment
+  déterminé. Une proximité lexicale ou algorithmique ne suffit pas à établir
+  une identité commune.
+- Le scope ne peut pas réparer une identité trop générale. Si deux descriptions
+  diffèrent par leur résultat observable, leur comportement d'absence,
+  multiplicité, position, projection, mutation ou autre propriété pertinente,
+  elles doivent rester distinctes ou partager explicitement une abstraction
+  dont le contrat commun est défini.
+- Transformer une source en connaissance Atlas est une opération sémantique,
+  pas une transcription. L'identité, le prédicat, le scope, les hypothèses, le
+  statut épistémique et la provenance de l'assertion résultante doivent être
+  établis séparément.
+- Le fait qu'une source affirme explicitement une proposition ne rend pas
+  automatiquement l'assertion Atlas correspondante `exact`. La provenance et
+  le statut épistémique sont orthogonaux.
+- Un prédicat de relation destiné au raisonnement doit conserver une sémantique
+  stable. Un même prédicat ne peut pas servir de verbe générique dont le sens
+  réel change selon `value`, `evidence` ou le domaine.
+
 ### Représentation sémantique
 
 - Une intention reste stable lorsque ses réalisations disponibles changent.
@@ -138,6 +165,10 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 
 ## Refuted
 
+- Un terme lexical commun tel que `lookup`, `insert` ou `supports` ne constitue
+  pas à lui seul une identité ou une relation sémantique commune.
+- Un scope plus précis ne suffit pas à rendre correcte une assertion dont le
+  sujet, le prédicat ou le contrat observable sont mal choisis.
 - Une intention change ou disparaît parce qu'une ressource nécessaire à une de
   ses réalisations est absente.
 - `Intent`, `Realization` et `Resource` doivent nécessairement être des types
@@ -321,6 +352,17 @@ compilation vers un problème de contraintes est possible.
 
 ## Complexity smells
 
+- La connaissance dérivée exige une provenance distincte de la provenance
+  directement sourcée. Des bases de dérivation conservées uniquement comme
+  texte libre ne permettent ni résolution, ni audit mécanique, ni détection de
+  dépendances ou de cycles.
+- Un validateur purement structurel peut accepter un corpus syntaxiquement
+  cohérent mais sémantiquement dangereux. À mesure que le corpus grandit, les
+  identités trop larges, prédicats polysémiques, scopes réparateurs et
+  informations essentielles enfermées dans `evidence` peuvent produire des
+  compositions plausibles mais fausses.
+- Les rôles documentaires associés aux `Description` ne doivent pas être
+  confondus prématurément avec une ontologie fermée.
 - Les catalogues expérimentaux fournissent encore les relations sémantiques ;
   Atlas ne sait pas encore les découvrir ou les vérifier en général.
 - Une propriété absente du modèle peut rendre un pruning apparemment correct
