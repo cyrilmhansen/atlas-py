@@ -12,9 +12,16 @@ from structured_rules import (
     Comparison,
     Forall,
     Interval,
+    Atom,
+    GroundedRelation,
+    FiniteSetValue,
     OrderedSequence,
     Postcondition,
     OrderedPrefixRule,
+    ParticipantId,
+    evaluate_set_relation,
+    finite_set,
+    participant_id,
     evaluate_ordered_prefix,
     UNKNOWN,
     all_substitutions,
@@ -24,6 +31,9 @@ from structured_rules import (
     evaluate_expression,
     evaluate_postcondition,
     postcondition_from_data,
+    set_relation_rule_from_data,
+    set_expression_from_data,
+    validate_fact_environment,
     ordered_prefix_rule_from_data,
     ordered_sequence,
     annotations,
@@ -55,6 +65,11 @@ def load_postconditions():
 def load_prefix_rules():
     data = json.loads((ROOT / "prefix_rules.json").read_text(encoding="utf-8"))
     return [ordered_prefix_rule_from_data(item) for item in data["rules"]]
+
+
+def load_set_rules():
+    data = json.loads((ROOT / "set_rules.json").read_text(encoding="utf-8"))
+    return [set_relation_rule_from_data(item) for item in data["rules"]]
 
 
 def application_evaluator(array, key_function):
@@ -425,6 +440,338 @@ def run_prefix_checks():
     print("ordered-prefix verdict: SUPPORTED")
 
 
+def oracle_set(source):
+    if not isinstance(source, tuple):
+        raise TypeError("oracle finite set source must be a tuple")
+    try:
+        result = set(source)
+    except TypeError as error:
+        raise TypeError("oracle finite set elements must be hashable") from error
+    if len(result) != len(source):
+        raise ValueError("oracle finite set source contains duplicate elements")
+    return result
+
+
+def oracle_grounded_relation(resource, consumer, facts):
+    if type(resource) is not ParticipantId or type(consumer) is not ParticipantId:
+        raise TypeError("oracle participants must be exact ParticipantId values")
+    # Validate the complete participant-scoped environment before any lookup.
+    # The oracle keeps its calculation independent, but shares the POC's
+    # explicit input boundary so malformed unused facts cannot be ignored.
+    checked = validate_fact_environment(facts)
+
+    available = checked.get((resource, "available"), UNKNOWN)
+    search = checked.get((consumer, "search_requirements"), UNKNOWN)
+    output = checked.get((consumer, "output_requirements"), UNKNOWN)
+    if available is UNKNOWN or search is UNKNOWN or output is UNKNOWN:
+        return GroundedRelation("covers", (resource, consumer), UNKNOWN, None)
+
+    def atom_key(atom):
+        return (atom.kind, atom.value)
+
+    required = []
+    for atom in search.elements + output.elements:
+        if not any(atom_key(atom) == atom_key(existing) for existing in required):
+            required.append(atom)
+    status = all(any(atom_key(required_atom) == atom_key(available_atom) for available_atom in available.elements) for required_atom in required)
+    return GroundedRelation("covers", (resource, consumer), status, None)
+
+
+def run_set_checks():
+    rule = load_set_rules()[0]
+    cases = [
+        (("a", "b", "c"), ("a",), ("b",)),
+        (("a", "b"), ("a",), ("c",)),
+        (("a", "b", "c"), (), ("a", "c")),
+        (("a", "b", "c"), ("a", "b", "c"), ()),
+        ((), (), ()),
+        (("c", "b", "a"), ("a",), ("b",)),
+        (("a", "b", "c"), ("a",), ("b",)),
+        (("a", "b", "c"), ("a",), ("c",)),
+    ]
+
+    def facts_for(resource, consumer, available, search, output):
+        resource = participant_id("resource", resource)
+        consumer = participant_id("consumer", consumer)
+        return {
+            (resource, "available"): finite_set(available),
+            (consumer, "search_requirements"): finite_set(search),
+            (consumer, "output_requirements"): finite_set(output),
+        }
+
+    verified = 0
+    for number, (available, search, output) in enumerate(cases):
+        resource, consumer = "R1", f"Q{number}"
+        facts = facts_for(resource, consumer, available, search, output)
+        resource_binding = participant_id("resource", resource)
+        consumer_binding = participant_id("consumer", consumer)
+        grounded = evaluate_set_relation(rule, {"resource": resource_binding, "consumer": consumer_binding}, facts)
+        expected = oracle_grounded_relation(resource_binding, consumer_binding, facts)
+        assert grounded.predicate == "covers"
+        assert grounded.participants == (resource_binding, consumer_binding)
+        assert (grounded.predicate, grounded.participants, grounded.status) == (expected.predicate, expected.participants, expected.status), (available, search, output, grounded, expected)
+        union = []
+        for element in search + output:
+            if element not in union:
+                union.append(element)
+        assert grounded.derived_value == finite_set(tuple(union))
+        verified += 1
+
+    # The same resource participates in two relations with two consumers.
+    r1 = participant_id("resource", "R1")
+    q1 = participant_id("consumer", "Q1")
+    q2 = participant_id("consumer", "Q2")
+    shared_facts = {
+        (r1, "available"): finite_set(("a", "b", "c")),
+        (q1, "search_requirements"): finite_set(("a",)),
+        (q1, "output_requirements"): finite_set(("b",)),
+        (q2, "search_requirements"): finite_set(("a",)),
+        (q2, "output_requirements"): finite_set(("d",)),
+    }
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": q1}, shared_facts).status is True
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": q2}, shared_facts).status is False
+    verified += 1
+
+    # Correct reference cases pass before each intentionally faulty interpretation.
+    reference_facts = facts_for("R1", "Q3", ("a", "b"), ("a",), ("c",))
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": participant_id("consumer", "Q3")}, reference_facts).status is False
+    assert finite_set(("a", "b")) == finite_set(("b", "a"))
+
+    # Omitting output or search requirements is a different, incorrect calculation.
+    assert all(any(left == right for right in finite_set(("a", "b")).elements) for left in finite_set(("a",)).elements)
+    assert evaluate_set_relation(rule, {"resource": participant_id("resource", "R2"), "consumer": participant_id("consumer", "Q4")}, facts_for("R2", "Q4", ("b",), ("a",), ())).status is False
+
+    # Non-empty intersection and inverted inclusion are not subset.
+    requirements = finite_set(("a", "c"))
+    available = finite_set(("a", "b"))
+    assert any(left == right for left in requirements.elements for right in available.elements)
+    assert not all(any(left == right for right in available.elements) for left in requirements.elements)
+    assert not all(any(left == right for right in requirements.elements) for left in available.elements)
+
+    # Requirements belong to their own consumer; a mutant reusing Q1 for Q2 fails.
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": q1}, shared_facts).status is True
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": q2}, shared_facts).status is False
+
+    # Two resources remain distinct too.
+    r2 = participant_id("resource", "R2")
+    multi_facts = {
+        **shared_facts,
+        (r2, "available"): finite_set(("a", "d")),
+    }
+    assert evaluate_set_relation(rule, {"resource": r2, "consumer": q1}, multi_facts).status is False
+    assert evaluate_set_relation(rule, {"resource": r2, "consumer": q2}, multi_facts).status is True
+    assert evaluate_set_relation(rule, {"resource": r2, "consumer": q2}, {
+        key: value for key, value in multi_facts.items() if key[0] != r2
+    }).status is UNKNOWN
+
+    # Missing participant facts remain unknown, with no fallback to another participant.
+    for participant, property_name in (("R3", "available"), ("Q3", "search_requirements"), ("Q3", "output_requirements")):
+        incomplete = facts_for("R3", "Q3", ("a",), ("a",), ())
+        participant_key = participant_id("resource", participant) if property_name == "available" else participant_id("consumer", participant)
+        del incomplete[(participant_key, property_name)]
+        grounded = evaluate_set_relation(rule, {"resource": participant_id("resource", "R3"), "consumer": participant_id("consumer", "Q3")}, incomplete)
+        assert grounded.status is UNKNOWN
+        assert grounded.participants == (participant_id("resource", "R3"), participant_id("consumer", "Q3"))
+
+    # The same rule works with non-SQLite property vocabulary.
+    machine_job_facts = {
+        (participant_id("machine", "M1"), "capabilities"): finite_set(("cpu", "gpu")),
+        (participant_id("job", "J1"), "required_core"): finite_set(("cpu",)),
+        (participant_id("job", "J1"), "required_optional"): finite_set(("gpu",)),
+    }
+    generic_rule_data = {
+        "id": "can_run",
+        "participants": ["machine", "job"],
+        "predicate": "can_run",
+        "derived_name": "required",
+        "derivation": {"kind": "set_union", "left": {"kind": "participant_property", "participant": {"kind": "participant_ref", "name": "job"}, "property": "required_core"}, "right": {"kind": "participant_property", "participant": {"kind": "participant_ref", "name": "job"}, "property": "required_optional"}},
+        "relation": {"kind": "set_subset", "left": {"kind": "set_ref", "name": "required"}, "right": {"kind": "participant_property", "participant": {"kind": "participant_ref", "name": "machine"}, "property": "capabilities"}},
+    }
+    generic_rule = set_relation_rule_from_data(generic_rule_data)
+    generic_grounded = evaluate_set_relation(generic_rule, {"machine": participant_id("machine", "M1"), "job": participant_id("job", "J1")}, machine_job_facts)
+    assert generic_grounded.predicate == "can_run"
+    assert generic_grounded.participants == (participant_id("machine", "M1"), participant_id("job", "J1"))
+    assert generic_grounded.status is True
+    verified += 1
+
+    # Host containers and ambiguous members do not define Atlas member identity.
+    invalid_sources = [["a", "b"], "ab", {"a", "b"}, {"a": 1}, ((["a"],),), (True,), (1,), (1.0,), ("a", "a")]
+    invalid_rejected = 0
+    for source in invalid_sources:
+        try:
+            finite_set(source)
+        except (TypeError, ValueError):
+            invalid_rejected += 1
+        else:
+            raise AssertionError(f"invalid finite-set source was accepted: {source!r}")
+
+    class HostObject:
+        def __eq__(self, other):
+            return True
+
+        __hash__ = None
+
+    class HostileString(str):
+        def __eq__(self, other):
+            return True
+
+        def __hash__(self):
+            return 0
+
+    for hostile in (HostileString("x"), HostileString("Q1")):
+        try:
+            Atom("x", hostile)
+        except TypeError:
+            invalid_rejected += 1
+        else:
+            raise AssertionError("hostile string entered Atom")
+        try:
+            participant_id("resource", hostile)
+        except TypeError:
+            invalid_rejected += 1
+        else:
+            raise AssertionError("hostile string entered ParticipantId")
+
+    # An otherwise valid, unused property is allowed by both the engine and
+    # the oracle; validity is structural, not restricted to the rule's reads.
+    unused_facts = dict(shared_facts)
+    unused_facts[(r1, "unused_property")] = finite_set(("ignored",))
+    assert evaluate_set_relation(rule, {"resource": r1, "consumer": q1}, unused_facts).status is True
+    assert oracle_grounded_relation(r1, q1, unused_facts).status is True
+    verified += 1
+
+    class HostilePropertyId(str):
+        def __eq__(self, other):
+            return True
+
+        def __hash__(self):
+            return 0
+
+    invalid_fact_environments = [
+        {(r1, ""): finite_set(())},
+        {(r1, True): finite_set(())},
+        {(r1, 1): finite_set(())},
+        {(r1, HostilePropertyId("available")): finite_set(())},
+        {(object(), "available"): finite_set(())},
+    ]
+    for invalid_facts in invalid_fact_environments:
+        for evaluator in (
+            lambda environment: evaluate_set_relation(rule, {"resource": r1, "consumer": q1}, environment),
+            lambda environment: oracle_grounded_relation(r1, q1, environment),
+        ):
+            try:
+                evaluator(invalid_facts)
+            except TypeError:
+                invalid_rejected += 1
+            else:
+                raise AssertionError("invalid fact environment was accepted")
+
+    assert Atom("x", "1") == Atom("x", "1")
+    assert Atom("x", "1") != Atom("y", "1")
+
+    try:
+        finite_set((HostObject(),))
+    except TypeError:
+        invalid_rejected += 1
+    else:
+        raise AssertionError("custom host object entered finite set")
+
+    assert finite_set((Atom("symbol", "1"),)) != finite_set((Atom("other", "1"),))
+
+    class EvilAtom(Atom):
+        def canonical_key(self):
+            return ("symbol", "forged")
+
+    class CanonicalKeyObject:
+        def canonical_key(self):
+            return ("symbol", "forged")
+
+    for forged in (EvilAtom("symbol", "x"), CanonicalKeyObject()):
+        try:
+            finite_set((forged,))
+        except TypeError:
+            invalid_rejected += 1
+        else:
+            raise AssertionError("non-exact Atom-like object entered finite set")
+
+    participant_invalid = [("ns", True), ("ns", 1), ("ns", 1.0), ("ns", HostObject())]
+    for namespace, local_id in participant_invalid:
+        try:
+            participant_id(namespace, local_id)
+        except TypeError:
+            invalid_rejected += 1
+        else:
+            raise AssertionError("invalid participant identity was accepted")
+    p1 = participant_id("resource", "same-looking")
+    p2 = participant_id("resource", "other")
+    assert p1 != p2
+    assert evaluate_set_relation(rule, {"resource": p2, "consumer": q1}, {
+        (p1, "available"): finite_set(("a",)),
+        (q1, "search_requirements"): finite_set(("a",)),
+        (q1, "output_requirements"): finite_set(()),
+    }).status is UNKNOWN
+
+    class FakeParticipantKey:
+        def __eq__(self, other):
+            return True
+
+        def __hash__(self):
+            return hash(("resource", "same-looking"))
+
+    for fake_participant in (FakeParticipantKey(), True, 1, 1.0):
+        try:
+            evaluate_set_relation(rule, {"resource": r1, "consumer": q1}, {
+                (fake_participant, "available"): finite_set(("a",)),
+                (q1, "search_requirements"): finite_set(("a",)),
+                (q1, "output_requirements"): finite_set(()),
+            })
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("invalid participant fact key was accepted")
+
+    # The independent oracle rejects duplicate sources before calculation.
+    try:
+        oracle_set(("a", "a"))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("oracle accepted duplicate set source")
+
+    # Invalid persisted expression shapes are rejected at load time.
+    invalid_asts = [
+        {"kind": "set_union", "left": ["a"], "right": {"kind": "set_ref", "name": "x"}},
+        {"kind": "set_subset", "left": {"kind": "set_ref", "name": ["x"]}, "right": {"kind": "set_ref", "name": "y"}},
+        {"kind": "set_ref", "name": "not valid"},
+    ]
+    for ast in invalid_asts:
+        try:
+            set_expression_from_data(ast)
+        except (TypeError, ValueError):
+            invalid_rejected += 1
+        else:
+            raise AssertionError(f"invalid persisted set AST was accepted: {ast!r}")
+
+    persisted = json.loads((ROOT / "set_rules.json").read_text(encoding="utf-8"))["rules"][0]
+    invalid_rules = []
+    invalid_rules.append({**persisted, "participants": ["resource", "resource"]})
+    invalid_rules.append({**persisted, "participants": ["resource"], "derived_name": "resource"})
+    invalid_rules.append({**persisted, "derived_name": ["required"]})
+    invalid_rules.append({**persisted, "derivation": {"kind": "set_union", "left": {"kind": "participant_property", "participant": {"kind": "participant_ref", "name": "ghost"}, "property": "search_requirements"}, "right": persisted["derivation"]["right"]}})
+    invalid_rules.append({**persisted, "relation": {"kind": "set_subset", "left": {"kind": "set_ref", "name": "other"}, "right": persisted["relation"]["right"]}})
+    for invalid_rule in invalid_rules:
+        try:
+            set_relation_rule_from_data(invalid_rule)
+        except (TypeError, ValueError):
+            invalid_rejected += 1
+        else:
+            raise AssertionError(f"invalid persisted relation rule was accepted: {invalid_rule!r}")
+
+    print(f"finite-set rules persisted: 1; valid instances tested: {verified}; invalid inputs rejected: {invalid_rejected}; relations verified: {verified}")
+    print("finite-set counter-tests detected: omitted-output, omitted-search, nonempty-intersection, inverted-subset, order-sensitive, participant-identity, cross-participant-properties, incomplete-input, invalid-member-domain, invalid-persisted-AST")
+    print("finite-set verdict: SUPPORTED")
+
+
 def main():
     same_index, other_index = load_rules()
     arrays = {
@@ -502,6 +849,7 @@ def main():
     print("verdict: SUPPORTED")
     run_bisect_checks()
     run_prefix_checks()
+    run_set_checks()
 
 
 if __name__ == "__main__":

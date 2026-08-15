@@ -1,0 +1,32 @@
+{
+  "rules": [
+    {
+      "id": "derived_set_inclusion",
+      "participants": ["resource", "consumer"],
+      "predicate": "covers",
+      "derived_name": "required",
+      "derivation": {
+        "kind": "set_union",
+        "left": {
+          "kind": "participant_property",
+          "participant": {"kind": "participant_ref", "name": "consumer"},
+          "property": "search_requirements"
+        },
+        "right": {
+          "kind": "participant_property",
+          "participant": {"kind": "participant_ref", "name": "consumer"},
+          "property": "output_requirements"
+        }
+      },
+      "relation": {
+        "kind": "set_subset",
+        "left": {"kind": "set_ref", "name": "required"},
+        "right": {
+          "kind": "participant_property",
+          "participant": {"kind": "participant_ref", "name": "resource"},
+          "property": "available"
+        }
+      }
+    }
+  ]
+}

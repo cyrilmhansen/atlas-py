@@ -145,3 +145,41 @@ a single rule can be applied to concrete sequences of different lengths. No
 collection algebra or SQLite planner was introduced; richer symbolic
 sequences and constraints beyond the uniqueness/category contract remain
 outside this experiment.
+
+## Finite-set relation extension
+
+This fourth experiment persists one generic set relation in `set_rules.json`.
+`FiniteSetValue` is a structured finite set of explicit `Atom` values;
+`SetUnion` derives a required set and `SetSubset` evaluates the resulting
+relation. The persisted rule declares participant bindings, a predicate, and
+a head relation. It resolves `ParticipantProperty` values through
+`(ParticipantId, property_id)` facts, then returns a `GroundedRelation` that
+retains predicate, grounded participants, status, and derived set. It contains
+no SQLite, index, query, column, or covering-index vocabulary.
+
+Member identity is explicit: strings are converted to exact `Atom("symbol", s)`
+payloads, while arbitrary Python objects, booleans, numbers, subclasses and
+Atom-like objects are rejected. `Atom.kind` and `Atom.value` are exact `str`
+values; canonical finite-set equality is based on sorted atom kind/payload pairs
+and does not use host hashing for identity. Participant identity is likewise
+carried by exact `ParticipantId(namespace, local_id)` values; facts are validated
+as `(ParticipantId, property_id)` keys before any lookup and cannot be addressed
+by arbitrary host objects. Order is not semantic and duplicate source members
+are rejected. Missing participant facts return `unknown`, with no fallback to
+another participant. The independent oracle validates its own raw input,
+participant access, and grounded relation.
+
+Ten valid instances cover the required empty, full, partial, false, and
+reordered cases, including one resource evaluated against two consumers and
+two resources evaluated against two consumers. Twenty-eight invalid inputs or
+ASTs are rejected. The falsification checks cover omitted search or output
+requirements, non-empty intersection mistaken for subset, inverted inclusion,
+order sensitivity, participant identity, cross-participant property reuse,
+incomplete facts, invalid member domains, and invalid persisted ASTs.
+
+Instrumentation reports one persisted set-relation rule, ten valid instances,
+twenty-eight invalid inputs rejected, and ten verified relations. The narrow verdict
+is **SUPPORTED**: explicit finite-set members, participant-bound properties,
+union, subset, and a derived relation are enough for this case without
+pre-creating combinations or introducing a general collection algebra. Full
+integration with `Description / Relation / Fact` remains untested.

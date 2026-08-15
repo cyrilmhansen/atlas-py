@@ -86,6 +86,27 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
   pas de la sémantique métier des opérations représentées. La sémantique
   concrète peut rester séparée dans un oracle de validation.
 
+### Relations structurées groundées
+
+- Dans le périmètre testé, une règle structurée peut déclarer des participants
+  nominaux, résoudre des propriétés relativement à leur identité, évaluer des
+  expressions structurées et produire une relation groundée conservant
+  prédicat, participants et statut.
+- Une dérivation relationnelle n'est pas équivalente à un booléen calculé sur
+  des valeurs préassemblées : le grounding qui relie les connaissances
+  utilisées aux participants doit être préservé.
+- L'identité, l'égalité, l'ordre, l'unicité et les coercions sémantiquement
+  significatives doivent être définis par Atlas ; les structures et règles du
+  langage hôte ne peuvent les introduire implicitement.
+- Les frontières d'écriture d'un environnement de connaissances doivent
+  appliquer les mêmes invariants d'identité et de valeur que ses lectures.
+- Une propriété structurellement valide peut exister dans le Knowledge Store
+  sans être connue ou consommée par la règle courante. La validité d'un
+  `PropertyId` est distincte de son appartenance au vocabulaire d'une règle.
+- L'intégration complète avec le modèle persistant `Description` / `Relation` /
+  `Fact`, notamment provenance, contexte, statuts épistémiques et stockage
+  durable, reste non démontrée.
+
 ### Séquences ordonnées et règles de préfixe
 
 - Dans le périmètre testé, une séquence ordonnée peut être portée comme valeur

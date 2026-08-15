@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from itertools import product
 from operator import ge, gt, le, lt
+import re
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,139 @@ class OrderedPrefixRule:
     terminal_categories: tuple
 
 
+@dataclass(frozen=True, init=False)
+class FiniteSetValue:
+    elements: tuple
+
+    def __init__(self, source):
+        if not isinstance(source, tuple):
+            raise TypeError("finite set source must be a tuple")
+        atoms = tuple(atom_from_value(element) for element in source)
+        ordered = tuple(sorted(atoms, key=lambda atom: atom.canonical_key()))
+        if any(left.canonical_key() == right.canonical_key() for left, right in zip(ordered, ordered[1:])):
+            raise ValueError("finite set source contains duplicate elements")
+        object.__setattr__(self, "elements", ordered)
+
+    @classmethod
+    def _from_union_atoms(cls, atoms):
+        if any(type(atom) is not Atom for atom in atoms):
+            raise TypeError("finite-set union requires exact Atom values")
+        ordered = sorted(atoms, key=lambda atom: atom.canonical_key())
+        unique = []
+        for atom in ordered:
+            if not unique or atom.canonical_key() != unique[-1].canonical_key():
+                unique.append(atom)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "elements", tuple(unique))
+        return instance
+
+    def __eq__(self, other):
+        return isinstance(other, FiniteSetValue) and self.elements == other.elements
+
+
+@dataclass(frozen=True)
+class Atom:
+    kind: str
+    value: str
+
+    def __post_init__(self):
+        if type(self.kind) is not str or not self.kind:
+            raise TypeError("atom kind must be a non-empty string")
+        if type(self.value) is not str:
+            raise TypeError("atom value must be a string")
+
+    def canonical_key(self):
+        return self.kind, self.value
+
+
+def atom_from_value(value):
+    if type(value) is Atom:
+        return value
+    if isinstance(value, str):
+        return Atom("symbol", value)
+    raise TypeError("finite set members must be symbol strings or Atom values")
+
+
+@dataclass(frozen=True)
+class SetReference:
+    name: str
+
+
+@dataclass(frozen=True)
+class SetUnion:
+    left: object
+    right: object
+
+
+@dataclass(frozen=True)
+class SetSubset:
+    left: object
+    right: object
+
+
+@dataclass(frozen=True)
+class ParticipantReference:
+    name: str
+
+
+@dataclass(frozen=True)
+class ParticipantProperty:
+    participant: ParticipantReference
+    property_name: str
+
+
+@dataclass(frozen=True)
+class ParticipantId:
+    namespace: str
+    local_id: str
+
+    def __post_init__(self):
+        if type(self.namespace) is not str or not self.namespace:
+            raise TypeError("participant namespace must be a non-empty string")
+        if type(self.local_id) is not str or not self.local_id:
+            raise TypeError("participant local_id must be a non-empty string")
+
+
+def participant_id(namespace, local_id):
+    return ParticipantId(namespace, local_id)
+
+
+def validate_fact_environment(facts):
+    if not hasattr(facts, "items"):
+        raise TypeError("fact environment must be a mapping")
+    validated = {}
+    for key, value in facts.items():
+        if type(key) is not tuple or len(key) != 2:
+            raise TypeError("fact key must be (ParticipantId, property_id)")
+        participant, property_id = key
+        if type(participant) is not ParticipantId:
+            raise TypeError("fact key must contain an exact ParticipantId")
+        if type(property_id) is not str or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", property_id):
+            raise TypeError("fact property_id must be an identifier string")
+        if type(value) is not FiniteSetValue:
+            raise TypeError("fact values must be exact FiniteSetValue values")
+        validated[(participant, property_id)] = value
+    return validated
+
+
+@dataclass(frozen=True)
+class SetRelationRule:
+    rule_id: str
+    participants: tuple
+    predicate: str
+    derived_name: str
+    derivation: SetUnion
+    relation: SetSubset
+
+
+@dataclass(frozen=True)
+class GroundedRelation:
+    predicate: str
+    participants: tuple
+    status: object
+    derived_value: object
+
+
 UNKNOWN = object()
 
 
@@ -148,6 +282,83 @@ def ordered_prefix_rule_from_data(data):
         tuple(continue_categories),
         tuple(data["terminal_categories"]),
     )
+
+
+def set_expression_from_data(data):
+    kind = data["kind"]
+    if kind == "set_ref":
+        name = data.get("name")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError("set reference name must be an identifier")
+        return SetReference(name)
+    if kind == "participant_property":
+        participant = data.get("participant")
+        if not isinstance(participant, dict) or participant.get("kind") != "participant_ref":
+            raise ValueError("participant property requires a participant reference")
+        name = participant.get("name")
+        property_name = data.get("property")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError("participant reference name must be an identifier")
+        if not isinstance(property_name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", property_name):
+            raise ValueError("participant property name must be an identifier")
+        return ParticipantProperty(ParticipantReference(name), property_name)
+    if kind == "set_union":
+        left = set_expression_from_data(data["left"])
+        right = set_expression_from_data(data["right"])
+        if not is_set_expression(left) or not is_set_expression(right):
+            raise ValueError("set union operands must be set expressions")
+        return SetUnion(left, right)
+    if kind == "set_subset":
+        left = set_expression_from_data(data["left"])
+        right = set_expression_from_data(data["right"])
+        if not is_set_expression(left) or not is_set_expression(right):
+            raise ValueError("set subset operands must be set expressions")
+        return SetSubset(left, right)
+    if kind == "participant_ref":
+        raise ValueError("participant references are only valid inside participant properties")
+    raise ValueError(f"unknown set expression kind: {kind}")
+
+
+def is_set_expression(expression):
+    return isinstance(expression, (SetReference, ParticipantProperty, SetUnion))
+
+
+def set_expression_references(expression):
+    if isinstance(expression, ParticipantProperty):
+        return {expression.participant.name}
+    if isinstance(expression, SetUnion):
+        return set_expression_references(expression.left) | set_expression_references(expression.right)
+    return set()
+
+
+def expression_references_name(expression, name):
+    return isinstance(expression, SetReference) and expression.name == name
+
+
+def set_relation_rule_from_data(data):
+    participants = data.get("participants")
+    predicate = data.get("predicate")
+    derived_name = data.get("derived_name")
+    if not isinstance(participants, list) or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in participants):
+        raise ValueError("participants must be a list of identifier names")
+    if len(set(participants)) != len(participants):
+        raise ValueError("participant names must be unique")
+    if not isinstance(predicate, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", predicate):
+        raise ValueError("predicate must be an identifier")
+    if not isinstance(derived_name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", derived_name):
+        raise ValueError("derived_name must be an identifier")
+    if derived_name in participants:
+        raise ValueError("derived_name must not collide with a participant")
+    derivation = set_expression_from_data(data["derivation"])
+    relation = set_expression_from_data(data["relation"])
+    if not isinstance(derivation, SetUnion) or not isinstance(relation, SetSubset):
+        raise ValueError("set relation rule requires union derivation and subset relation")
+    references = set_expression_references(derivation) | set_expression_references(relation)
+    if not references <= set(participants):
+        raise ValueError("participant property references an undeclared participant")
+    if not expression_references_name(relation.left, derived_name):
+        raise ValueError("relation must consume the derived set")
+    return SetRelationRule(data["id"], tuple(participants), predicate, derived_name, derivation, relation)
 
 
 def rule_from_data(data):
@@ -245,6 +456,57 @@ def evaluate_ordered_prefix(rule, ordered_elements, annotations):
             break
         raise AssertionError("validated annotation category was not classified")
     return tuple(result)
+
+
+def finite_set(source):
+    return FiniteSetValue(source)
+
+
+def evaluate_set_expression(expression, environment, facts=None):
+    if isinstance(expression, SetReference):
+        value = environment.get(expression.name, UNKNOWN)
+        if value is UNKNOWN or isinstance(value, FiniteSetValue):
+            return value
+        raise TypeError(f"set reference {expression.name} is not a finite set")
+    if isinstance(expression, ParticipantProperty):
+        participant = environment.get(expression.participant.name, UNKNOWN)
+        if participant is UNKNOWN:
+            return UNKNOWN
+        if type(participant) is not ParticipantId:
+            raise TypeError("participant binding must be an exact ParticipantId")
+        if facts is None:
+            raise ValueError("participant properties require a fact environment")
+        value = facts.get((participant, expression.property_name), UNKNOWN)
+        if value is UNKNOWN or isinstance(value, FiniteSetValue):
+            return value
+        raise TypeError(f"fact {participant}.{expression.property_name} is not a finite set")
+    if isinstance(expression, SetUnion):
+        left = evaluate_set_expression(expression.left, environment, facts)
+        right = evaluate_set_expression(expression.right, environment, facts)
+        if left is UNKNOWN or right is UNKNOWN:
+            return UNKNOWN
+        return FiniteSetValue._from_union_atoms(left.elements + right.elements)
+    raise TypeError(f"not a set-valued expression: {expression!r}")
+
+
+def evaluate_set_relation(rule, environment, facts=None):
+    if facts is not None:
+        facts = validate_fact_environment(facts)
+    participants = tuple(environment.get(name, UNKNOWN) for name in rule.participants)
+    if any(value is not UNKNOWN and type(value) is not ParticipantId for value in participants):
+        raise TypeError("participant binding must be an exact ParticipantId")
+    derived = evaluate_set_expression(rule.derivation, environment, facts)
+    if derived is UNKNOWN:
+        return GroundedRelation(rule.predicate, participants, UNKNOWN, UNKNOWN)
+    scoped_environment = dict(environment)
+    scoped_environment[rule.derived_name] = derived
+    relation = rule.relation
+    left = evaluate_set_expression(relation.left, scoped_environment, facts)
+    right = evaluate_set_expression(relation.right, scoped_environment, facts)
+    if left is UNKNOWN or right is UNKNOWN:
+        return GroundedRelation(rule.predicate, participants, UNKNOWN, derived)
+    status = all(any(left_atom == right_atom for right_atom in right.elements) for left_atom in left.elements)
+    return GroundedRelation(rule.predicate, participants, status, derived)
 
 
 def evaluate_term(term, environment, application_evaluator):
