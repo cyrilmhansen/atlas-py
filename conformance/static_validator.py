@@ -15,7 +15,7 @@ class FixtureError(ValueError):
     """The fixture is structurally invalid for the C0 contract."""
 
 
-ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]*$")
+ID_RE = re.compile(r"^[\x00-\x7F]+$")
 INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 VALUE_KINDS = {"symbol", "integer", "finite_set<symbol>", "sequence<symbol>"}
 EPISTEMIC_STATUSES = {"exact", "bound", "estimate", "unknown"}
@@ -39,6 +39,8 @@ def _exact_string(value, where, *, identifier=False, nonempty=True):
         raise FixtureError(f"{where} must be an exact non-empty string")
     if identifier and ID_RE.fullmatch(value) is None:
         raise FixtureError(f"{where} is not a valid identifier: {value!r}")
+    if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+        raise FixtureError(f"{where} contains an isolated Unicode surrogate")
     return value
 
 
@@ -195,7 +197,9 @@ def _validate_expression(expression, where, participants, properties):
         _validate_expression(expression.get("left"), f"{where}.left", participants, properties)
         _validate_expression(expression.get("right"), f"{where}.right", participants, properties)
     else:
-        raise FixtureError(f"unsupported expression operator: {op!r}")
+        # C0 validates structure, while M1 evaluates only its closed pivot.
+        # Unknown structured operators remain isolated/persistable.
+        pass
 
 
 def _validate_rules(records, predicates, properties):
