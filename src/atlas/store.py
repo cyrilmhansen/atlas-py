@@ -18,6 +18,7 @@ from .scope import (evaluate as evaluate_scope, grounding_payload, restore_groun
 from .problem import (GroundedDecisionProblem, grounded_decision_problem_payload,
                       Decision, M1SelectionResult, decision_payload, restore_decision,
                       restore_grounded_decision_problem,
+                      _explain_m1,
                       validate_persisted_decision,
                       validate_persisted_grounded_decision_problem)
 
@@ -785,6 +786,18 @@ class Store:
         if decision is None:
             raise GroundingError("unknown decision")
         return decision
+
+    def explain_m1(self, decision_id):
+        """Purely explain one persisted Decision through its exact historical GDP."""
+        self._check()
+        ident = _id(DecisionId, decision_id)
+        decision = self.decision(ident)
+        problem = self.grounded_decision_problems.get(decision.source.value)
+        if problem is None:
+            raise GroundingError("decision references an absent historical grounded decision problem")
+        validate_persisted_grounded_decision_problem(self, problem)
+        validate_persisted_decision(self, decision)
+        return _explain_m1(ident, decision, problem, self)
 
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations

@@ -9,9 +9,10 @@ from enum import Enum
 
 from .errors import GroundingError, ValidationError
 from .identity import (ContextId, DecisionId, DecisionProblemId, DecisionScopeId, DescriptionId,
-                       KnowledgeId, PropertyId, RuleId, SnapshotId)
-from .model import (DecisionGrounding, DecisionScope, EvaluationTruth,
-                    GroundingResult, GroundingStatus, PropertyAssertion)
+                       KnowledgeId, PropertyId, RuleId, SnapshotId, SourceId)
+from .model import (AmbiguousRead, DecisionGrounding, DecisionScope, EvaluationTruth,
+                    GroundingResult, GroundingStatus, MissingRead, PropertyAssertion)
+from .provenance import canonical_provenance
 from .scope import (_result_from_payload, _result_payload,
                     compute_declared_scope_completeness, validate_scope_environment)
 from .values import Integer, value_from_json, value_to_json
@@ -145,6 +146,128 @@ class Decision:
         M1SelectionResult(self.source, self.status, self.optimum, self.co_optima)
         if type(self.id) is not DecisionId:
             raise ValidationError("decision requires an exact DecisionId")
+
+
+class ExplanationReason(str, Enum):
+    SELECTED_CO_OPTIMUM = "SELECTED_CO_OPTIMUM"
+    ADMISSIBLE_HIGHER_OBJECTIVE = "ADMISSIBLE_HIGHER_OBJECTIVE"
+    NOT_ADMISSIBLE = "NOT_ADMISSIBLE"
+    INSUFFICIENT_INFORMATION = "INSUFFICIENT_INFORMATION"
+    ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED = "ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED"
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateExplanation:
+    candidate: DescriptionId
+    truth: EvaluationTruth
+    selected: bool
+    objective_value: ObjectiveValue | None
+    reason: ExplanationReason
+    effective_dependencies: tuple[KnowledgeId, ...]
+    dependency_closure: tuple[KnowledgeId, ...]
+    missing_reads: tuple[MissingRead, ...]
+    ambiguous_reads: tuple[AmbiguousRead, ...]
+    exclusion_reason: str | None
+    provenance: tuple[SourceId, ...]
+    grounding_evidence: str
+
+    def __post_init__(self):
+        if type(self.candidate) is not DescriptionId or type(self.truth) is not EvaluationTruth:
+            raise ValidationError("invalid candidate explanation identity or truth")
+        if type(self.selected) is not bool or type(self.reason) is not ExplanationReason:
+            raise ValidationError("invalid candidate explanation selection or reason")
+        if self.objective_value is not None and type(self.objective_value) is not ObjectiveValue:
+            raise ValidationError("invalid candidate explanation objective")
+        if type(self.effective_dependencies) is not tuple or any(type(x) is not KnowledgeId for x in self.effective_dependencies):
+            raise ValidationError("invalid candidate explanation dependencies")
+        if type(self.dependency_closure) is not tuple or any(type(x) is not KnowledgeId for x in self.dependency_closure):
+            raise ValidationError("invalid candidate explanation dependency closure")
+        if type(self.missing_reads) is not tuple or any(type(x) is not MissingRead for x in self.missing_reads):
+            raise ValidationError("invalid candidate explanation missing reads")
+        if type(self.ambiguous_reads) is not tuple or any(type(x) is not AmbiguousRead for x in self.ambiguous_reads):
+            raise ValidationError("invalid candidate explanation ambiguous reads")
+        if self.exclusion_reason is not None and (type(self.exclusion_reason) is not str or not self.exclusion_reason):
+            raise ValidationError("invalid candidate explanation exclusion reason")
+        if type(self.provenance) is not tuple or any(type(x) is not SourceId for x in self.provenance):
+            raise ValidationError("invalid candidate explanation provenance")
+        if type(self.grounding_evidence) is not str or not self.grounding_evidence:
+            raise ValidationError("candidate explanation requires grounding evidence")
+
+        if self.truth is EvaluationTruth.TRUE:
+            if self.objective_value is None:
+                raise ValidationError("TRUE candidate explanation requires an objective value")
+            if self.reason not in (ExplanationReason.SELECTED_CO_OPTIMUM,
+                                   ExplanationReason.ADMISSIBLE_HIGHER_OBJECTIVE,
+                                   ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED):
+                raise ValidationError("TRUE candidate explanation has an invalid reason")
+            if self.selected and self.reason is not ExplanationReason.SELECTED_CO_OPTIMUM:
+                raise ValidationError("selected candidate explanation must be a co-optimum")
+            if self.reason is ExplanationReason.SELECTED_CO_OPTIMUM and not self.selected:
+                raise ValidationError("co-optimum candidate explanation must be selected")
+            if self.reason in (ExplanationReason.ADMISSIBLE_HIGHER_OBJECTIVE,
+                               ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED) and self.selected:
+                raise ValidationError("non-optimal candidate explanation must not be selected")
+        elif self.truth is EvaluationTruth.FALSE:
+            if self.selected or self.objective_value is not None or self.reason is not ExplanationReason.NOT_ADMISSIBLE:
+                raise ValidationError("FALSE candidate explanation must be non-admissible and unselected")
+        elif self.truth is EvaluationTruth.UNKNOWN:
+            if (self.selected or self.objective_value is not None or
+                    self.reason is not ExplanationReason.INSUFFICIENT_INFORMATION):
+                raise ValidationError("UNKNOWN candidate explanation must be information-limited and unselected")
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionExplanation:
+    source: DecisionId
+    decision_problem: DecisionProblemId
+    status: SelectionStatus
+    optimum: Integer | None
+    candidates: tuple[CandidateExplanation, ...]
+
+    def __post_init__(self):
+        if type(self.source) is not DecisionId or type(self.decision_problem) is not DecisionProblemId:
+            raise ValidationError("invalid decision explanation source")
+        if type(self.status) is not SelectionStatus or (self.optimum is not None and type(self.optimum) is not Integer):
+            raise ValidationError("invalid decision explanation outcome")
+        if type(self.candidates) is not tuple or any(type(x) is not CandidateExplanation for x in self.candidates):
+            raise ValidationError("invalid decision explanation candidates")
+        if len({x.candidate for x in self.candidates}) != len(self.candidates):
+            raise ValidationError("decision explanation contains duplicate candidates")
+
+        selected = tuple(candidate for candidate in self.candidates if candidate.selected)
+        if self.status is SelectionStatus.RESOLVED:
+            if self.optimum is None or self.optimum.value < 1 or not selected:
+                raise ValidationError("resolved explanation requires an optimum and a selected candidate")
+            for candidate in selected:
+                if (candidate.truth is not EvaluationTruth.TRUE or
+                        candidate.reason is not ExplanationReason.SELECTED_CO_OPTIMUM or
+                        candidate.objective_value.value != self.optimum):
+                    raise ValidationError("resolved explanation has an invalid selected candidate")
+            for candidate in self.candidates:
+                if not candidate.selected and candidate.reason is ExplanationReason.SELECTED_CO_OPTIMUM:
+                    raise ValidationError("resolved explanation has an unselected co-optimum")
+                if candidate.truth is EvaluationTruth.UNKNOWN:
+                    raise ValidationError("resolved explanation must not contain UNKNOWN candidates")
+                if not candidate.selected and candidate.truth is EvaluationTruth.TRUE:
+                    if (candidate.objective_value is None or
+                            candidate.objective_value.value.value <= self.optimum.value or
+                            candidate.reason is not ExplanationReason.ADMISSIBLE_HIGHER_OBJECTIVE):
+                        raise ValidationError("resolved explanation has an invalid admissible candidate")
+        elif self.status is SelectionStatus.NEEDS_INFORMATION:
+            if self.optimum is not None or selected or not any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in self.candidates):
+                raise ValidationError("information-limited explanation has an invalid outcome")
+            for candidate in self.candidates:
+                if candidate.truth is EvaluationTruth.TRUE and candidate.reason is not ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED:
+                    raise ValidationError("information-limited explanation has a certified admissible reason")
+                if candidate.truth is EvaluationTruth.FALSE and candidate.reason is not ExplanationReason.NOT_ADMISSIBLE:
+                    raise ValidationError("information-limited explanation has an invalid inadmissible reason")
+                if candidate.truth is EvaluationTruth.UNKNOWN and candidate.reason is not ExplanationReason.INSUFFICIENT_INFORMATION:
+                    raise ValidationError("information-limited explanation has an invalid unknown reason")
+        elif self.status is SelectionStatus.NO_ADMISSIBLE_CANDIDATE:
+            if self.optimum is not None or selected or any(candidate.truth is not EvaluationTruth.FALSE for candidate in self.candidates):
+                raise ValidationError("no-candidate explanation has an invalid outcome")
+            if any(candidate.reason is not ExplanationReason.NOT_ADMISSIBLE for candidate in self.candidates):
+                raise ValidationError("no-candidate explanation has an invalid candidate reason")
 
 
 PROBLEM_SCHEMA = "atlas.core-v1.grounded-decision-problem/1"
@@ -283,6 +406,82 @@ def validate_persisted_decision(store, decision):
         raise GroundingError("persisted decision optimum disagrees with historical GDP")
     if set(decision.co_optima) != expected_co_optima or len(decision.co_optima) != len(expected_co_optima):
         raise GroundingError("persisted decision must contain exactly all historical co-optima")
+
+
+def _explain_m1(decision_id, decision, problem, store):
+    """Purely reconstruct one explanation from one exact historical GDP.
+
+    The Store supplies the nominal decision lookup and this function never
+    selects, grounds, persists, or consults a current/latest artifact.
+    """
+    if (type(decision_id) is not DecisionId or type(decision) is not Decision or
+            type(problem) is not GroundedDecisionProblem or decision.id != decision_id or
+            decision.source.value not in store.grounded_decision_problems or
+            store.grounded_decision_problems[decision.source.value] is not problem):
+        raise GroundingError("decision explanation requires its exact historical GDP")
+    validate_persisted_decision(store, decision)
+    selected = set(decision.co_optima)
+
+    def dependencies_for(candidate):
+        direct = candidate.grounding_result.effective_dependencies
+        result = []
+        seen = set()
+        def visit(knowledge_id):
+            if knowledge_id in seen:
+                return
+            if knowledge_id.value not in store.records:
+                raise GroundingError("explanation references an absent historical dependency")
+            seen.add(knowledge_id)
+            result.append(knowledge_id)
+            record = store.records[knowledge_id.value]
+            if getattr(record, "derivation_id", None) is not None and knowledge_id.value not in store.derivations:
+                raise GroundingError("explanation references an incomplete historical derivation")
+            for dependency in store.dependencies(knowledge_id):
+                visit(dependency)
+        for knowledge_id in direct:
+            visit(knowledge_id)
+        return tuple(result)
+
+    def reason_for(candidate):
+        truth = candidate.truth
+        if truth is EvaluationTruth.FALSE:
+            return ExplanationReason.NOT_ADMISSIBLE
+        if decision.status is SelectionStatus.RESOLVED:
+            return (ExplanationReason.SELECTED_CO_OPTIMUM if candidate.candidate in selected
+                    else ExplanationReason.ADMISSIBLE_HIGHER_OBJECTIVE)
+        if decision.status is SelectionStatus.NEEDS_INFORMATION:
+            if truth is EvaluationTruth.TRUE:
+                return ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED
+            if truth is EvaluationTruth.UNKNOWN:
+                return ExplanationReason.INSUFFICIENT_INFORMATION
+        if decision.status is SelectionStatus.NO_ADMISSIBLE_CANDIDATE and truth is EvaluationTruth.FALSE:
+            return ExplanationReason.NOT_ADMISSIBLE
+        raise GroundingError("decision explanation status disagrees with historical GDP")
+
+    explanations = []
+    for candidate in problem.candidates:
+        result = candidate.grounding_result
+        closure = dependencies_for(candidate)
+        sources = []
+        for knowledge_id in closure:
+            record = store.records[knowledge_id.value]
+            sources.extend(record.provenance)
+        explanations.append(CandidateExplanation(
+            candidate=candidate.candidate,
+            truth=candidate.truth,
+            selected=candidate.candidate in selected,
+            objective_value=candidate.objective_value,
+            reason=reason_for(candidate),
+            effective_dependencies=result.effective_dependencies,
+            dependency_closure=closure,
+            missing_reads=result.missing_reads,
+            ambiguous_reads=result.ambiguous_reads,
+            exclusion_reason=candidate.exclusion_reason,
+            provenance=canonical_provenance(sources),
+            grounding_evidence=result.grounding_evidence,
+        ))
+    return DecisionExplanation(decision.id, decision.source, decision.status,
+                               decision.optimum, tuple(explanations))
 
 
 def restore_grounded_decision_problem(raw):
