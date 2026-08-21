@@ -682,6 +682,11 @@ class Store:
         if grounding is None: raise GroundingError("unknown decision scope grounding")
         return grounding
 
+    def ground_decision_problem(self, decision_scope_id):
+        """Purely materialize a problem from an existing persisted run."""
+        from .problem import build_grounded_decision_problem
+        return build_grounded_decision_problem(self, decision_scope_id)
+
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations
 

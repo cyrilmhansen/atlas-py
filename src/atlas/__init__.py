@@ -12,6 +12,8 @@ from .model import (AmbiguousRead, Context, Description, EvaluationTruth,
 from .values import FiniteSetSymbol, Integer, SequenceSymbol, Symbol, Value
 from .vocabulary import PredicateSpec, PropertySpec, Vocabulary
 from .store import Store, admit_fixture, open_store
+from .problem import (GroundedCandidate, GroundedDecisionProblem, M1Objective,
+                      ObjectiveValue)
 
 __all__ = [
     "AdmissionError", "AtlasError", "ClosedStoreError", "GroundingError",
@@ -25,4 +27,5 @@ __all__ = [
     "Source", "Symbol", "Integer", "FiniteSetSymbol", "SequenceSymbol", "Value",
     "PredicateSpec", "PropertySpec", "Vocabulary", "Store", "open_store",
     "admit_fixture",
+    "ObjectiveValue", "M1Objective", "GroundedCandidate", "GroundedDecisionProblem",
 ]
