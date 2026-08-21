@@ -295,6 +295,32 @@ moins chère mais non admissible et une réalisation plus chère admissible. Le
 sélecteur retourne toutes les solutions de coût minimal ; aucun tie-break
 lexical caché n’est appliqué.
 
+Pour Core V1, cette sélection est une opération pure sur un `Grounded Decision
+Problem` déjà persisté et identifié nominalement. Le résultat référence
+l’identité du GDP source ; il ne crée ni ne modifie une `Decision`. La sélection
+ne re-ground pas et ne reconstruit pas le GDP depuis un scope ou une vue
+`current/latest`.
+
+Le choix suivant est explicitement un `CORE_V1_CHOICE` :
+
+- `complete_for_declared_scope` décrit la complétude du parcours dans le scope,
+  et non la complétude épistémique du corpus ;
+- si au moins un candidat est `UNKNOWN`, le résultat est
+  `NEEDS_INFORMATION`, sans candidat sélectionné ou co-optimal et sans
+  optimum certifié ;
+- `UNKNOWN` ne doit jamais être assimilé à `FALSE` ni supprimé implicitement
+  pour établir une optimalité ;
+- si tous les candidats sont `TRUE` ou `FALSE` et qu’aucun n’est `TRUE`, le
+  résultat est `NO_ADMISSIBLE_CANDIDATE`, sans candidat sélectionné ou
+  co-optimal ;
+- sinon, le résultat est `RESOLVED` : l’optimum est le minimum entier exact des
+  coûts des candidats `TRUE`, et les co-optimaux sont tous les candidats
+  `TRUE` atteignant ce minimum.
+
+L’ordre de la représentation des co-optimaux peut suivre celui du GDP, mais ne
+constitue pas un tie-break : la sémantique du résultat est l’ensemble complet
+des candidats au coût minimal.
+
 La qualification `optimal + complete_for_declared_scope` signifie uniquement
 que la solution est optimale dans le Grounded Decision Problem M1 effectivement
 résolu et que son grounding est complet relativement au DecisionScope M1, au

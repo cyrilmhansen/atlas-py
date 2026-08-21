@@ -14,7 +14,7 @@ from .values import FiniteSetSymbol, Integer, SequenceSymbol, Symbol, Value
 from .vocabulary import PredicateSpec, PropertySpec, Vocabulary
 from .store import Store, admit_fixture, open_store
 from .problem import (GroundedCandidate, GroundedDecisionProblem, M1Objective,
-                      ObjectiveValue)
+                      M1SelectionResult, ObjectiveValue, SelectionStatus)
 
 __all__ = [
     "AdmissionError", "AtlasError", "ClosedStoreError", "GroundingError",
@@ -29,4 +29,5 @@ __all__ = [
     "PredicateSpec", "PropertySpec", "Vocabulary", "Store", "open_store",
     "admit_fixture",
     "ObjectiveValue", "M1Objective", "GroundedCandidate", "GroundedDecisionProblem",
+    "SelectionStatus", "M1SelectionResult",
 ]

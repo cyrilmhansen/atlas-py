@@ -737,6 +737,12 @@ class Store:
             raise GroundingError("unknown grounded decision problem")
         return problem
 
+    def select_m1(self, problem_id):
+        """Purely select from the exact persisted GDP identified by problem_id."""
+        from .problem import _select_m1
+        ident = problem_id if type(problem_id) is DecisionProblemId else DecisionProblemId(problem_id)
+        return _select_m1(ident, self.decision_problem(ident))
+
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations
 

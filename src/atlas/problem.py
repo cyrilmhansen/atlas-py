@@ -5,6 +5,7 @@ It does not evaluate rules, discover descriptions, or write store state.
 """
 
 from dataclasses import dataclass
+from enum import Enum
 
 from .errors import GroundingError, ValidationError
 from .identity import (ContextId, DecisionProblemId, DecisionScopeId, DescriptionId,
@@ -97,6 +98,37 @@ class GroundedDecisionProblem:
             raise ValidationError("grounded decision problem contains duplicate candidates")
 
 
+class SelectionStatus(str, Enum):
+    RESOLVED = "resolved"
+    NEEDS_INFORMATION = "needs_information"
+    NO_ADMISSIBLE_CANDIDATE = "no_admissible_candidate"
+
+
+@dataclass(frozen=True, slots=True)
+class M1SelectionResult:
+    """Pure M1 selection result anchored to one persisted GDP identity."""
+
+    source: DecisionProblemId
+    status: SelectionStatus
+    optimum: Integer | None
+    co_optima: tuple[DescriptionId, ...]
+
+    def __post_init__(self):
+        if type(self.source) is not DecisionProblemId or type(self.status) is not SelectionStatus:
+            raise ValidationError("invalid M1 selection source or status")
+        if self.optimum is not None and type(self.optimum) is not Integer:
+            raise ValidationError("M1 selection optimum requires an exact integer")
+        if type(self.co_optima) is not tuple or any(type(x) is not DescriptionId for x in self.co_optima):
+            raise ValidationError("M1 selection co-optima require exact description identities")
+        if len(set(self.co_optima)) != len(self.co_optima):
+            raise ValidationError("M1 selection co-optima must be distinct")
+        if self.status is SelectionStatus.RESOLVED:
+            if self.optimum is None or not self.co_optima:
+                raise ValidationError("resolved M1 selection requires an optimum and co-optima")
+        elif self.optimum is not None or self.co_optima:
+            raise ValidationError("unresolved M1 selection must not expose an optimum")
+
+
 PROBLEM_SCHEMA = "atlas.core-v1.grounded-decision-problem/1"
 
 
@@ -126,6 +158,42 @@ def grounded_decision_problem_payload(problem_id, problem):
             }} for item in problem.candidates],
         "grounding_status": problem.grounding_status.value,
     }
+
+
+def _select_m1(problem_id, problem):
+    """Purely select from one GDP supplied by the authoritative Store lookup."""
+    if type(problem_id) is not DecisionProblemId or type(problem) is not GroundedDecisionProblem:
+        raise ValidationError("M1 selection requires an exact GDP identity and problem")
+
+    # Validate every local candidate invariant before UNKNOWN can short-circuit
+    # the selection result.  This helper cannot establish persistence; that is
+    # the Store's responsibility.
+    for candidate in problem.candidates:
+        if candidate.truth is EvaluationTruth.TRUE:
+            if candidate.objective_value is None:
+                raise ValidationError("TRUE candidate has no exact M1 objective value")
+            if type(candidate.objective_value) is not ObjectiveValue:
+                raise ValidationError("TRUE candidate has an invalid M1 objective value")
+            if (candidate.objective_value.property != problem.objective.property or
+                    candidate.objective_value.version != problem.objective.version or
+                    candidate.objective_value.epistemic_status != problem.objective.epistemic_status):
+                raise ValidationError("TRUE candidate objective value disagrees with problem objective")
+        elif candidate.objective_value is not None:
+            raise ValidationError("non-TRUE candidate must not have an M1 objective value")
+
+    if any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in problem.candidates):
+        return M1SelectionResult(problem_id, SelectionStatus.NEEDS_INFORMATION, None, ())
+
+    true_candidates = tuple(candidate for candidate in problem.candidates
+                            if candidate.truth is EvaluationTruth.TRUE)
+    if not true_candidates:
+        return M1SelectionResult(problem_id, SelectionStatus.NO_ADMISSIBLE_CANDIDATE, None, ())
+
+    optimum = min((candidate.objective_value.value.value for candidate in true_candidates))
+    optimum = Integer(optimum)
+    co_optima = tuple(candidate.candidate for candidate in true_candidates
+                      if candidate.objective_value.value == optimum)
+    return M1SelectionResult(problem_id, SelectionStatus.RESOLVED, optimum, co_optima)
 
 
 def _required_keys(value, keys, message):

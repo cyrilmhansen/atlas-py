@@ -34,15 +34,40 @@ def test_scenario_a_two_implementations_are_true_and_fallback_false(tmp_path):
     for fact in data["facts"]:
         if fact["id"] == "fact:r1-capabilities":
             fact["value"]["items"] = ["a", "b"]
+        if fact["id"] == "fact:r1-cost":
+            fact["value"]["value"] = "100"
+        if fact["id"] == "fact:r2-cost":
+            fact["value"]["value"] = "50"
     data["descriptions"].append({"id": "implementation:fallback", "label": "fallback"})
     data["facts"].append({"id": "fact:fallback-capabilities", "kind": "property", "description": "implementation:fallback", "property": "available-capabilities", "value": {"kind": "finite_set<symbol>", "items": ["a"]}, "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]})
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
     # r1 and r2 stand for CPU/GPU here; both cover the request and carry exact costs.
     before, after = run(store, "decision-scope:mechanisms", ("realization:r1", "realization:r2", "implementation:fallback"))
     assert [x.truth for x in after.candidates] == [EvaluationTruth.TRUE, EvaluationTruth.TRUE, EvaluationTruth.FALSE]
-    assert after.candidates[1].objective_value.value == Integer(2)
+    assert after.candidates[1].objective_value.value == Integer(50)
     assert after == before
     assert not hasattr(after, "winner") and not hasattr(after, "selected")
+
+
+def test_scenario_a_selection_returns_the_unique_optimum(tmp_path):
+    data = base()
+    for fact in data["facts"]:
+        if fact["id"] == "fact:r1-capabilities":
+            fact["value"]["items"] = ["a", "b"]
+        if fact["id"] == "fact:r1-cost":
+            fact["value"]["value"] = "100"
+        if fact["id"] == "fact:r2-cost":
+            fact["value"]["value"] = "50"
+    data["descriptions"].append({"id": "implementation:fallback", "label": "fallback"})
+    data["facts"].append({"id": "fact:fallback-capabilities", "kind": "property", "description": "implementation:fallback", "property": "available-capabilities", "value": {"kind": "finite_set<symbol>", "items": ["a"]}, "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]})
+    store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
+    _, problem = run(store, "decision-scope:selection", ("realization:r1", "realization:r2", "implementation:fallback"))
+    reopened = open_store(tmp_path / "atlas.sqlite")
+    before_selection = reopened._db.execute("SELECT kind,id,payload FROM records ORDER BY kind,id").fetchall()
+    result = reopened.select_m1("decision-problem:selection")
+    assert result == M1SelectionResult(DecisionProblemId("decision-problem:selection"), SelectionStatus.RESOLVED, Integer(50), (DescriptionId("realization:r2"),))
+    assert reopened._db.execute("SELECT kind,id,payload FROM records ORDER BY kind,id").fetchall() == before_selection
+    assert problem.scope_id == DecisionScopeId("decision-scope:selection")
 
 
 def test_scenario_b_finite_inspection_can_still_produce_unknown(tmp_path):
@@ -53,6 +78,18 @@ def test_scenario_b_finite_inspection_can_still_produce_unknown(tmp_path):
     assert [x.truth for x in after.candidates] == [EvaluationTruth.UNKNOWN, EvaluationTruth.TRUE]
     assert after.candidates[0].objective_value is None
     assert after == before
+
+
+def test_scenario_b_unknown_blocks_optimality_even_with_known_true(tmp_path):
+    data = base()
+    data["facts"] = [x for x in data["facts"] if x["id"] != "fact:r1-capabilities"]
+    store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
+    _, problem = run(store, "decision-scope:unknown-selection", ("realization:r1", "realization:r2"))
+    reopened = open_store(tmp_path / "atlas.sqlite")
+    result = reopened.select_m1("decision-problem:unknown-selection")
+    assert [x.truth for x in problem.candidates] == [EvaluationTruth.UNKNOWN, EvaluationTruth.TRUE]
+    assert result.status is SelectionStatus.NEEDS_INFORMATION
+    assert result.optimum is None and result.co_optima == ()
 
 
 def test_scenario_c_context_exclusion_is_not_absence(tmp_path):
@@ -98,6 +135,8 @@ def test_scenario_d_v1_and_v2_are_historical_and_separate(tmp_path):
     assert [x.objective_value.value for x in restored2.candidates if x.objective_value] == [Integer(30), Integer(80)]
     assert all(x.candidate != DescriptionId("implementation:npu") for x in restored1.candidates)
     assert any(x.candidate == DescriptionId("implementation:npu") for x in restored2.candidates)
+    assert reopened.select_m1("decision-problem:v1").co_optima == (DescriptionId("realization:r1"),)
+    assert reopened.select_m1("decision-problem:v2").status is SelectionStatus.NEEDS_INFORMATION
 
 
 def test_scenario_e_independent_context_scopes_do_not_leak(tmp_path):
@@ -122,3 +161,5 @@ def test_scenario_e_independent_context_scopes_do_not_leak(tmp_path):
     reopened = open_store(path)
     assert reopened.decision_problem("decision-problem:desktop").context == ContextId("context:desktop")
     assert reopened.decision_problem("decision-problem:embedded").candidates[0].exclusion_reason == "excluded_by_context"
+    assert reopened.select_m1("decision-problem:desktop").status is SelectionStatus.RESOLVED
+    assert reopened.select_m1("decision-problem:embedded").status is SelectionStatus.NEEDS_INFORMATION
