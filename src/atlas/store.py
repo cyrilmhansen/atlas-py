@@ -1,12 +1,16 @@
 from __future__ import annotations
 import copy, json, sqlite3
 from pathlib import Path
-from .errors import AdmissionError, AtlasError, ClosedStoreError, ValidationError
+from collections.abc import Mapping
+from types import MappingProxyType
+from .errors import AdmissionError, AtlasError, ClosedStoreError, GroundingError, ValidationError
 from .identity import *
 from .model import *
 from .model import thaw
 from .values import value_from_json, value_to_json
 from .vocabulary import *
+from .evidence import validate_grounding_evidence
+from .provenance import canonical_provenance
 
 _STATUSES={"exact","bound","estimate","unknown"}; _POLARITIES={"positive","negative"}
 
@@ -20,7 +24,7 @@ class _Isolated(dict):
     def __contains__(self, key): return dict.__contains__(self, self._legacy(key))
     def __getitem__(self, key): return dict.__getitem__(self, self._legacy(key))
 
-def _id(cls, raw): return cls(raw) if type(raw) is str else (_raise("identifier must be exact text"))
+def _id(cls, raw): return raw if type(raw) is cls else (cls(raw) if type(raw) is str else (_raise("identifier must be exact text")))
 def _raise(msg): raise ValidationError(msg)
 def _exact_text(raw, message="text must be exact and non-empty"):
     if type(raw) is not str or not raw or any(0xD800 <= ord(char) <= 0xDFFF for char in raw): raise ValidationError(message)
@@ -34,7 +38,7 @@ class Store:
         self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
         self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
         self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.isolated=_Isolated(); self._load()
+        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.isolated=_Isolated(); self._load()
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
@@ -42,13 +46,17 @@ class Store:
     def _load(self):
         row=self._db.execute("SELECT payload FROM meta WHERE key='vocabulary'").fetchone()
         if row: self._configure_loaded(json.loads(row[0]))
-        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'snapshot' THEN 7 ELSE 8 END, id"))
+        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 ELSE 9 END, id"))
         for row in rows:
             if row["kind"] in {"description", "source", "rule", "context"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
         for row in rows:
-            if row["kind"] in {"property", "relation", "snapshot"}:
+            if row["kind"] in {"property", "relation", "derivation"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
+        for row in rows:
+            if row["kind"] == "snapshot":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
+        self._validate_derivation_pairs()
 
     def _migrate_knowledge_identity(self):
         known={row["knowledge_id"] for row in self._db.execute("SELECT knowledge_id FROM knowledge_identity")}
@@ -101,6 +109,151 @@ class Store:
             self._db.execute("INSERT INTO knowledge_identity(knowledge_id,kind,row_id) VALUES(?,?,?)", (knowledge_id,kind,ident))
         self._db.execute("INSERT INTO records(id,kind,payload) VALUES(?,?,?)",(ident,kind,json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"))))
 
+    def _isolation(self, kind, ident, reason):
+        self.isolated[(kind, ident)]={"kind":kind,"row_id":ident,"reason":reason}
+
+    def _validate_derivation_pairs(self):
+        """Compute the complete restored derivation closure before publishing."""
+        records, derivations, snapshots = dict(self.records), dict(self.derivations), dict(self.snapshots)
+        invalid, invalid_snapshots = {}, {}
+
+        def mark(ident, reason):
+            invalid.setdefault(ident, reason)
+
+        # Local pair/environment validation sees every candidate, never a
+        # progressively pruned public map.
+        for ident, record in sorted(records.items()):
+            if isinstance(record, RelationAssertion) and record.derivation_id is not None:
+                derivation=derivations.get(record.derivation_id.value)
+                reason=self._derivation_error(record, derivation, records, snapshots)
+                if reason is not None:
+                    mark(ident, reason)
+                    if derivation is not None: mark(derivation.knowledge_id.value, reason)
+        for ident, derivation in sorted(derivations.items()):
+            record=records.get(ident)
+            if not isinstance(record, RelationAssertion) or record.derivation_id != derivation.knowledge_id:
+                mark(ident, "derivation has no matching relation")
+
+        # Deterministic Tarjan SCC over derived candidates. Facts are leaves;
+        # missing dependencies are handled by propagation below.
+        graph={ident: tuple(dep.value for dep in d.dependencies if dep.value in derivations)
+               for ident, d in derivations.items()}
+        index=0; indices={}; lowlinks={}; stack=[]; on_stack=set(); components=[]
+        def strongconnect(node):
+            nonlocal index
+            indices[node]=lowlinks[node]=index; index += 1
+            stack.append(node); on_stack.add(node)
+            for child in sorted(graph[node]):
+                if child not in indices:
+                    strongconnect(child); lowlinks[node]=min(lowlinks[node], lowlinks[child])
+                elif child in on_stack:
+                    lowlinks[node]=min(lowlinks[node], indices[child])
+            if lowlinks[node] == indices[node]:
+                component=[]
+                while True:
+                    child=stack.pop(); on_stack.remove(child); component.append(child)
+                    if child == node: break
+                components.append(tuple(sorted(component)))
+        for node in sorted(graph):
+            if node not in indices: strongconnect(node)
+        for component in components:
+            if len(component) > 1 or component[0] in graph[component[0]]:
+                for ident in component: mark(ident, "derivation dependency cycle")
+
+        def dependency_is_valid(ident):
+            record=records.get(ident)
+            if record is None: return False
+            if ident in derivations:
+                return ident not in invalid and isinstance(record, RelationAssertion) and record.derivation_id == derivations[ident].knowledge_id
+            return not isinstance(record, RelationAssertion) or record.derivation_id is None
+
+        # Alternate dependency propagation and historical snapshot invalidation
+        # until neither set changes.
+        for ident, snapshot in sorted(snapshots.items()):
+            if snapshot.parent is not None and snapshot.parent.value not in snapshots:
+                invalid_snapshots[ident]="snapshot parent is invalid or absent"
+        while True:
+            before=(frozenset(invalid), frozenset(invalid_snapshots))
+            for ident, derivation in sorted(derivations.items()):
+                if ident not in invalid and any(not dependency_is_valid(dep.value) for dep in derivation.dependencies):
+                    mark(ident, "invalid dependency")
+            for ident, snapshot in sorted(snapshots.items()):
+                if ident not in invalid_snapshots and (
+                    (snapshot.parent is not None and snapshot.parent.value in invalid_snapshots) or
+                    any(record_id.value not in records or record_id.value in invalid for record_id in snapshot.record_ids)):
+                    invalid_snapshots[ident]="snapshot references an invalid derived relation"
+            for ident, derivation in sorted(derivations.items()):
+                if ident not in invalid and derivation.snapshot.value in invalid_snapshots:
+                    mark(ident, "derivation references an invalid snapshot")
+            after=(frozenset(invalid), frozenset(invalid_snapshots))
+            if before == after: break
+
+        # Publish only the fixed-point result; isolation remains physical-row
+        # keyed, so relation and derivation rows cannot collapse into one key.
+        for ident, reason in sorted(invalid.items()):
+            derivations.pop(ident, None); records.pop(ident, None)
+            if ident in self.derivations: self._isolation("derivation", ident, reason)
+            if ident in self.records: self._isolation("relation", ident, reason)
+        for ident, reason in sorted(invalid_snapshots.items()):
+            snapshots.pop(ident, None)
+            if ident in self.snapshots: self._isolation("snapshot", ident, reason)
+        self.records, self.derivations, self.snapshots = records, derivations, snapshots
+
+    def _derivation_error(self, relation, derivation, records=None, snapshots=None):
+        records=self.records if records is None else records
+        snapshots=self.snapshots if snapshots is None else snapshots
+        if not isinstance(derivation, Derivation) or derivation.knowledge_id != relation.id:
+            return "derived relation has no valid derivation"
+        snapshot=snapshots.get(derivation.snapshot.value)
+        if snapshot is None:
+            return "derivation references an invalid snapshot"
+        if derivation.context not in snapshot.context_ids:
+            return "derivation references an invalid context"
+        rule_matches=[x for x in snapshot.rule_definitions if x[0] == derivation.rule_id.value]
+        if len(rule_matches) != 1 or rule_matches[0][1] != derivation.rule_version:
+            return "derivation references an invalid rule version"
+        try:
+            payload=json.loads(rule_matches[0][2]); declared=tuple(payload["participants"]); head=payload["head"]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return "derivation references an invalid rule definition"
+        if tuple(name for name, _ in derivation.bindings) != declared or any(description not in snapshot.description_ids for _, description in derivation.bindings):
+            return "derivation bindings disagree with historical rule"
+        binding=dict(derivation.bindings)
+        if tuple(binding[name] for name in head.get("participants", ())) != relation.participants:
+            return "derived relation participants disagree with derivation"
+        if head.get("predicate") != relation.predicate.value or head.get("version") != relation.version or head.get("polarity") != relation.polarity:
+            return "derived relation term disagrees with derivation"
+        if len(set(derivation.dependencies)) != len(derivation.dependencies):
+            return "derivation contains duplicate dependencies"
+        if any(dep.value not in records or dep not in snapshot.record_ids for dep in derivation.dependencies):
+            return "derivation references an invalid dependency"
+        context_matches=[x for x in snapshot.context_definitions if x[0] == derivation.context.value]
+        if len(context_matches) != 1:
+            return "derivation context is not fixed by snapshot"
+        expected_scope = context_matches[0][1][0] if len(context_matches[0][1]) == 1 else tuple(context_matches[0][1])
+        if relation.scope != expected_scope:
+            return "derived relation scope disagrees with historical context"
+        expected_provenance = canonical_provenance(
+            source for dependency in derivation.dependencies
+            for source in records[dependency.value].provenance)
+        if canonical_provenance(relation.provenance) != expected_provenance:
+            return "derived relation provenance disagrees with dependencies"
+        try:
+            conclusion=GroundedConclusion(
+                RelationTerm(relation.predicate, relation.version, relation.participants),
+                relation.polarity, relation.epistemic_status, relation.scope, relation.provenance,
+                derivation.rule_id, derivation.rule_version, derivation.dependencies)
+            result=GroundingResult(derivation.rule_id, derivation.rule_version,
+                                   MappingProxyType(dict(derivation.bindings)), EvaluationTruth.TRUE,
+                                   conclusion, derivation.dependencies, (), (),
+                                   derivation.snapshot, derivation.context, derivation.grounding_evidence)
+            validate_grounding_evidence(result, declared)
+        except (AtlasError, TypeError, ValueError):
+            return "derivation grounding evidence disagrees with persisted pair"
+        if any(source.value not in self.sources for source in relation.provenance):
+            return "derived relation references invalid provenance"
+        return None
+
     def _restore(self, kind, p, physical_id=None):
         if type(p) is not dict: raise ValidationError("persisted payload must be an object")
         if physical_id is not None and ("id" not in p or type(p["id"]) is not str or p["id"] != physical_id):
@@ -123,17 +276,21 @@ class Store:
             head=body["head"]; pred=_id(PredicateId,head["predicate"]); version=_exact_text(head["version"])
             spec=self.vocabulary.predicates.get((pred.value,version)); participants=tuple(_rule_text(x) for x in body["participants"]); hparts=tuple(_rule_text(x) for x in head.get("participants",[]))
             if spec is None or len(participants)!=len(set(participants)) or hparts!=participants or len(hparts)!=spec.arity or head.get("polarity") not in _POLARITIES: raise ValidationError("invalid persisted rule head")
-            _validate_rule_payload(body, self.vocabulary)
+            _validate_rule_payload(body, self.vocabulary, require_exact=True)
             if type(p["evaluation_supported"]) is not bool: raise ValidationError("invalid persisted rule evaluation status")
             self.rules[p["id"]]=Rule(_id(RuleId,p["id"]),_exact_text(p["version"]),body,p["evaluation_supported"])
         elif kind=="snapshot":
-            required=("id","parent","record_ids","predicate_versions","property_versions","rule_versions","context_ids","context_definitions","rule_definitions")
+            required=("id","parent","record_ids","predicate_versions","property_versions","rule_versions","context_ids","context_definitions","rule_definitions","description_ids")
             if any(field not in p for field in required): raise ValidationError("incomplete persisted snapshot")
-            if type(p["record_ids"]) is not list or type(p["predicate_versions"]) is not list or type(p["property_versions"]) is not list or type(p["rule_versions"]) is not list or type(p["context_ids"]) is not list or type(p["context_definitions"]) is not list or type(p["rule_definitions"]) is not list: raise ValidationError("invalid persisted snapshot structure")
+            if type(p["record_ids"]) is not list or type(p["predicate_versions"]) is not list or type(p["property_versions"]) is not list or type(p["rule_versions"]) is not list or type(p["context_ids"]) is not list or type(p["context_definitions"]) is not list or type(p["rule_definitions"]) is not list or type(p["description_ids"]) is not list: raise ValidationError("invalid persisted snapshot structure")
             ids=tuple(_id(KnowledgeId,x) for x in p["record_ids"])
+            description_ids=tuple(_id(DescriptionId,x) for x in p["description_ids"])
+            if len({x.value for x in description_ids}) != len(description_ids): raise ValidationError("snapshot description_ids contain a duplicate")
+            if any(x.value not in self.descriptions for x in description_ids): raise ValidationError("snapshot references invalid or absent description")
             if any(x.value not in self.records for x in ids): raise ValidationError("snapshot references invalid or absent record")
             parent=_id(SnapshotId,p["parent"]) if p["parent"] else None
-            if parent is not None and parent.value not in self.snapshots: raise ValidationError("snapshot parent is invalid or absent")
+            # Parent existence is checked after all snapshot candidates have
+            # been decoded; lexical/SQL row order is not semantic here.
             contexts=tuple(_id(ContextId,x) for x in p["context_ids"])
             if len({x.value for x in contexts}) != len(contexts):
                 raise ValidationError("snapshot context_ids contain a duplicate")
@@ -158,7 +315,7 @@ class Store:
             snapshot_rule_versions=tuple(tuple(x) for x in p["rule_versions"])
             if len(set(snapshot_rule_versions)) != len(snapshot_rule_versions) or len(set(rule_def_pairs)) != len(rule_def_pairs) or set(rule_def_pairs) != set(snapshot_rule_versions):
                 raise ValidationError("snapshot rule definitions do not exactly match rule_versions")
-            snap=Snapshot(_id(SnapshotId,p["id"]),parent,ids,tuple(tuple(x) for x in p["predicate_versions"]),tuple(tuple(x) for x in p["property_versions"]),snapshot_rule_versions,contexts,context_defs,rule_defs)
+            snap=Snapshot(_id(SnapshotId,p["id"]),parent,ids,tuple(tuple(x) for x in p["predicate_versions"]),tuple(tuple(x) for x in p["property_versions"]),snapshot_rule_versions,contexts,context_defs,rule_defs,description_ids)
             if any((x[0],x[1]) not in self.vocabulary.predicates for x in snap.predicate_versions) or any((x[0],x[1]) not in self.vocabulary.properties for x in snap.property_versions): raise ValidationError("snapshot vocabulary environment is unresolved")
             if any(not any(r.id.value==x[0] and r.version==x[1] for r in self.rules.values()) for x in snap.rule_versions): raise ValidationError("snapshot rule environment is unresolved")
             if any(x.value not in self.contexts for x in snap.context_ids): raise ValidationError("snapshot context environment is unresolved")
@@ -177,6 +334,15 @@ class Store:
                         del self.rules[ident]
                     raise ValidationError("snapshot rule definition is inconsistent")
             self.snapshots[p["id"]]=snap
+        elif kind=="derivation":
+            required=("id","knowledge_id","rule_id","rule_version","bindings","snapshot","context","dependencies","grounding_evidence")
+            if any(field not in p for field in required): raise ValidationError("incomplete persisted derivation")
+            if p["id"] != p["knowledge_id"]: raise ValidationError("derivation identity disagrees with knowledge identity")
+            knowledge_id=_id(KnowledgeId,p["knowledge_id"]); rule_id=_id(RuleId,p["rule_id"])
+            bindings=tuple((_exact_text(x["participant"]),_id(DescriptionId,x["description"])) for x in p["bindings"] if type(x) is dict and "participant" in x and "description" in x)
+            if type(p["bindings"]) is not list or len(bindings) != len(p["bindings"]): raise ValidationError("invalid persisted derivation bindings")
+            dependencies=tuple(_id(KnowledgeId,x) for x in p["dependencies"])
+            self.derivations[knowledge_id.value]=Derivation(knowledge_id,rule_id,_exact_text(p["rule_version"]),bindings,_id(SnapshotId,p["snapshot"]),_id(ContextId,p["context"]),dependencies,_exact_text(p["grounding_evidence"]))
         elif kind=="property":
             if not self._knowledge_owner(p["id"], kind, physical_id or p["id"]): raise ValidationError("knowledge identity is not the admitted owner")
             prop=_id(PropertyId,p["property"]); version=_exact_text(p["version"]); spec=self.vocabulary.properties.get((prop.value,version))
@@ -188,8 +354,10 @@ class Store:
         elif kind=="relation":
             if not self._knowledge_owner(p["id"], kind, physical_id or p["id"]): raise ValidationError("knowledge identity is not the admitted owner")
             pred=_id(PredicateId,p["predicate"]); version=_exact_text(p["version"]); spec=self.vocabulary.predicates.get((pred.value,version)); parts=tuple(_id(DescriptionId,x) for x in p["participants"]); prov=tuple(_id(SourceId,x) for x in p["provenance"])
-            if spec is None or len(parts)!=spec.arity or len(_unique_values(parts)) != len(parts) or any(x.value not in self.descriptions for x in parts) or any(x.value not in self.sources for x in prov) or not prov or p["polarity"] not in _POLARITIES or not _exact_text(p["scope"]) or p["epistemic_status"] not in _STATUSES: raise ValidationError("invalid persisted relation assertion")
-            self.records[p["id"]]=RelationAssertion(_id(KnowledgeId,p["id"]),pred,version,parts,p["polarity"],p["scope"],p["epistemic_status"],prov)
+            derivation_id=None if p.get("derivation_id") is None else _id(KnowledgeId,p["derivation_id"])
+            scope=p["scope"] if type(p["scope"]) is str else tuple(p["scope"])
+            if spec is None or len(parts)!=spec.arity or len(_unique_values(parts)) != len(parts) or any(x.value not in self.descriptions for x in parts) or any(x.value not in self.sources for x in prov) or not prov or p["polarity"] not in _POLARITIES or (type(p["scope"]) is not str and (derivation_id is None or type(p["scope"]) is not list)) or p["epistemic_status"] not in _STATUSES: raise ValidationError("invalid persisted relation assertion")
+            self.records[p["id"]]=RelationAssertion(_id(KnowledgeId,p["id"]),pred,version,parts,p["polarity"],scope,p["epistemic_status"],prov,derivation_id)
 
     def configure_vocabulary(self, raw, _commit=True):
         self._check(); predicates={}; properties={}
@@ -269,7 +437,8 @@ class Store:
                     head_participants = tuple(_rule_text(value) for value in head.get("participants", []))
                     polarity = _exact_text(head.get("polarity"))
                     if pred is None or len(head_participants) != pred.arity or len(head_participants) != len(participants) or head_participants != participants or polarity not in _POLARITIES: raise ValidationError("invalid rule head")
-                    _validate_rule_payload(body, self.vocabulary); safe_body = thaw(_freeze_json(body)); x=Rule(_id(RuleId,p["id"]),p["version"],safe_body,_rule_supported(safe_body)); _unique(rules,x.id.value,"rule"); rules[x.id.value]=x; pending.append((kind,x.id.value,{"id":x.id.value,"version":x.version,"payload":thaw(x.payload),"evaluation_supported":x.evaluation_supported}))
+                    normalized = _normalize_rule_payload(body, self.vocabulary)
+                    safe_body = thaw(_freeze_json(normalized)); x=Rule(_id(RuleId,p["id"]),p["version"],safe_body,_rule_supported(safe_body)); _unique(rules,x.id.value,"rule"); rules[x.id.value]=x; pending.append((kind,x.id.value,{"id":x.id.value,"version":x.version,"payload":thaw(x.payload),"evaluation_supported":x.evaluation_supported}))
                 elif kind=="context":
                     if type(p.get("visible_scopes")) is not list or any(type(z) is not str for z in p["visible_scopes"]): raise ValidationError("context scopes must be an exact list")
                     if type(p.get("enabled_rules")) is not list: raise ValidationError("context rules must be an exact list")
@@ -277,6 +446,11 @@ class Store:
                     if any(z.value not in rules for z in x.enabled_rules): raise ValidationError("unresolved context rule")
                     contexts[x.id.value]=x; pending.append((kind,x.id.value,p))
                 else: raise ValidationError("unsupported admission record")
+        except AtlasError:
+            # Preserve structural validation errors (notably static rule type
+            # errors) at the admission boundary instead of disguising them as
+            # generic admission failures.
+            raise
         except (KeyError, TypeError, ValueError) as e: raise AdmissionError(str(e)) from e
         try:
             for kind,ident,p in pending: self._persist(kind,ident,p)
@@ -293,13 +467,13 @@ class Store:
         self._check(); sid=_id(SnapshotId,ident)
         if sid.value in self.snapshots: raise AdmissionError("duplicate snapshot identity")
         if parent is not None and _id(SnapshotId,parent).value not in self.snapshots: raise ValidationError("unresolved snapshot parent")
-        ids=tuple(_id(KnowledgeId,x) for x in sorted(self.records));
+        ids=tuple(_id(KnowledgeId,x) for x in sorted(self.records)); description_ids=tuple(_id(DescriptionId,x) for x in sorted(self.descriptions));
         predicates=tuple(sorted(self.vocabulary.predicates)); properties=tuple(sorted(self.vocabulary.properties)); rules=tuple(sorted((r.id.value,r.version) for r in self.rules.values())); contexts=tuple(_id(ContextId,x) for x in sorted(self.contexts))
         context_definitions=tuple((x.id.value,x.visible_scopes,tuple(r.value for r in x.enabled_rules)) for x in (self.contexts[k] for k in sorted(self.contexts)))
         rule_definitions=tuple((r.id.value,r.version,json.dumps(thaw(r.payload),ensure_ascii=False,sort_keys=True,separators=(",",":")),r.evaluation_supported) for r in (self.rules[k] for k in sorted(self.rules)))
-        snap=Snapshot(sid,_id(SnapshotId,parent) if parent else None,ids,predicates,properties,rules,contexts,context_definitions,rule_definitions)
+        snap=Snapshot(sid,_id(SnapshotId,parent) if parent else None,ids,predicates,properties,rules,contexts,context_definitions,rule_definitions,description_ids)
         try:
-            self._persist("snapshot",sid.value,{"id":sid.value,"parent":str(snap.parent) if snap.parent else None,"record_ids":[str(x) for x in ids],"predicate_versions":[list(x) for x in predicates],"property_versions":[list(x) for x in properties],"rule_versions":[list(x) for x in rules],"context_ids":[str(x) for x in contexts],"context_definitions":[{"id":i,"visible_scopes":list(scopes),"enabled_rules":list(enabled)} for i,scopes,enabled in context_definitions],"rule_definitions":[{"id":i,"version":v,"payload":json.loads(payload),"evaluation_supported":supported} for i,v,payload,supported in rule_definitions]})
+            self._persist("snapshot",sid.value,{"id":sid.value,"parent":str(snap.parent) if snap.parent else None,"record_ids":[str(x) for x in ids],"predicate_versions":[list(x) for x in predicates],"property_versions":[list(x) for x in properties],"rule_versions":[list(x) for x in rules],"context_ids":[str(x) for x in contexts],"context_definitions":[{"id":i,"visible_scopes":list(scopes),"enabled_rules":list(enabled)} for i,scopes,enabled in context_definitions],"rule_definitions":[{"id":i,"version":v,"payload":json.loads(payload),"evaluation_supported":supported} for i,v,payload,supported in rule_definitions],"description_ids":[str(x) for x in description_ids]})
             if _commit: self._db.commit()
         except Exception:
             if _commit: self._db.rollback()
@@ -311,6 +485,136 @@ class Store:
         self._check(); record=self.records.get(_id(KnowledgeId,ident).value); return record if snapshot is None or record and record.id in self.open_snapshot(snapshot).record_ids else None
     def find(self, *, kind=None, snapshot=None):
         self._check(); allowed=None if snapshot is None else set(self.open_snapshot(snapshot).record_ids); return tuple(r for r in self.records.values() if (allowed is None or r.id in allowed) and (kind is None or (kind=="property" and isinstance(r,PropertyAssertion)) or (kind=="relation" and isinstance(r,RelationAssertion))))
+    def ground(self, rule_id, bindings, snapshot, context):
+        from .rules import ground
+        return ground(self, rule_id, bindings, snapshot, context)
+
+    def admit_derived(self, knowledge_id, grounding_result):
+        """Persist exactly the proof already contained in a TRUE grounding."""
+        self._check()
+        if type(grounding_result) is not GroundingResult:
+            raise ValidationError("admit_derived requires an exact GroundingResult")
+        if grounding_result.truth is not EvaluationTruth.TRUE or type(grounding_result.conclusion) is not GroundedConclusion:
+            raise ValidationError("only TRUE groundings with a conclusion can be admitted")
+        derived_id=_id(KnowledgeId,knowledge_id)
+        conclusion=grounding_result.conclusion
+        if conclusion.dependencies != grounding_result.effective_dependencies:
+            raise ValidationError("grounding conclusion dependencies disagree with result")
+        if grounding_result.missing_reads or grounding_result.ambiguous_reads:
+            raise ValidationError("derived grounding cannot contain failed reads")
+        if len(set(grounding_result.effective_dependencies)) != len(grounding_result.effective_dependencies):
+            raise ValidationError("grounding contains duplicate dependencies")
+        if conclusion.rule_id != grounding_result.rule_id or conclusion.rule_version != grounding_result.rule_version:
+            raise ValidationError("grounding rule metadata is inconsistent")
+        if derived_id.value in self.records:
+            raise AdmissionError("duplicate knowledge identity")
+        snapshot=self.snapshots.get(grounding_result.snapshot.value)
+        if snapshot is None:
+            raise GroundingError("derivation snapshot does not exist")
+        if grounding_result.context not in snapshot.context_ids:
+            raise GroundingError("derivation context is not present in snapshot")
+        rule_matches=[x for x in snapshot.rule_definitions if x[0] == grounding_result.rule_id.value]
+        if len(rule_matches) != 1 or rule_matches[0][1] != grounding_result.rule_version:
+            raise GroundingError("derivation rule version is not fixed by snapshot")
+        try:
+            historical=json.loads(rule_matches[0][2]); declared=tuple(historical["participants"]); head=historical["head"]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GroundingError("invalid historical derivation rule") from exc
+        bindings=grounding_result.bindings
+        if not isinstance(bindings, Mapping):
+            raise ValidationError("grounding bindings require a mapping")
+        if tuple(bindings) != declared or any(type(name) is not str or type(value) is not DescriptionId for name,value in bindings.items()):
+            raise ValidationError("grounding bindings do not exactly match the rule")
+        validate_grounding_evidence(grounding_result, declared)
+        if any(bindings[name] not in snapshot.description_ids for name in declared):
+            raise GroundingError("derivation binding is outside the grounding snapshot")
+        if tuple(bindings[name] for name in head.get("participants", ())) != conclusion.term.participants:
+            raise ValidationError("grounded conclusion participants disagree with bindings")
+        if conclusion.term.predicate.value != head.get("predicate") or conclusion.term.version != head.get("version") or conclusion.polarity != head.get("polarity"):
+            raise ValidationError("grounded conclusion term disagrees with historical rule")
+        if any(dep.value not in self.records or dep not in snapshot.record_ids for dep in grounding_result.effective_dependencies):
+            raise GroundingError("derivation dependency is absent from the grounding snapshot")
+        context_matches=[x for x in snapshot.context_definitions if x[0] == grounding_result.context.value]
+        if len(context_matches) != 1:
+            raise GroundingError("derivation context definition is absent from snapshot")
+        expected_scope=context_matches[0][1][0] if len(context_matches[0][1]) == 1 else tuple(context_matches[0][1])
+        if conclusion.scope != expected_scope:
+            raise ValidationError("grounded conclusion scope disagrees with historical context")
+        expected_provenance=canonical_provenance(
+            source for dependency in grounding_result.effective_dependencies
+            for source in self.records[dependency.value].provenance)
+        canonical_conclusion_provenance = canonical_provenance(conclusion.provenance)
+        if canonical_conclusion_provenance != expected_provenance or not canonical_conclusion_provenance:
+            raise ValidationError("grounded conclusion provenance disagrees with dependencies")
+        if any(source.value not in self.sources for source in canonical_conclusion_provenance):
+            raise ValidationError("derived relation requires resolvable provenance")
+        if self._would_cycle(derived_id, grounding_result.effective_dependencies):
+            raise ValidationError("derivation dependency cycle")
+        ordered_bindings=tuple((name, bindings[name]) for name in declared)
+        relation_scope=conclusion.scope if type(conclusion.scope) is str else tuple(conclusion.scope)
+        relation_payload={
+            "id": derived_id.value, "predicate": conclusion.term.predicate.value,
+            "version": conclusion.term.version, "participants":[x.value for x in conclusion.term.participants],
+            "polarity": conclusion.polarity, "scope": relation_scope if type(relation_scope) is str else list(relation_scope),
+            "epistemic_status": conclusion.epistemic_status,
+            "provenance":[x.value for x in canonical_conclusion_provenance], "derivation_id": derived_id.value,
+        }
+        derivation_payload={
+            "id": derived_id.value, "knowledge_id": derived_id.value,
+            "rule_id": grounding_result.rule_id.value, "rule_version": grounding_result.rule_version,
+            "bindings":[{"participant":name,"description":description.value} for name,description in ordered_bindings],
+            "snapshot": grounding_result.snapshot.value, "context": grounding_result.context.value,
+            "dependencies":[x.value for x in grounding_result.effective_dependencies],
+            "grounding_evidence": grounding_result.grounding_evidence,
+        }
+        relation=RelationAssertion(derived_id, conclusion.term.predicate, conclusion.term.version,
+                                   conclusion.term.participants, conclusion.polarity, relation_scope,
+                                   conclusion.epistemic_status, canonical_conclusion_provenance, derived_id)
+        derivation=Derivation(derived_id, grounding_result.rule_id, grounding_result.rule_version,
+                              ordered_bindings, grounding_result.snapshot, grounding_result.context,
+                              grounding_result.effective_dependencies, grounding_result.grounding_evidence)
+        try:
+            self._persist("relation", derived_id.value, relation_payload)
+            self._persist("derivation", derived_id.value, derivation_payload)
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        self.records[derived_id.value]=relation
+        self.derivations[derived_id.value]=derivation
+        return relation
+
+    def _would_cycle(self, proposed, dependencies):
+        def reaches(current, target, seen):
+            if current == target: return True
+            if current in seen: return False
+            seen.add(current)
+            derivation=self.derivations.get(current.value)
+            return derivation is not None and any(reaches(dep, target, seen) for dep in derivation.dependencies)
+        return any(reaches(dep, proposed, set()) for dep in dependencies)
+
+    def dependencies(self, knowledge_id, transitive=False):
+        self._check(); ident=_id(KnowledgeId,knowledge_id)
+        if ident.value not in self.records: raise GroundingError("unknown knowledge identity")
+        direct=self.derivations[ident.value].dependencies if ident.value in self.derivations else ()
+        if not transitive: return direct
+        result=[]; seen=set()
+        def visit(node):
+            if node in seen: return
+            seen.add(node); result.append(node)
+            for child in self.dependencies(node, transitive=False): visit(child)
+        for dep in direct: visit(dep)
+        return tuple(result)
+
+    def provenance(self, knowledge_id, transitive=False):
+        self._check(); ident=_id(KnowledgeId,knowledge_id)
+        record=self.records.get(ident.value)
+        if record is None: raise GroundingError("unknown knowledge identity")
+        sources={source for source in record.provenance}
+        if transitive:
+            for dep in self.dependencies(ident, transitive=True):
+                sources.update(self.records[dep.value].provenance)
+        return canonical_provenance(sources)
     def close(self):
         if not self._closed: self._db.close(); self._closed=True
 
@@ -328,7 +632,7 @@ def _rule_text(value):
     if type(value) is not str or not value or any(0xD800 <= ord(char) <= 0xDFFF for char in value): raise ValidationError("rule participant must be an exact non-empty string")
     return value
 
-def _validate_rule_payload(body, vocabulary):
+def _validate_rule_payload(body, vocabulary, require_exact=False):
     participants=tuple(_rule_text(value) for value in body["participants"])
     def check_expr(expr):
         if type(expr) is not dict: raise ValidationError("invalid rule expression")
@@ -339,11 +643,45 @@ def _validate_rule_payload(body, vocabulary):
             versions=[key[1] for key in vocabulary.properties if key[0] == property_id.value]
             requested=expr.get("version")
             if requested is not None and (type(requested) is not str or (property_id.value, requested) not in vocabulary.properties): raise ValidationError("unresolved rule property version")
-            if requested is None and len(versions) != 1: raise ValidationError("ambiguous rule property version")
+            if requested is None and (require_exact or len(versions) != 1): raise ValidationError("rule property version is not resolved")
+            version = requested if requested is not None else versions[0]
+            return vocabulary.properties[(property_id.value, version)].value_kind
         elif op in {"set_union", "set_subset"}:
-            check_expr(expr.get("left")); check_expr(expr.get("right"))
+            left_type, right_type = check_expr(expr.get("left")), check_expr(expr.get("right"))
+            # An unknown child makes the complete expression an unsupported
+            # extension.  Known operators, however, must have the exact M1
+            # operand types and may not fall through to UNKNOWN at runtime.
+            if left_type is None or right_type is None:
+                return None
+            if left_type != "finite_set<symbol>" or right_type != "finite_set<symbol>":
+                raise ValidationError("set operator requires finite_set<symbol> operands")
+            return "finite_set<symbol>" if op == "set_union" else "truth"
         # Other operators remain persistable but unsupported in M1.
-    check_expr(body.get("when"))
+        return None
+    root_type = check_expr(body.get("when"))
+    if root_type is not None and root_type != "truth":
+        raise ValidationError("rule condition must be a truth-valued expression")
+
+def _normalize_rule_payload(body, vocabulary):
+    """Resolve compact property references once, at rule admission."""
+    normalized = _freeze_json(body)
+    def normalize_expr(expr):
+        if type(expr) is not dict: return expr
+        result = dict(expr)
+        op = result.get("op")
+        if op == "property" and "version" not in result:
+            prop = _id(PropertyId, result.get("property"))
+            versions = [version for ident, version in vocabulary.properties if ident == prop.value]
+            if len(versions) != 1: raise ValidationError("ambiguous rule property version")
+            result["version"] = versions[0]
+        if op in {"set_union", "set_subset"}:
+            result["left"] = normalize_expr(result.get("left"))
+            result["right"] = normalize_expr(result.get("right"))
+        return result
+    result = dict(normalized)
+    result["when"] = normalize_expr(result.get("when"))
+    _validate_rule_payload(result, vocabulary, require_exact=True)
+    return result
 
 def _freeze_json(value):
     if type(value) is dict:
@@ -369,7 +707,7 @@ def admit_fixture(store, fixture):
     # deliberately shares only the SQLite connection, whose transaction is
     # committed once the candidate is complete.
     candidate=copy.copy(store)
-    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "isolated"):
+    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "isolated"):
         setattr(candidate, name, dict(getattr(store, name)))
     batch=[]
     store._db.execute("BEGIN")
@@ -392,6 +730,6 @@ def admit_fixture(store, fixture):
     except Exception:
         store._db.rollback()
         raise
-    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "isolated"):
+    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "isolated"):
         setattr(store, name, getattr(candidate, name))
     return store
