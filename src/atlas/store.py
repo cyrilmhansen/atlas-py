@@ -16,7 +16,9 @@ from .scope import (evaluate as evaluate_scope, grounding_payload, restore_groun
                     compute_declared_scope_completeness, validate_grounding_manifest,
                     _manifest as _manifest_for_store)
 from .problem import (GroundedDecisionProblem, grounded_decision_problem_payload,
+                      Decision, M1SelectionResult, decision_payload, restore_decision,
                       restore_grounded_decision_problem,
+                      validate_persisted_decision,
                       validate_persisted_grounded_decision_problem)
 
 _STATUSES={"exact","bound","estimate","unknown"}; _POLARITIES={"positive","negative"}
@@ -53,7 +55,7 @@ class Store:
         self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
         self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
         self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.isolated=_Isolated(); self._load()
+        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.decisions={}; self.isolated=_Isolated(); self._load()
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
@@ -62,7 +64,7 @@ class Store:
         self._snapshot_claimants=[]
         row=self._db.execute("SELECT payload FROM meta WHERE key='vocabulary'").fetchone()
         if row: self._configure_loaded(json.loads(row[0]))
-        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 WHEN 'grounded_decision_problem' THEN 11 ELSE 12 END, id"))
+        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 WHEN 'grounded_decision_problem' THEN 11 WHEN 'decision' THEN 12 ELSE 13 END, id"))
         for row in rows:
             if row["kind"] in {"description", "source", "rule", "context"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
@@ -93,6 +95,9 @@ class Store:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
         for row in rows:
             if row["kind"] == "grounded_decision_problem":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
+        for row in rows:
+            if row["kind"] == "decision":
                 self._restore_safely(row["kind"], row["id"], row["payload"])
 
     def _migrate_knowledge_identity(self):
@@ -506,6 +511,14 @@ class Store:
                 raise ValidationError("duplicate grounded decision problem")
             validate_persisted_grounded_decision_problem(self, problem)
             self.grounded_decision_problems[problem_id.value] = problem
+        elif kind=="decision":
+            decision=restore_decision(p)
+            if decision.id.value != physical_id:
+                raise ValidationError("decision identity disagrees with row identity")
+            if decision.id.value in self.decisions:
+                raise ValidationError("duplicate decision")
+            validate_persisted_decision(self, decision)
+            self.decisions[decision.id.value] = decision
         elif kind=="property":
             if not self._knowledge_owner(p["id"], kind, physical_id or p["id"]): raise ValidationError("knowledge identity is not the admitted owner")
             prop=_id(PropertyId,p["property"]); version=_exact_text(p["version"]); spec=self.vocabulary.properties.get((prop.value,version))
@@ -742,6 +755,36 @@ class Store:
         from .problem import _select_m1
         ident = problem_id if type(problem_id) is DecisionProblemId else DecisionProblemId(problem_id)
         return _select_m1(ident, self.decision_problem(ident))
+
+    def admit_m1_decision(self, decision_id, selection_result):
+        """Explicitly and atomically persist one pure M1 selection outcome."""
+        self._check()
+        from .identity import DecisionId
+        if type(selection_result) is not M1SelectionResult:
+            raise ValidationError("admit_m1_decision requires an exact M1SelectionResult")
+        ident = decision_id if type(decision_id) is DecisionId else DecisionId(decision_id)
+        decision = Decision(ident, selection_result.source, selection_result.status,
+                            selection_result.optimum, selection_result.co_optima)
+        if ident.value in self.decisions:
+            raise AdmissionError("duplicate decision identity")
+        validate_persisted_decision(self, decision)
+        try:
+            self._persist("decision", ident.value, decision_payload(decision))
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        self.decisions[ident.value] = decision
+        return decision
+
+    def decision(self, decision_id):
+        self._check()
+        from .identity import DecisionId
+        ident = decision_id if type(decision_id) is DecisionId else DecisionId(decision_id)
+        decision = self.decisions.get(ident.value)
+        if decision is None:
+            raise GroundingError("unknown decision")
+        return decision
 
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations

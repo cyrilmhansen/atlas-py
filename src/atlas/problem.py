@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .errors import GroundingError, ValidationError
-from .identity import (ContextId, DecisionProblemId, DecisionScopeId, DescriptionId,
+from .identity import (ContextId, DecisionId, DecisionProblemId, DecisionScopeId, DescriptionId,
                        KnowledgeId, PropertyId, RuleId, SnapshotId)
 from .model import (DecisionGrounding, DecisionScope, EvaluationTruth,
                     GroundingResult, GroundingStatus, PropertyAssertion)
@@ -129,7 +129,26 @@ class M1SelectionResult:
             raise ValidationError("unresolved M1 selection must not expose an optimum")
 
 
+@dataclass(frozen=True, slots=True)
+class Decision:
+    """An explicitly admitted, immutable historical M1 decision outcome."""
+
+    id: DecisionId
+    source: DecisionProblemId
+    status: SelectionStatus
+    optimum: Integer | None
+    co_optima: tuple[DescriptionId, ...]
+
+    def __post_init__(self):
+        # Reuse the pure result's closed state machine while keeping the
+        # nominal persistent identity separate from the GDP identity.
+        M1SelectionResult(self.source, self.status, self.optimum, self.co_optima)
+        if type(self.id) is not DecisionId:
+            raise ValidationError("decision requires an exact DecisionId")
+
+
 PROBLEM_SCHEMA = "atlas.core-v1.grounded-decision-problem/1"
+DECISION_SCHEMA = "atlas.core-v1.m1-decision/1"
 
 
 def grounded_decision_problem_payload(problem_id, problem):
@@ -199,6 +218,71 @@ def _select_m1(problem_id, problem):
 def _required_keys(value, keys, message):
     if type(value) is not dict or set(value) != set(keys):
         raise ValidationError(message)
+
+
+def decision_payload(decision):
+    if type(decision) is not Decision:
+        raise ValidationError("decision admission requires an exact Decision")
+    return {
+        "schema": DECISION_SCHEMA,
+        "id": decision.id.value,
+        "source_decision_problem_id": decision.source.value,
+        "status": decision.status.value,
+        "optimum": None if decision.optimum is None else value_to_json(decision.optimum),
+        "co_optima": [item.value for item in decision.co_optima],
+    }
+
+
+def restore_decision(raw):
+    """Strictly decode a persisted outcome; source semantics are checked by Store."""
+    _required_keys(raw, {"schema", "id", "source_decision_problem_id", "status", "optimum", "co_optima"},
+                   "invalid persisted decision")
+    if (type(raw["schema"]) is not str or raw["schema"] != DECISION_SCHEMA or
+            any(type(raw[key]) is not str for key in ("id", "source_decision_problem_id", "status"))):
+        raise ValidationError("invalid persisted decision identity or schema")
+    if type(raw["co_optima"]) is not list or any(type(item) is not str for item in raw["co_optima"]):
+        raise ValidationError("persisted decision co-optima require an exact list of strings")
+    if len(set(raw["co_optima"])) != len(raw["co_optima"]):
+        raise ValidationError("persisted decision co-optima must be distinct")
+    optimum = None
+    if raw["optimum"] is not None:
+        optimum = value_from_json_strict(raw["optimum"])
+    return Decision(DecisionId(raw["id"]), DecisionProblemId(raw["source_decision_problem_id"]),
+                    SelectionStatus(raw["status"]), optimum,
+                    tuple(DescriptionId(item) for item in raw["co_optima"]))
+
+
+def validate_persisted_decision(store, decision):
+    """Validate the outcome directly against its persisted historical GDP.
+
+    This is intentionally not implemented by calling _select_m1: restore is
+    historical validation, not a second selection run.
+    """
+    source = store.grounded_decision_problems.get(decision.source.value)
+    if source is None:
+        raise GroundingError("decision references an invalid source grounded decision problem")
+    truths = tuple(candidate for candidate in source.candidates
+                   if candidate.truth is EvaluationTruth.TRUE)
+    unknown = any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in source.candidates)
+    if unknown:
+        expected = SelectionStatus.NEEDS_INFORMATION
+        if decision.status is not expected or decision.optimum is not None or decision.co_optima != ():
+            raise GroundingError("persisted decision disagrees with historical UNKNOWN candidates")
+        return
+    if not truths:
+        expected = SelectionStatus.NO_ADMISSIBLE_CANDIDATE
+        if decision.status is not expected or decision.optimum is not None or decision.co_optima != ():
+            raise GroundingError("persisted decision disagrees with historical admissible candidates")
+        return
+    if decision.status is not SelectionStatus.RESOLVED or decision.optimum is None or not decision.co_optima:
+        raise GroundingError("persisted decision is not a resolved historical outcome")
+    costs = {candidate.candidate: candidate.objective_value.value.value for candidate in truths}
+    minimum = min(costs.values())
+    expected_co_optima = {candidate for candidate, cost in costs.items() if cost == minimum}
+    if decision.optimum.value != minimum:
+        raise GroundingError("persisted decision optimum disagrees with historical GDP")
+    if set(decision.co_optima) != expected_co_optima or len(decision.co_optima) != len(expected_co_optima):
+        raise GroundingError("persisted decision must contain exactly all historical co-optima")
 
 
 def restore_grounded_decision_problem(raw):

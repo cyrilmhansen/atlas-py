@@ -4,7 +4,7 @@ from .errors import (AdmissionError, AtlasError, ClosedStoreError, GroundingErro
                      UnsupportedRuleError, ValidationError)
 from .identity import (ContextId, DescriptionId, KnowledgeId, PredicateId,
                        PropertyId, RuleId, SnapshotId, SourceId, DecisionScopeId,
-                       DecisionProblemId)
+                       DecisionProblemId, DecisionId)
 from .model import (AmbiguousRead, Context, Description, EvaluationTruth,
                     Derivation, GroundedConclusion, GroundingResult, KnowledgeRecord,
                     MissingRead, PropertyAssertion, RelationAssertion, RelationTerm,
@@ -14,13 +14,13 @@ from .values import FiniteSetSymbol, Integer, SequenceSymbol, Symbol, Value
 from .vocabulary import PredicateSpec, PropertySpec, Vocabulary
 from .store import Store, admit_fixture, open_store
 from .problem import (GroundedCandidate, GroundedDecisionProblem, M1Objective,
-                      M1SelectionResult, ObjectiveValue, SelectionStatus)
+                      M1SelectionResult, ObjectiveValue, SelectionStatus, Decision)
 
 __all__ = [
     "AdmissionError", "AtlasError", "ClosedStoreError", "GroundingError",
     "UnsupportedRuleError", "ValidationError",
     "ContextId", "DescriptionId", "KnowledgeId", "PredicateId", "PropertyId",
-    "RuleId", "SnapshotId", "SourceId", "DecisionScopeId", "DecisionProblemId", "Description", "KnowledgeRecord",
+    "RuleId", "SnapshotId", "SourceId", "DecisionScopeId", "DecisionProblemId", "DecisionId", "Description", "KnowledgeRecord",
     "PropertyAssertion", "RelationAssertion", "Rule", "Context", "Snapshot",
     "EvaluationTruth", "RelationTerm", "Derivation", "GroundedConclusion", "GroundingResult",
     "MissingRead", "AmbiguousRead",
@@ -29,5 +29,5 @@ __all__ = [
     "PredicateSpec", "PropertySpec", "Vocabulary", "Store", "open_store",
     "admit_fixture",
     "ObjectiveValue", "M1Objective", "GroundedCandidate", "GroundedDecisionProblem",
-    "SelectionStatus", "M1SelectionResult",
+    "SelectionStatus", "M1SelectionResult", "Decision",
 ]

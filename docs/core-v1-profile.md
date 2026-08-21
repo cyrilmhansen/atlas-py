@@ -301,6 +301,13 @@ l’identité du GDP source ; il ne crée ni ne modifie une `Decision`. La séle
 ne re-ground pas et ne reconstruit pas le GDP depuis un scope ou une vue
 `current/latest`.
 
+La persistance du résultat de sélection est une opération distincte et
+explicite (`CORE_V1_CHOICE`). Elle crée un artefact nominal `Decision`, identifié
+par un `DecisionId` distinct du `DecisionProblemId`, et conserve l’identité du
+GDP source ainsi que le statut `RESOLVED`, `NEEDS_INFORMATION` ou
+`NO_ADMISSIBLE_CANDIDATE`. Un `Decision` est validé directement contre ce GDP
+historique lors de la restauration ; il n’est pas recalculé par `select_m1`.
+
 Le choix suivant est explicitement un `CORE_V1_CHOICE` :
 
 - `complete_for_declared_scope` décrit la complétude du parcours dans le scope,
