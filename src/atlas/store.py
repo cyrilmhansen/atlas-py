@@ -15,6 +15,9 @@ from .scope import (evaluate as evaluate_scope, grounding_payload, restore_groun
                     restore_scope, scope_payload, validate_scope_environment,
                     compute_declared_scope_completeness, validate_grounding_manifest,
                     _manifest as _manifest_for_store)
+from .problem import (GroundedDecisionProblem, grounded_decision_problem_payload,
+                      restore_grounded_decision_problem,
+                      validate_persisted_grounded_decision_problem)
 
 _STATUSES={"exact","bound","estimate","unknown"}; _POLARITIES={"positive","negative"}
 
@@ -50,7 +53,7 @@ class Store:
         self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
         self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
         self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.isolated=_Isolated(); self._load()
+        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.isolated=_Isolated(); self._load()
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
@@ -59,7 +62,7 @@ class Store:
         self._snapshot_claimants=[]
         row=self._db.execute("SELECT payload FROM meta WHERE key='vocabulary'").fetchone()
         if row: self._configure_loaded(json.loads(row[0]))
-        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 ELSE 11 END, id"))
+        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 WHEN 'grounded_decision_problem' THEN 11 ELSE 12 END, id"))
         for row in rows:
             if row["kind"] in {"description", "source", "rule", "context"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
@@ -87,6 +90,9 @@ class Store:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
         for row in rows:
             if row["kind"] == "decision_grounding":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
+        for row in rows:
+            if row["kind"] == "grounded_decision_problem":
                 self._restore_safely(row["kind"], row["id"], row["payload"])
 
     def _migrate_knowledge_identity(self):
@@ -488,6 +494,18 @@ class Store:
             if grounding.status is not computed:
                 raise ValidationError("persisted grounding status disagrees with recomputed status")
             self.decision_groundings[grounding.scope_id.value]=grounding
+        elif kind=="grounded_decision_problem":
+            problem_id, problem = restore_grounded_decision_problem(p)
+            if problem_id.value != physical_id:
+                raise ValidationError("grounded decision problem identity disagrees with row identity")
+            scope = self.decision_scopes.get(problem.scope_id.value)
+            grounding = self.decision_groundings.get(problem.scope_id.value)
+            if scope is None or grounding is None:
+                raise ValidationError("grounded decision problem references an invalid source grounding")
+            if problem_id.value in self.grounded_decision_problems:
+                raise ValidationError("duplicate grounded decision problem")
+            validate_persisted_grounded_decision_problem(self, problem)
+            self.grounded_decision_problems[problem_id.value] = problem
         elif kind=="property":
             if not self._knowledge_owner(p["id"], kind, physical_id or p["id"]): raise ValidationError("knowledge identity is not the admitted owner")
             prop=_id(PropertyId,p["property"]); version=_exact_text(p["version"]); spec=self.vocabulary.properties.get((prop.value,version))
@@ -686,6 +704,38 @@ class Store:
         """Purely materialize a problem from an existing persisted run."""
         from .problem import build_grounded_decision_problem
         return build_grounded_decision_problem(self, decision_scope_id)
+
+    def admit_grounded_decision_problem(self, problem_id, problem):
+        """Explicitly and atomically admit one already-grounded M1 problem."""
+        self._check()
+        from .identity import DecisionProblemId
+        from .problem import build_grounded_decision_problem
+        ident = problem_id if type(problem_id) is DecisionProblemId else DecisionProblemId(problem_id)
+        if type(problem) is not GroundedDecisionProblem:
+            raise ValidationError("admit_grounded_decision_problem requires a GroundedDecisionProblem")
+        if ident.value in self.grounded_decision_problems:
+            raise AdmissionError("duplicate grounded decision problem identity")
+        expected = build_grounded_decision_problem(self, problem.scope_id)
+        if problem != expected:
+            raise ValidationError("grounded decision problem is not coherent with its historical sources")
+        payload = grounded_decision_problem_payload(ident, problem)
+        try:
+            self._persist("grounded_decision_problem", ident.value, payload)
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        self.grounded_decision_problems[ident.value] = problem
+        return problem
+
+    def decision_problem(self, problem_id):
+        self._check()
+        from .identity import DecisionProblemId
+        ident = problem_id if type(problem_id) is DecisionProblemId else DecisionProblemId(problem_id)
+        problem = self.grounded_decision_problems.get(ident.value)
+        if problem is None:
+            raise GroundingError("unknown grounded decision problem")
+        return problem
 
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations
@@ -918,7 +968,7 @@ def admit_fixture(store, fixture):
     # deliberately shares only the SQLite connection, whose transaction is
     # committed once the candidate is complete.
     candidate=copy.copy(store)
-    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "isolated"):
+    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "grounded_decision_problems", "isolated"):
         setattr(candidate, name, dict(getattr(store, name)))
     batch=[]
     store._db.execute("BEGIN")
@@ -941,6 +991,6 @@ def admit_fixture(store, fixture):
     except Exception:
         store._db.rollback()
         raise
-    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "isolated"):
+    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "grounded_decision_problems", "isolated"):
         setattr(store, name, getattr(candidate, name))
     return store

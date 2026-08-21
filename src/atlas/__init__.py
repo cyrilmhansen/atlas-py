@@ -3,7 +3,8 @@
 from .errors import (AdmissionError, AtlasError, ClosedStoreError, GroundingError,
                      UnsupportedRuleError, ValidationError)
 from .identity import (ContextId, DescriptionId, KnowledgeId, PredicateId,
-                       PropertyId, RuleId, SnapshotId, SourceId, DecisionScopeId)
+                       PropertyId, RuleId, SnapshotId, SourceId, DecisionScopeId,
+                       DecisionProblemId)
 from .model import (AmbiguousRead, Context, Description, EvaluationTruth,
                     Derivation, GroundedConclusion, GroundingResult, KnowledgeRecord,
                     MissingRead, PropertyAssertion, RelationAssertion, RelationTerm,
@@ -19,7 +20,7 @@ __all__ = [
     "AdmissionError", "AtlasError", "ClosedStoreError", "GroundingError",
     "UnsupportedRuleError", "ValidationError",
     "ContextId", "DescriptionId", "KnowledgeId", "PredicateId", "PropertyId",
-    "RuleId", "SnapshotId", "SourceId", "DecisionScopeId", "Description", "KnowledgeRecord",
+    "RuleId", "SnapshotId", "SourceId", "DecisionScopeId", "DecisionProblemId", "Description", "KnowledgeRecord",
     "PropertyAssertion", "RelationAssertion", "Rule", "Context", "Snapshot",
     "EvaluationTruth", "RelationTerm", "Derivation", "GroundedConclusion", "GroundingResult",
     "MissingRead", "AmbiguousRead",
