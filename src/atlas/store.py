@@ -11,6 +11,10 @@ from .values import value_from_json, value_to_json
 from .vocabulary import *
 from .evidence import validate_grounding_evidence
 from .provenance import canonical_provenance
+from .scope import (evaluate as evaluate_scope, grounding_payload, restore_grounding,
+                    restore_scope, scope_payload, validate_scope_environment,
+                    compute_declared_scope_completeness, validate_grounding_manifest,
+                    _manifest as _manifest_for_store)
 
 _STATUSES={"exact","bound","estimate","unknown"}; _POLARITIES={"positive","negative"}
 
@@ -32,21 +36,30 @@ def _exact_text(raw, message="text must be exact and non-empty"):
 def _exact_list(raw, message="value must be an exact list"):
     if type(raw) is not list: raise ValidationError(message)
     return raw
+def _decode_exact_string_pair(raw, field_name):
+    """Decode one persisted JSON identity/version pair without coercion."""
+    if type(raw) is not list or len(raw) != 2 or any(type(value) is not str for value in raw):
+        raise ValidationError(f"{field_name} entries require exactly two strings")
+    return (raw[0], raw[1])
+def _require_exact_keys(value, keys, message):
+    if type(value) is not dict or set(value) != set(keys):
+        raise ValidationError(message)
 
 class Store:
     def __init__(self, path):
         self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
         self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
         self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.isolated=_Isolated(); self._load()
+        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.isolated=_Isolated(); self._load()
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
 
     def _load(self):
+        self._snapshot_claimants=[]
         row=self._db.execute("SELECT payload FROM meta WHERE key='vocabulary'").fetchone()
         if row: self._configure_loaded(json.loads(row[0]))
-        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 ELSE 9 END, id"))
+        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 ELSE 11 END, id"))
         for row in rows:
             if row["kind"] in {"description", "source", "rule", "context"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
@@ -56,7 +69,25 @@ class Store:
         for row in rows:
             if row["kind"] == "snapshot":
                 self._restore_safely(row["kind"], row["id"], row["payload"])
+        # Only snapshots accepted by the common restore validator are
+        # historical claimants.  Keep this candidate set before dependency
+        # closure: final snapshot validity may depend on the definitions that
+        # these candidates help classify, but malformed raw JSON never gets
+        # to contribute a claim.
+        self._classify_unmatched_definition_claims(tuple(self._snapshot_claimants))
+        self._validate_definition_closure()
+
+        # M1b is a prerequisite closure, not merely a local row check.  It
+        # must settle before any M1c.1 object is even a restore candidate:
+        # scopes and runs refer to the final historical snapshot set.
         self._validate_derivation_pairs()
+
+        for row in rows:
+            if row["kind"] == "decision_scope":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
+        for row in rows:
+            if row["kind"] == "decision_grounding":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
 
     def _migrate_knowledge_identity(self):
         known={row["knowledge_id"] for row in self._db.execute("SELECT knowledge_id FROM knowledge_identity")}
@@ -111,6 +142,94 @@ class Store:
 
     def _isolation(self, kind, ident, reason):
         self.isolated[(kind, ident)]={"kind":kind,"row_id":ident,"reason":reason}
+
+    def _classify_unmatched_definition_claims(self, snapshot_claimants):
+        """Classify a global definition only when no snapshot claims it.
+
+        A bad claimant must not make a good claimant's definition look bad.
+        This pass is deliberately after every snapshot candidate has been
+        decoded, so it cannot depend on the claimant iteration order.
+        """
+        raw_context_claims=[]; raw_rule_claims=[]
+        for snapshot in snapshot_claimants:
+            raw_context_claims.extend(snapshot.context_definitions)
+            raw_rule_claims.extend(snapshot.rule_definitions)
+        for ident, current in sorted(self.contexts.items()):
+            claims=[claim for claim in raw_context_claims if claim[0] == ident]
+            if claims and not any(current.visible_scopes == claim[1] and
+                                  tuple(x.value for x in current.enabled_rules) == claim[2]
+                                  for claim in claims):
+                self._isolation("context", ident, "context definition disagrees with historical snapshots")
+                self.contexts.pop(ident, None)
+        for ident, current in sorted(self.rules.items()):
+            claims=[claim for claim in raw_rule_claims if claim[0] == ident]
+            current_payload=json.dumps(thaw(current.payload),ensure_ascii=False,sort_keys=True,separators=(",",":"))
+            if claims and not any(current.version == version and current_payload == payload and
+                                  current.evaluation_supported == supported
+                                  for _, version, payload, supported in claims):
+                self._isolation("rule", ident, "rule definition disagrees with historical snapshots")
+                self.rules.pop(ident, None)
+
+        # Contexts are active definitions too.  A definition that has been
+        # classified invalid must not remain publicly usable or be copied by
+        # a later snapshot.  A context depending on an invalid rule is also
+        # no longer an active context candidate.
+        for ident, current in sorted(tuple(self.contexts.items())):
+            if any(rule.value not in self.rules for rule in current.enabled_rules):
+                self._isolation("context", ident, "context references an invalid rule definition")
+                self.contexts.pop(ident, None)
+
+        for ident in tuple(self.contexts):
+            if ("context", ident) in self.isolated:
+                self.contexts.pop(ident, None)
+
+    def _validate_definition_closure(self):
+        """Remove historical objects that require a non-active definition.
+
+        This is an in-memory fixed point.  SQLite rows are never repaired;
+        rows removed here remain visible through ``isolated``.
+        """
+        invalid_snapshots={}
+        while True:
+            changed=False
+            for ident, snapshot in sorted(tuple(self.snapshots.items())):
+                reason=None
+                if snapshot.parent is not None and snapshot.parent.value not in self.snapshots:
+                    reason="snapshot parent is invalid or absent"
+                if reason is None and any(context.value not in self.contexts for context in snapshot.context_ids):
+                    reason="snapshot references an invalid context definition"
+                if reason is None:
+                    for context_id, scopes, enabled in snapshot.context_definitions:
+                        current=self.contexts.get(context_id)
+                        if (current is None or current.visible_scopes != scopes or
+                            tuple(rule.value for rule in current.enabled_rules) != enabled):
+                            reason="snapshot context definition is not active"
+                            break
+                if reason is None and any(rule_id not in self.rules or
+                                          self.rules[rule_id].version != version
+                                          for rule_id, version in snapshot.rule_versions):
+                    reason="snapshot references an invalid rule definition"
+                if reason is None:
+                    for rule_id, version, payload, supported in snapshot.rule_definitions:
+                        current=self.rules.get(rule_id)
+                        if (current is None or current.version != version or
+                            json.dumps(thaw(current.payload), ensure_ascii=False,
+                                       sort_keys=True, separators=(",", ":")) != payload or
+                            current.evaluation_supported != supported):
+                            reason="snapshot rule definition is not active"
+                            break
+                if reason is not None:
+                    invalid_snapshots[ident]=reason
+            if not invalid_snapshots:
+                break
+            for ident, reason in sorted(invalid_snapshots.items()):
+                if ident in self.snapshots:
+                    self.snapshots.pop(ident)
+                    self._isolation("snapshot", ident, reason)
+                    changed=True
+            invalid_snapshots.clear()
+            if not changed:
+                break
 
     def _validate_derivation_pairs(self):
         """Compute the complete restored derivation closure before publishing."""
@@ -281,21 +400,28 @@ class Store:
             self.rules[p["id"]]=Rule(_id(RuleId,p["id"]),_exact_text(p["version"]),body,p["evaluation_supported"])
         elif kind=="snapshot":
             required=("id","parent","record_ids","predicate_versions","property_versions","rule_versions","context_ids","context_definitions","rule_definitions","description_ids")
-            if any(field not in p for field in required): raise ValidationError("incomplete persisted snapshot")
+            if set(p) != set(required): raise ValidationError("incomplete or unknown persisted snapshot field")
             if type(p["record_ids"]) is not list or type(p["predicate_versions"]) is not list or type(p["property_versions"]) is not list or type(p["rule_versions"]) is not list or type(p["context_ids"]) is not list or type(p["context_definitions"]) is not list or type(p["rule_definitions"]) is not list or type(p["description_ids"]) is not list: raise ValidationError("invalid persisted snapshot structure")
             ids=tuple(_id(KnowledgeId,x) for x in p["record_ids"])
             description_ids=tuple(_id(DescriptionId,x) for x in p["description_ids"])
             if len({x.value for x in description_ids}) != len(description_ids): raise ValidationError("snapshot description_ids contain a duplicate")
             if any(x.value not in self.descriptions for x in description_ids): raise ValidationError("snapshot references invalid or absent description")
             if any(x.value not in self.records for x in ids): raise ValidationError("snapshot references invalid or absent record")
-            parent=_id(SnapshotId,p["parent"]) if p["parent"] else None
+            raw_parent=p["parent"]
+            if raw_parent is None:
+                parent=None
+            elif type(raw_parent) is str:
+                parent=SnapshotId(raw_parent)
+            else:
+                raise ValidationError("snapshot parent must be null or an exact SnapshotId string")
             # Parent existence is checked after all snapshot candidates have
             # been decoded; lexical/SQL row order is not semantic here.
             contexts=tuple(_id(ContextId,x) for x in p["context_ids"])
             if len({x.value for x in contexts}) != len(contexts):
                 raise ValidationError("snapshot context_ids contain a duplicate")
-            if any(type(x) is not dict for x in p["context_definitions"]):
-                raise ValidationError("invalid persisted snapshot context definition")
+            for x in p["context_definitions"]:
+                _require_exact_keys(x, {"id", "visible_scopes", "enabled_rules"},
+                                    "invalid persisted snapshot context definition")
             if any(type(x.get("visible_scopes")) is not list or type(x.get("enabled_rules")) is not list for x in p["context_definitions"]):
                 raise ValidationError("invalid persisted snapshot context definition")
             context_defs=tuple((_exact_text(x["id"]),tuple(x["visible_scopes"]),tuple(x["enabled_rules"])) for x in p["context_definitions"])
@@ -304,34 +430,39 @@ class Store:
             context_def_ids=tuple(x[0] for x in context_defs)
             if len(set(context_def_ids)) != len(context_def_ids) or set(context_def_ids) != {x.value for x in contexts}:
                 raise ValidationError("snapshot context definitions do not exactly match context_ids")
-            if any(type(x) is not dict for x in p["rule_definitions"]):
-                raise ValidationError("invalid persisted snapshot rule definition")
+            for x in p["rule_definitions"]:
+                _require_exact_keys(x, {"id", "version", "payload", "evaluation_supported"},
+                                    "invalid persisted snapshot rule definition")
             if any(type(x.get("payload")) is not dict for x in p["rule_definitions"]):
                 raise ValidationError("invalid persisted snapshot rule definition")
             rule_defs=tuple((_exact_text(x["id"]),_exact_text(x["version"]),json.dumps(x["payload"],ensure_ascii=False,sort_keys=True,separators=(",",":")),x["evaluation_supported"]) for x in p["rule_definitions"])
             if any(type(x[3]) is not bool for x in rule_defs):
                 raise ValidationError("invalid persisted snapshot rule definition")
             rule_def_pairs=tuple((x[0],x[1]) for x in rule_defs)
-            snapshot_rule_versions=tuple(tuple(x) for x in p["rule_versions"])
+            predicate_versions=tuple(_decode_exact_string_pair(x, "snapshot predicate_versions")
+                                     for x in p["predicate_versions"])
+            property_versions=tuple(_decode_exact_string_pair(x, "snapshot property_versions")
+                                    for x in p["property_versions"])
+            snapshot_rule_versions=tuple(_decode_exact_string_pair(x, "snapshot rule_versions")
+                                         for x in p["rule_versions"])
             if len(set(snapshot_rule_versions)) != len(snapshot_rule_versions) or len(set(rule_def_pairs)) != len(rule_def_pairs) or set(rule_def_pairs) != set(snapshot_rule_versions):
                 raise ValidationError("snapshot rule definitions do not exactly match rule_versions")
-            snap=Snapshot(_id(SnapshotId,p["id"]),parent,ids,tuple(tuple(x) for x in p["predicate_versions"]),tuple(tuple(x) for x in p["property_versions"]),snapshot_rule_versions,contexts,context_defs,rule_defs,description_ids)
+            snap=Snapshot(_id(SnapshotId,p["id"]),parent,ids,predicate_versions,property_versions,snapshot_rule_versions,contexts,context_defs,rule_defs,description_ids)
             if any((x[0],x[1]) not in self.vocabulary.predicates for x in snap.predicate_versions) or any((x[0],x[1]) not in self.vocabulary.properties for x in snap.property_versions): raise ValidationError("snapshot vocabulary environment is unresolved")
+            # This is the structural claimant boundary.  The candidate has
+            # passed the complete Snapshot shape/identity/environment decode,
+            # but its final activity may still depend on the definitions it
+            # carries (and is therefore checked below and in closure).
+            self._snapshot_claimants.append(snap)
             if any(not any(r.id.value==x[0] and r.version==x[1] for r in self.rules.values()) for x in snap.rule_versions): raise ValidationError("snapshot rule environment is unresolved")
             if any(x.value not in self.contexts for x in snap.context_ids): raise ValidationError("snapshot context environment is unresolved")
             for ident, scopes, enabled in snap.context_definitions:
                 current=self.contexts.get(ident)
                 if current is None or current.visible_scopes != scopes or tuple(x.value for x in current.enabled_rules) != enabled:
-                    if current is not None:
-                        self.isolated[("context", ident)]={"kind":"context","row_id":ident,"reason":"context definition disagrees with historical snapshot"}
-                        del self.contexts[ident]
                     raise ValidationError("snapshot context definition is inconsistent")
             for ident, version, payload, supported in snap.rule_definitions:
                 current=self.rules.get(ident)
                 if current is None or current.version != version or json.dumps(thaw(current.payload),ensure_ascii=False,sort_keys=True,separators=(",",":")) != payload or current.evaluation_supported != supported:
-                    if current is not None:
-                        self.isolated[("rule", ident)]={"kind":"rule","row_id":ident,"reason":"rule definition disagrees with historical snapshot"}
-                        del self.rules[ident]
                     raise ValidationError("snapshot rule definition is inconsistent")
             self.snapshots[p["id"]]=snap
         elif kind=="derivation":
@@ -343,6 +474,20 @@ class Store:
             if type(p["bindings"]) is not list or len(bindings) != len(p["bindings"]): raise ValidationError("invalid persisted derivation bindings")
             dependencies=tuple(_id(KnowledgeId,x) for x in p["dependencies"])
             self.derivations[knowledge_id.value]=Derivation(knowledge_id,rule_id,_exact_text(p["rule_version"]),bindings,_id(SnapshotId,p["snapshot"]),_id(ContextId,p["context"]),dependencies,_exact_text(p["grounding_evidence"]))
+        elif kind=="decision_scope":
+            scope=restore_scope(p)
+            validate_grounding_manifest(scope.manifest)
+            validate_scope_environment(self, scope)
+            if scope.id.value in self.decision_scopes: raise ValidationError("duplicate decision scope")
+            self.decision_scopes[scope.id.value]=scope
+        elif kind=="decision_grounding":
+            grounding=restore_grounding(p)
+            scope=self.decision_scopes.get(grounding.scope_id.value)
+            if scope is None: raise ValidationError("grounding references an invalid decision scope")
+            computed = compute_declared_scope_completeness(self, scope, grounding)
+            if grounding.status is not computed:
+                raise ValidationError("persisted grounding status disagrees with recomputed status")
+            self.decision_groundings[grounding.scope_id.value]=grounding
         elif kind=="property":
             if not self._knowledge_owner(p["id"], kind, physical_id or p["id"]): raise ValidationError("knowledge identity is not the admitted owner")
             prop=_id(PropertyId,p["property"]); version=_exact_text(p["version"]); spec=self.vocabulary.properties.get((prop.value,version))
@@ -468,7 +613,12 @@ class Store:
         if sid.value in self.snapshots: raise AdmissionError("duplicate snapshot identity")
         if parent is not None and _id(SnapshotId,parent).value not in self.snapshots: raise ValidationError("unresolved snapshot parent")
         ids=tuple(_id(KnowledgeId,x) for x in sorted(self.records)); description_ids=tuple(_id(DescriptionId,x) for x in sorted(self.descriptions));
-        predicates=tuple(sorted(self.vocabulary.predicates)); properties=tuple(sorted(self.vocabulary.properties)); rules=tuple(sorted((r.id.value,r.version) for r in self.rules.values())); contexts=tuple(_id(ContextId,x) for x in sorted(self.contexts))
+        # A Snapshot records one exact vocabulary version per nominal identity.
+        # Vocabulary history may retain older versions, but persisting all of
+        # them would make the Snapshot map non-canonical.
+        predicates=tuple(sorted(_latest_versions(self.vocabulary.predicates)))
+        properties=tuple(sorted(_latest_versions(self.vocabulary.properties)))
+        rules=tuple(sorted((r.id.value,r.version) for r in self.rules.values())); contexts=tuple(_id(ContextId,x) for x in sorted(self.contexts))
         context_definitions=tuple((x.id.value,x.visible_scopes,tuple(r.value for r in x.enabled_rules)) for x in (self.contexts[k] for k in sorted(self.contexts)))
         rule_definitions=tuple((r.id.value,r.version,json.dumps(thaw(r.payload),ensure_ascii=False,sort_keys=True,separators=(",",":")),r.evaluation_supported) for r in (self.rules[k] for k in sorted(self.rules)))
         snap=Snapshot(sid,_id(SnapshotId,parent) if parent else None,ids,predicates,properties,rules,contexts,context_definitions,rule_definitions,description_ids)
@@ -488,6 +638,55 @@ class Store:
     def ground(self, rule_id, bindings, snapshot, context):
         from .rules import ground
         return ground(self, rule_id, bindings, snapshot, context)
+
+    def create_decision_scope(self, scope_id, snapshot, context, request, manifest):
+        """Atomically admit an immutable finite M1c.1 scope declaration."""
+        self._check()
+        scope=DecisionScope(_id(DecisionScopeId, scope_id), _id(SnapshotId, snapshot), _id(ContextId, context), _id(DescriptionId, request), manifest if type(manifest) is GroundingManifest else _manifest_for_store(manifest))
+        if scope.id.value in self.decision_scopes: raise AdmissionError("duplicate decision scope identity")
+        validate_grounding_manifest(scope.manifest)
+        validate_scope_environment(self, scope)
+        payload=scope_payload(scope)
+        try:
+            self._persist("decision_scope", scope.id.value, payload); self._db.commit()
+        except Exception:
+            self._db.rollback(); raise
+        self.decision_scopes[scope.id.value]=scope
+        return scope
+
+    def decision_scope(self, scope_id):
+        self._check(); ident=_id(DecisionScopeId, scope_id)
+        scope=self.decision_scopes.get(ident.value)
+        if scope is None: raise GroundingError("unknown decision scope")
+        return scope
+
+    def ground_decision_scope(self, scope_id):
+        """Pure evaluation: it never discovers, selects or persists."""
+        return evaluate_scope(self, self.decision_scope(scope_id))
+
+    def evaluate_decision_scope(self, scope_id):
+        """Evaluate and atomically publish one immutable grounding result."""
+        self._check(); scope=self.decision_scope(scope_id)
+        if scope.id.value in self.decision_groundings: raise AdmissionError("decision scope grounding already exists")
+        grounding=evaluate_scope(self, scope)
+        try:
+            self._persist("decision_grounding", scope.id.value, grounding_payload(grounding)); self._db.commit()
+        except Exception:
+            self._db.rollback(); raise
+        self.decision_groundings[scope.id.value]=grounding
+        return grounding
+
+    def decision_grounding(self, scope_id):
+        self._check(); ident=_id(DecisionScopeId, scope_id)
+        grounding=self.decision_groundings.get(ident.value)
+        if grounding is None: raise GroundingError("unknown decision scope grounding")
+        return grounding
+
+    def decision_observations(self, scope_id):
+        return self.decision_grounding(scope_id).observations
+
+    def encountered_candidates(self, scope_id):
+        return tuple(x.candidate for x in self.decision_observations(scope_id) if x.traversed)
 
     def admit_derived(self, knowledge_id, grounding_result):
         """Persist exactly the proof already contained in a TRUE grounding."""
@@ -628,6 +827,13 @@ def _unique_values(values):
         result.append(value)
     return result
 
+def _latest_versions(entries):
+    latest={}
+    for ident, version in entries:
+        if ident not in latest or version > latest[ident]:
+            latest[ident]=version
+    return tuple((ident, version) for ident, version in latest.items())
+
 def _rule_text(value):
     if type(value) is not str or not value or any(0xD800 <= ord(char) <= 0xDFFF for char in value): raise ValidationError("rule participant must be an exact non-empty string")
     return value
@@ -707,7 +913,7 @@ def admit_fixture(store, fixture):
     # deliberately shares only the SQLite connection, whose transaction is
     # committed once the candidate is complete.
     candidate=copy.copy(store)
-    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "isolated"):
+    for name in ("descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "isolated"):
         setattr(candidate, name, dict(getattr(store, name)))
     batch=[]
     store._db.execute("BEGIN")
@@ -730,6 +936,6 @@ def admit_fixture(store, fixture):
     except Exception:
         store._db.rollback()
         raise
-    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "isolated"):
+    for name in ("vocabulary", "descriptions", "sources", "records", "rules", "contexts", "snapshots", "derivations", "decision_scopes", "decision_groundings", "isolated"):
         setattr(store, name, getattr(candidate, name))
     return store

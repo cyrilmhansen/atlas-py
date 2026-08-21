@@ -105,15 +105,32 @@ class Snapshot:
             raise ValidationError("snapshot parent requires a SnapshotId")
         if type(self.record_ids) is not tuple or any(type(record_id) is not KnowledgeId for record_id in self.record_ids):
             raise ValidationError("snapshot record_ids require KnowledgeId values")
+        if len({record_id.value for record_id in self.record_ids}) != len(self.record_ids):
+            raise ValidationError("snapshot record_ids contain a duplicate")
         for refs in (self.predicate_versions, self.property_versions, self.rule_versions):
             if type(refs) is not tuple or any(type(x) is not tuple or len(x) != 2 or any(type(v) is not str or not v for v in x) for x in refs):
                 raise ValidationError("snapshot semantic references require identity/version pairs")
+            if len({x[0] for x in refs}) != len(refs):
+                raise ValidationError("snapshot semantic references contain a duplicate identity")
         if type(self.context_ids) is not tuple or any(type(x) is not ContextId for x in self.context_ids):
             raise ValidationError("snapshot context references require ContextId values")
+        if len({x.value for x in self.context_ids}) != len(self.context_ids):
+            raise ValidationError("snapshot context_ids contain a duplicate")
         if type(self.context_definitions) is not tuple or any(type(x) is not tuple or len(x) != 3 for x in self.context_definitions):
             raise ValidationError("snapshot context definitions require exact triples")
+        if any(type(x[0]) is not str or not x[0] or type(x[1]) is not tuple or
+               any(type(scope) is not str for scope in x[1]) or type(x[2]) is not tuple or
+               any(type(rule) is not str for rule in x[2]) for x in self.context_definitions):
+            raise ValidationError("snapshot context definitions require exact triples")
+        if len({x[0] for x in self.context_definitions}) != len(self.context_definitions):
+            raise ValidationError("snapshot context definitions contain a duplicate")
         if type(self.rule_definitions) is not tuple or any(type(x) is not tuple or len(x) != 4 or type(x[3]) is not bool for x in self.rule_definitions):
             raise ValidationError("snapshot rule definitions require exact quadruples")
+        if any(type(x[0]) is not str or not x[0] or type(x[1]) is not str or not x[1] or
+               type(x[2]) is not str for x in self.rule_definitions):
+            raise ValidationError("snapshot rule definitions require exact quadruples")
+        if len({x[0] for x in self.rule_definitions}) != len(self.rule_definitions):
+            raise ValidationError("snapshot rule definitions contain a duplicate")
         if type(self.description_ids) is not tuple or any(type(x) is not DescriptionId for x in self.description_ids):
             raise ValidationError("snapshot description_ids require DescriptionId values")
         if len(set(x.value for x in self.description_ids)) != len(self.description_ids):
@@ -246,3 +263,98 @@ class GroundingResult:
             raise ValidationError("invalid grounding environment")
         if type(self.grounding_evidence) is not str or not self.grounding_evidence:
             raise ValidationError("grounding requires an evidence witness")
+
+
+class GroundingStatus(str, Enum):
+    COMPLETE_FOR_DECLARED_SCOPE = "complete_for_declared_scope"
+    INCOMPLETE = "incomplete"
+    INVALID = "invalid"
+
+
+# M1c.1 has one deliberately closed manifest format.  Unknown versions are
+# not interpreted as an unevaluable future format.
+SUPPORTED_MANIFEST_VERSIONS = frozenset({"m1-grounding/1"})
+
+
+@dataclass(frozen=True, slots=True)
+class GroundingManifest:
+    manifest_version: str
+    candidate_description_ids: tuple[DescriptionId, ...]
+    prescribed_rule_ids: tuple[RuleId, ...]
+    def __post_init__(self):
+        if type(self.manifest_version) is not str or not self.manifest_version:
+            raise ValidationError("manifest requires a non-empty version")
+        if self.manifest_version not in SUPPORTED_MANIFEST_VERSIONS:
+            raise ValidationError("unsupported grounding manifest version")
+        if type(self.candidate_description_ids) is not tuple or any(type(x) is not DescriptionId for x in self.candidate_description_ids):
+            raise ValidationError("manifest candidates require DescriptionId values")
+        if type(self.prescribed_rule_ids) is not tuple or any(type(x) is not RuleId for x in self.prescribed_rule_ids):
+            raise ValidationError("manifest rules require RuleId values")
+        if len({x.value for x in self.candidate_description_ids}) != len(self.candidate_description_ids):
+            raise ValidationError("manifest contains a duplicate candidate")
+        if len({x.value for x in self.prescribed_rule_ids}) != len(self.prescribed_rule_ids):
+            raise ValidationError("manifest contains a duplicate rule")
+    @property
+    def version(self):
+        return self.manifest_version
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class DecisionScope:
+    id: DecisionScopeId
+    snapshot: SnapshotId
+    context: ContextId
+    request: DescriptionId
+    manifest: GroundingManifest
+    def __post_init__(self):
+        if type(self.id) is not DecisionScopeId or type(self.snapshot) is not SnapshotId or type(self.context) is not ContextId or type(self.request) is not DescriptionId:
+            raise ValidationError("invalid decision scope identity domains")
+        if type(self.manifest) is not GroundingManifest:
+            raise ValidationError("decision scope requires a grounding manifest")
+    def __eq__(self, other): return type(other) is type(self) and self.id == other.id
+    def __hash__(self): return hash((type(self), self.id))
+
+
+@dataclass(frozen=True, slots=True)
+class GroundingObservation:
+    candidate: DescriptionId
+    traversed: bool
+    truth: EvaluationTruth | None
+    grounding_result: GroundingResult | None = None
+    exclusion_reason: str | None = None
+    structural_error: str | None = None
+    def __post_init__(self):
+        if type(self.candidate) is not DescriptionId or type(self.traversed) is not bool:
+            raise ValidationError("invalid grounding observation identity")
+        if self.truth is not None and type(self.truth) is not EvaluationTruth:
+            raise ValidationError("invalid grounding observation truth")
+        if self.grounding_result is not None and type(self.grounding_result) is not GroundingResult:
+            raise ValidationError("invalid grounding observation result")
+        for value in (self.exclusion_reason, self.structural_error):
+            if value is not None and (type(value) is not str or not value): raise ValidationError("invalid grounding observation reason")
+        if self.grounding_result is not None and self.structural_error is not None:
+            raise ValidationError("grounding result cannot accompany a structural error")
+        if self.structural_error is not None and self.truth is not None:
+            raise ValidationError("structural error cannot claim a truth value")
+        if not self.traversed and (self.grounding_result is not None or self.truth is not None):
+            raise ValidationError("non-traversed observation cannot claim a grounding result")
+        if self.traversed and self.grounding_result is None and self.structural_error is None:
+            raise ValidationError("traversed observation requires a result or structural error")
+        if self.grounding_result is not None and self.truth is not self.grounding_result.truth:
+            raise ValidationError("observation truth disagrees with grounding result")
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionGrounding:
+    scope_id: DecisionScopeId
+    observations: tuple[GroundingObservation, ...]
+    status: GroundingStatus
+    interrupted: bool = False
+    pruned: bool = False
+    def __post_init__(self):
+        if type(self.scope_id) is not DecisionScopeId or type(self.observations) is not tuple or any(type(x) is not GroundingObservation for x in self.observations):
+            raise ValidationError("invalid decision grounding")
+        if type(self.status) is not GroundingStatus or type(self.interrupted) is not bool or type(self.pruned) is not bool:
+            raise ValidationError("invalid decision grounding status")
+        ids = [x.candidate.value for x in self.observations]
+        if len(ids) != len(set(ids)): raise ValidationError("duplicate grounding observation")
