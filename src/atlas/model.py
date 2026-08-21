@@ -135,6 +135,22 @@ class Snapshot:
             raise ValidationError("snapshot description_ids require DescriptionId values")
         if len(set(x.value for x in self.description_ids)) != len(self.description_ids):
             raise ValidationError("snapshot description_ids contain a duplicate")
+
+
+@dataclass(frozen=True, slots=True)
+class Supersession:
+    """An append-only, snapshot-scoped replacement of one knowledge record."""
+    old: KnowledgeId
+    new: KnowledgeId
+    snapshot: SnapshotId
+
+    def __post_init__(self):
+        if type(self.old) is not KnowledgeId or type(self.new) is not KnowledgeId:
+            raise ValidationError("supersession requires KnowledgeId values")
+        if self.old == self.new:
+            raise ValidationError("knowledge cannot supersede itself")
+        if type(self.snapshot) is not SnapshotId:
+            raise ValidationError("supersession requires a SnapshotId")
 @dataclass(frozen=True, slots=True)
 class Derivation:
     knowledge_id: KnowledgeId

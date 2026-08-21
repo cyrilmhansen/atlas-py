@@ -85,8 +85,14 @@ Les décisions suivantes sont locales à Core V1 :
 - toute explication Core V1 est reconstruite à partir des dépendances effectives
   réellement utilisées par la décision ; cette exigence renforce localement le
   `DEVRAIT` de la spécification et n’est pas une obligation Atlas universelle ;
-- l’obsolescence est traitée paresseusement : une dérivation devenue stale est
-  recalculée avant réutilisation ;
+- `ArtifactStatus` est un axe distinct de la validité historique :
+  `Store.status_of(decision_id, relative_to=snapshot_id)` exige une référence
+  explicite et renvoie `current`, `stale` ou `invalid`. `stale` est détecté
+  paresseusement à partir des supersessions pertinentes visibles dans ce
+  snapshot; il ne réécrit ni la décision ni son GDP ni son explication, ne
+  lance aucun recalcul et n’implique aucun snapshot « latest » global. Une
+  dérivation stale ne doit pas être réutilisée silencieusement; sa révision
+  explicite est hors de M1e.1 ;
 - la décision M1 est monoobjectif, avec un coût entier exact et une réalisation
   choisie par problème ; toutes les solutions co-optimales sont retournées ;
 - aucun artefact de `experiments/` n’est importé comme code, donnée ou API.
@@ -221,6 +227,15 @@ et doit être recalculée si nécessaire.
 La supersession ne réécrit jamais l’histoire des snapshots antérieurs. Les
 statuts `active`, `superseded`, `stale` et `isolated` sont toujours interprétés
 relativement au snapshot lorsqu’un tel contexte est requis.
+
+Pour M1e.1, la relation persistée minimale est `old KnowledgeId -> new
+KnowledgeId`, contextualisée par le snapshot qui introduit le remplacement.
+Les deux enregistrements restent immuables. Une décision est stale relativement
+à une référence seulement si une dépendance directe ou transitive pertinente
+est ainsi supersedée dans cette référence; un changement quelconque du
+snapshot ne suffit pas. Une absence historique qui reçoit ultérieurement un
+nouveau fait n’est pas modélisée comme une supersession et reste une frontière
+M1e.2.
 
 ## 5. Règles, grounding et décision
 

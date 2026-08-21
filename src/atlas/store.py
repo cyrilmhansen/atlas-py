@@ -19,10 +19,12 @@ from .problem import (GroundedDecisionProblem, grounded_decision_problem_payload
                       Decision, M1SelectionResult, decision_payload, restore_decision,
                       restore_grounded_decision_problem,
                       _explain_m1,
+                      ArtifactStatus,
                       validate_persisted_decision,
                       validate_persisted_grounded_decision_problem)
 
 _STATUSES={"exact","bound","estimate","unknown"}; _POLARITIES={"positive","negative"}
+SUPERSESSION_SCHEMA="atlas.core-v1.supersession/1"
 
 class _Isolated(dict):
     """Physical-row keyed isolation, with legacy lookup by an unambiguous id."""
@@ -56,7 +58,7 @@ class Store:
         self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
         self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
         self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.decisions={}; self.isolated=_Isolated(); self._load()
+        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.supersessions={}; self._supersession_claimants=[]; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.decisions={}; self.isolated=_Isolated(); self._load()
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
@@ -65,7 +67,7 @@ class Store:
         self._snapshot_claimants=[]
         row=self._db.execute("SELECT payload FROM meta WHERE key='vocabulary'").fetchone()
         if row: self._configure_loaded(json.loads(row[0]))
-        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'derivation' THEN 7 WHEN 'snapshot' THEN 8 WHEN 'decision_scope' THEN 9 WHEN 'decision_grounding' THEN 10 WHEN 'grounded_decision_problem' THEN 11 WHEN 'decision' THEN 12 ELSE 13 END, id"))
+        rows=list(self._db.execute("SELECT id,kind,payload FROM records ORDER BY CASE kind WHEN 'description' THEN 1 WHEN 'source' THEN 2 WHEN 'rule' THEN 3 WHEN 'context' THEN 4 WHEN 'property' THEN 5 WHEN 'relation' THEN 6 WHEN 'snapshot' THEN 7 WHEN 'supersession' THEN 8 WHEN 'derivation' THEN 9 WHEN 'decision_scope' THEN 10 WHEN 'decision_grounding' THEN 11 WHEN 'grounded_decision_problem' THEN 12 WHEN 'decision' THEN 13 ELSE 14 END, id"))
         for row in rows:
             if row["kind"] in {"description", "source", "rule", "context"}:
                 self._restore_safely(row["kind"], row["id"], row["payload"])
@@ -75,6 +77,10 @@ class Store:
         for row in rows:
             if row["kind"] == "snapshot":
                 self._restore_safely(row["kind"], row["id"], row["payload"])
+        for row in rows:
+            if row["kind"] == "supersession":
+                self._restore_safely(row["kind"], row["id"], row["payload"])
+        self._validate_supersessions()
         # Only snapshots accepted by the common restore validator are
         # historical claimants.  Keep this candidate set before dependency
         # closure: final snapshot validity may depend on the definitions that
@@ -477,6 +483,14 @@ class Store:
                 if current is None or current.version != version or json.dumps(thaw(current.payload),ensure_ascii=False,sort_keys=True,separators=(",",":")) != payload or current.evaluation_supported != supported:
                     raise ValidationError("snapshot rule definition is inconsistent")
             self.snapshots[p["id"]]=snap
+        elif kind=="supersession":
+            _require_exact_keys(p, {"schema", "id", "old", "new", "snapshot"},
+                                "invalid persisted supersession")
+            if p["schema"] != SUPERSESSION_SCHEMA or p["id"] != physical_id or type(p["old"]) is not str or type(p["new"]) is not str or type(p["snapshot"]) is not str:
+                raise ValidationError("invalid persisted supersession identity")
+            item=Supersession(_id(KnowledgeId,p["old"]), _id(KnowledgeId,p["new"]), _id(SnapshotId,p["snapshot"]))
+            self._validate_supersession_candidate(item.old, item.new, item.snapshot)
+            self._supersession_claimants.append((physical_id, item))
         elif kind=="derivation":
             required=("id","knowledge_id","rule_id","rule_version","bindings","snapshot","context","dependencies","grounding_evidence")
             if any(field not in p for field in required): raise ValidationError("incomplete persisted derivation")
@@ -535,6 +549,73 @@ class Store:
             scope=p["scope"] if type(p["scope"]) is str else tuple(p["scope"])
             if spec is None or len(parts)!=spec.arity or len(_unique_values(parts)) != len(parts) or any(x.value not in self.descriptions for x in parts) or any(x.value not in self.sources for x in prov) or not prov or p["polarity"] not in _POLARITIES or (type(p["scope"]) is not str and (derivation_id is None or type(p["scope"]) is not list)) or p["epistemic_status"] not in _STATUSES: raise ValidationError("invalid persisted relation assertion")
             self.records[p["id"]]=RelationAssertion(_id(KnowledgeId,p["id"]),pred,version,parts,p["polarity"],scope,p["epistemic_status"],prov,derivation_id)
+
+    def _validate_supersessions(self):
+        """Publish a deterministic, closed supersession relation after restore."""
+        candidates=tuple(sorted(self._supersession_claimants, key=lambda x: (x[1].old.value, x[1].new.value, x[1].snapshot.value, x[0])))
+        grouped={}
+        for physical, item in candidates:
+            grouped.setdefault(item.old.value, []).append((physical, item))
+        valid={}
+        for old, claims in sorted(grouped.items()):
+            replacements={(item.new.value, item.snapshot.value) for _, item in claims}
+            new_ids={item.new.value for _, item in claims}
+            if len(new_ids) != 1:
+                for physical, _ in claims: self._isolation("supersession", physical, "conflicting replacement for one knowledge id")
+                continue
+            # A repeated claim is harmless only when it is byte-for-byte the same row identity.
+            if len(claims) != 1:
+                for physical, _ in claims: self._isolation("supersession", physical, "duplicate supersession claim")
+                continue
+            physical, item=claims[0]
+            valid[old]=item
+        # A replacement chain is allowed, but it must be acyclic.
+        for old in tuple(sorted(valid)):
+            seen=set(); current=old
+            while current in valid:
+                if current in seen:
+                    cycle=set(seen); cycle.add(current)
+                    for source, item in candidates:
+                        if item.old.value in cycle: self._isolation("supersession", source, "supersession cycle")
+                    for node in cycle: valid.pop(node, None)
+                    break
+                seen.add(current); current=valid[current].new.value
+        self.supersessions=valid
+
+    @staticmethod
+    def _supersession_slot(record):
+        if isinstance(record, PropertyAssertion):
+            return (type(record), record.description, record.property, record.version,
+                    type(record.value))
+        if isinstance(record, RelationAssertion):
+            return (type(record), record.predicate, record.version,
+                    record.participants, record.polarity)
+        return None
+
+    def _validate_supersession_candidate(self, old, new, snapshot, edges=None):
+        """Purely validate one edge against records, snapshot, and a graph."""
+        if old == new:
+            raise ValidationError("knowledge cannot supersede itself")
+        previous=self.records.get(old.value); replacement=self.records.get(new.value)
+        if previous is None or replacement is None:
+            raise ValidationError("supersession requires existing old and new knowledge")
+        old_slot=self._supersession_slot(previous); new_slot=self._supersession_slot(replacement)
+        if old_slot is None or old_slot != new_slot:
+            raise ValidationError("supersession changes the semantic domain")
+        target=self.snapshots.get(snapshot.value)
+        if target is None:
+            raise ValidationError("unknown reference snapshot")
+        if old not in target.record_ids or new not in target.record_ids:
+            raise ValidationError("old and new knowledge must be present in the reference snapshot")
+        if edges is not None:
+            graph={key: edge.new.value for key, edge in edges.items()}
+            graph[old.value]=new.value
+            for start in graph:
+                current=start; seen=set()
+                while current in graph:
+                    if current in seen:
+                        raise ValidationError("supersession cycle")
+                    seen.add(current); current=graph[current]
 
     def configure_vocabulary(self, raw, _commit=True):
         self._check(); predicates={}; properties={}
@@ -662,6 +743,81 @@ class Store:
             raise
         if _publish: self.snapshots[sid.value]=snap
         return sid
+
+    def supersede(self, old, new, snapshot):
+        """Admit one explicit replacement edge without mutating either record."""
+        self._check()
+        old, new, snapshot = _id(KnowledgeId, old), _id(KnowledgeId, new), _id(SnapshotId, snapshot)
+        self._validate_supersession_candidate(old, new, snapshot, self.supersessions)
+        if old.value in self.supersessions:
+            raise AdmissionError("knowledge already has a supersession")
+        edge=Supersession(old,new,snapshot)
+        payload={"schema":SUPERSESSION_SCHEMA,"id":f"supersession:{old.value}","old":old.value,"new":new.value,"snapshot":snapshot.value}
+        try:
+            self._persist("supersession", payload["id"], payload); self._db.commit()
+        except Exception:
+            self._db.rollback(); raise
+        self.supersessions[old.value]=edge
+        self._supersession_claimants.append((payload["id"], edge))
+        return edge
+
+    def _snapshot_descends_from(self, descendant, ancestor):
+        current=self.open_snapshot(descendant)
+        seen=set()
+        while True:
+            if current.id == ancestor: return True
+            if current.parent is None or current.parent.value in seen: return False
+            seen.add(current.id.value); current=self.open_snapshot(current.parent)
+
+    def _visible_supersessions(self, snapshot):
+        visible={}
+        for old, edge in sorted(self.supersessions.items()):
+            if self._snapshot_descends_from(snapshot, edge.snapshot):
+                visible[old]=edge
+        return visible
+
+    def _decision_dependency_closure(self, problem):
+        direct=[]
+        for candidate in problem.candidates:
+            result=candidate.grounding_result
+            if result is not None: direct.extend(result.effective_dependencies)
+            if candidate.objective_value is not None: direct.append(candidate.objective_value.knowledge_id)
+        closure=[]; seen=set()
+        def visit(knowledge_id):
+            if knowledge_id.value in seen: return
+            seen.add(knowledge_id.value); closure.append(knowledge_id)
+            derivation=self.derivations.get(knowledge_id.value)
+            if derivation is not None:
+                for dependency in derivation.dependencies: visit(dependency)
+        for dependency in direct: visit(dependency)
+        return tuple(closure)
+
+    def status_of(self, decision_id, *, relative_to=None):
+        """Classify one historical decision against an explicit snapshot."""
+        self._check()
+        if relative_to is None: raise ValidationError("status_of requires an explicit reference snapshot")
+        reference=_id(SnapshotId, relative_to)
+        if reference.value not in self.snapshots:
+            if ("snapshot", reference.value) in self.isolated:
+                return ArtifactStatus.INVALID
+            raise GroundingError("unknown reference snapshot")
+        decision=self.decisions.get(_id(DecisionId, decision_id).value)
+        if decision is None: return ArtifactStatus.INVALID
+        try:
+            problem=self.grounded_decision_problems[decision.source.value]
+            validate_persisted_grounded_decision_problem(self, problem)
+            validate_persisted_decision(self, decision)
+            source=self.open_snapshot(problem.snapshot.value)
+            if not self._snapshot_descends_from(reference, source.id):
+                raise ValidationError("reference snapshot is not the decision snapshot or a descendant")
+            dependencies=self._decision_dependency_closure(problem)
+            visible=self._visible_supersessions(reference)
+            if any(dependency.value in visible for dependency in dependencies):
+                return ArtifactStatus.STALE
+            return ArtifactStatus.CURRENT
+        except (AtlasError, KeyError, TypeError, ValueError):
+            return ArtifactStatus.INVALID
+
     def open_snapshot(self, ident): self._check(); return self.snapshots[_id(SnapshotId,ident).value]
     def read(self, ident, snapshot=None):
         self._check(); record=self.records.get(_id(KnowledgeId,ident).value); return record if snapshot is None or record and record.id in self.open_snapshot(snapshot).record_ids else None

@@ -105,6 +105,12 @@ class SelectionStatus(str, Enum):
     NO_ADMISSIBLE_CANDIDATE = "no_admissible_candidate"
 
 
+class ArtifactStatus(str, Enum):
+    CURRENT = "current"
+    STALE = "stale"
+    INVALID = "invalid"
+
+
 @dataclass(frozen=True, slots=True)
 class M1SelectionResult:
     """Pure M1 selection result anchored to one persisted GDP identity."""
