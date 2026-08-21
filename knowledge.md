@@ -47,13 +47,21 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
   obligation de compatibilité. Lorsqu'une composition dépend de l'égalité ou de
   la correspondance de propriétés entre plusieurs descriptions, cette
   contrainte doit être représentée explicitement et participer au raisonnement.
+  Être décodable, respecter une forme locale, être sémantiquement cohérent et
+  pouvoir être publié comme actif sont des propriétés distinctes. La
+  publication exige la cohérence avec les objets dont dépend l'état considéré ;
+  un objet invalide ne conserve aucune autorité pour légitimer d'autres objets.
 - Transformer une source en connaissance Atlas est une opération sémantique,
   pas une transcription. L'identité, le prédicat, le scope, les hypothèses, le
   statut épistémique et la provenance de l'assertion résultante doivent être
   établis séparément.
 - Le fait qu'une source affirme explicitement une proposition ne rend pas
   automatiquement l'assertion Atlas correspondante `exact`. La provenance et
-  le statut épistémique sont orthogonaux.
+  le statut épistémique sont orthogonaux. Provenance et evidence rendent une
+  assertion inspectable ; l'intégrité d'un témoin peut établir que des données
+  correspondent à ce témoin, mais ni la provenance ni cette correspondance
+  n'établissent à elles seules la validité sémantique ou le statut épistémique
+  de l'assertion.
 - Un prédicat de relation destiné au raisonnement doit conserver une sémantique
   stable. Un même prédicat ne peut pas servir de verbe générique dont le sens
   réel change selon `value`, `evidence` ou le domaine.
@@ -103,10 +111,6 @@ exécutables et les README conservent protocoles, scénarios et résultats déta
 - Une propriété structurellement valide peut exister dans le Knowledge Store
   sans être connue ou consommée par la règle courante. La validité d'un
   `PropertyId` est distincte de son appartenance au vocabulaire d'une règle.
-- L'intégration complète avec le modèle persistant `Description` / `Relation` /
-  `Fact`, notamment provenance, contexte, statuts épistémiques et stockage
-  durable, reste non démontrée.
-
 ### Séquences ordonnées et règles de préfixe
 
 - Dans le périmètre testé, une séquence ordonnée peut être portée comme valeur
