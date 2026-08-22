@@ -27,7 +27,7 @@ def manifest(*candidates):
 
 
 def declare_and_ground(store, ident="decision-scope:ds1", candidates=("realization:r1", "realization:r2")):
-    scope = store.create_decision_scope(ident, "snapshot:m1", "context:m1", "request:q1", manifest(*candidates))
+    scope = store.create_decision_scope(ident, "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest(*candidates))
     store.evaluate_decision_scope(scope.id)
     return scope
 
@@ -105,7 +105,7 @@ def test_m1c21_non_exact_cost_fails_but_truth_is_not_rewritten(tmp_path):
 
 def test_m1c21_incomplete_or_missing_run_cannot_build(tmp_path):
     store = make_store(tmp_path)
-    scope = store.create_decision_scope("decision-scope:no-run", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r1"))
+    scope = store.create_decision_scope("decision-scope:no-run", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1"))
     with pytest.raises(GroundingError):
         store.ground_decision_problem(scope.id)
 
@@ -160,9 +160,9 @@ def test_m1c21_two_scopes_and_multiple_true_candidates_remain_independent(tmp_pa
         if fact["id"] in {"fact:q1-search", "fact:q1-output"}:
             fact["value"]["items"] = []
     store = make_store(tmp_path, data)
-    multi_scope = store.create_decision_scope("decision-scope:multi", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r1", "realization:r2"))
-    s1 = store.create_decision_scope("decision-scope:ds1", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r2"))
-    s2 = store.create_decision_scope("decision-scope:ds2", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r1"))
+    multi_scope = store.create_decision_scope("decision-scope:multi", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1", "realization:r2"))
+    s1 = store.create_decision_scope("decision-scope:ds1", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r2"))
+    s2 = store.create_decision_scope("decision-scope:ds2", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1"))
     store.evaluate_decision_scope(multi_scope.id)
     store.evaluate_decision_scope(s1.id)
     store.evaluate_decision_scope(s2.id)

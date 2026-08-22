@@ -23,7 +23,7 @@ def manifest(*candidates):
 
 
 def declare(store, ident="decision-scope:ds1", m=None):
-    return store.create_decision_scope(ident, "snapshot:m1", "context:m1", "request:q1", m or manifest("realization:r1", "realization:r2"))
+    return store.create_decision_scope(ident, "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=m or manifest("realization:r1", "realization:r2"))
 
 
 def test_scope_is_nominal_finite_and_persistent(tmp_path):
@@ -46,7 +46,7 @@ def test_scope_admission_rejects_duplicates_missing_candidates_and_wrong_context
     with pytest.raises((ValidationError, GroundingError)):
         declare(store, m=manifest("realization:r3"))
     with pytest.raises((ValidationError, GroundingError)):
-        store.create_decision_scope("decision-scope:bad", "snapshot:m1", "context:missing", "request:q1", manifest("realization:r1"))
+        store.create_decision_scope("decision-scope:bad", "snapshot:m1", "context:missing", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1"))
     assert store.decision_scopes == {}
 
 

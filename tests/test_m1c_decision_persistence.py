@@ -30,8 +30,7 @@ def prepared(tmp_path, *, costs=(100, 50), unknown_gpu=False, all_false=False, p
             if fact["id"] in {"fact:q1-search", "fact:q1-output"}:
                 fact["value"]["items"] = ["z"]
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), raw)
-    scope = store.create_decision_scope("decision-scope:p", "snapshot:m1", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r1"), DescriptionId("realization:r2")), (RuleId("coverage:v1"),)))
+    scope = store.create_decision_scope("decision-scope:p", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r1"), DescriptionId("realization:r2")), (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     store.admit_grounded_decision_problem(problem_id, problem)
@@ -62,8 +61,7 @@ def test_canonical_admission_restart_and_pure_select(tmp_path):
 def test_explicit_admission_only_and_atomic_rollback(tmp_path, monkeypatch):
     raw = json.loads(FIXTURE.read_text())
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), raw)
-    scope = store.create_decision_scope("decision-scope:p", "snapshot:m1", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),), (RuleId("coverage:v1"),)))
+    scope = store.create_decision_scope("decision-scope:p", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),), (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     store.admit_grounded_decision_problem("decision-problem:p", problem)

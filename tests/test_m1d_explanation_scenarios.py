@@ -20,7 +20,7 @@ def manifest(*candidates):
 
 def decide(store, name, candidates, *, context="context:m1", snapshot="snapshot:m1",
            problem_id=None, decision_id=None):
-    scope = store.create_decision_scope(name, snapshot, context, "request:q1", manifest(*candidates))
+    scope = store.create_decision_scope(name, snapshot, context, intention='intent:selection', request="request:q1", manifest=manifest(*candidates))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     problem_id = problem_id or "decision-problem:" + name.rsplit(":", 1)[-1]

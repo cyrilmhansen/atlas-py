@@ -9,7 +9,8 @@ from .model import (AmbiguousRead, DecisionGrounding, DecisionScope, EvaluationT
                     GroundingResult, GroundingStatus, MissingRead, RelationTerm,
                     DiscoveryEvidence, DiscoveryExclusion, DiscoveryExclusionReason,
                     DiscoveryQuery)
-from .model import DECISION_GROUNDING_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA
+from .model import (DECISION_GROUNDING_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA,
+                    DECISION_SCOPE_LEGACY_SCHEMA, DECISION_SCOPE_CURRENT_SCHEMA)
 from .model import SUPPORTED_MANIFEST_VERSIONS
 from .evidence import validate_grounding_evidence
 
@@ -83,8 +84,10 @@ def _result_from_payload(p):
 
 
 def scope_payload(scope):
-    return {"id": scope.id.value, "snapshot": scope.snapshot.value, "context": scope.context.value,
-            "request": scope.request.value, "manifest": {"manifest_version": scope.manifest.manifest_version,
+    return {"schema": DECISION_SCOPE_CURRENT_SCHEMA, "id": scope.id.value,
+            "snapshot": scope.snapshot.value, "context": scope.context.value,
+            "intention": scope.intention.value, "request": scope.request.value,
+            "manifest": {"manifest_version": scope.manifest.manifest_version,
             "candidate_description_ids": [x.value for x in scope.manifest.candidate_description_ids],
             "prescribed_rule_ids": [x.value for x in scope.manifest.prescribed_rule_ids]}}
 
@@ -117,8 +120,26 @@ def grounding_payload(grounding):
 
 
 def restore_scope(p):
-    if set(p) != {"id", "snapshot", "context", "request", "manifest"}: raise ValidationError("invalid persisted decision scope")
-    return DecisionScope(_id(DecisionScopeId, p["id"], "decision scope"), _id(SnapshotId, p["snapshot"], "snapshot"), _id(ContextId, p["context"], "context"), _id(DescriptionId, p["request"], "request"), validate_grounding_manifest(_manifest(p["manifest"])))
+    legacy_keys = {"id", "snapshot", "context", "request", "manifest"}
+    current_keys = legacy_keys | {"schema", "intention"}
+    if type(p) is not dict or (set(p) != legacy_keys and set(p) != current_keys):
+        raise ValidationError("invalid persisted decision scope")
+    # The closed shape is the format discriminator.  A seven-key payload is
+    # current and must carry the only current schema; its schema value must
+    # never reclassify it as the historical five-key payload.
+    if set(p) == legacy_keys:
+        schema = DECISION_SCOPE_LEGACY_SCHEMA
+        intention = DescriptionId("intent:selection")
+    else:
+        if p["schema"] != DECISION_SCOPE_CURRENT_SCHEMA:
+            raise ValidationError("unsupported persisted decision scope schema")
+        schema = DECISION_SCOPE_CURRENT_SCHEMA
+        intention = _id(DescriptionId, p["intention"], "intention")
+    return DecisionScope(_id(DecisionScopeId, p["id"], "decision scope"),
+                        _id(SnapshotId, p["snapshot"], "snapshot"),
+                        _id(ContextId, p["context"], "context"), intention,
+                        _id(DescriptionId, p["request"], "request"),
+                        validate_grounding_manifest(_manifest(p["manifest"])), schema)
 
 
 def restore_grounding(p):
@@ -180,6 +201,13 @@ def validate_scope_environment(store, scope):
     historical_contexts = [x for x in snap.context_definitions if x[0] == scope.context.value]
     if len(historical_contexts) != 1 or context.visible_scopes != historical_contexts[0][1] or tuple(x.value for x in context.enabled_rules) != historical_contexts[0][2]:
         raise GroundingError("decision scope context disagrees with final context")
+    # Legacy scopes synthesize the historical intention rather than carrying
+    # it in their payload.  That synthesized identity is still an intrinsic
+    # scope claim and must be fixed by the scope's snapshot.
+    if scope.intention not in snap.description_ids:
+        raise GroundingError("decision scope intention is absent from snapshot")
+    if scope.schema == DECISION_SCOPE_CURRENT_SCHEMA:
+        if scope.intention == scope.request: raise GroundingError("decision scope intention and request must differ")
     if scope.request not in snap.description_ids: raise GroundingError("decision scope request is absent from snapshot")
     if any(x not in snap.description_ids for x in scope.manifest.candidate_description_ids): raise GroundingError("decision scope candidate is absent from snapshot")
     fixed_rules = {x[0]: x[1] for x in snap.rule_definitions}
@@ -189,6 +217,18 @@ def validate_scope_environment(store, scope):
         rule = store.rules.get(rule_id.value)
         if rule is None or fixed_rules[rule_id.value] != rule.version:
             raise GroundingError("decision scope rule is absent from final rules")
+
+
+def validate_scope_grounding_compatibility(scope, grounding):
+    """Enforce the asymmetric historical/current format boundary."""
+    pair = (scope.schema, grounding.schema)
+    allowed = {
+        (DECISION_SCOPE_LEGACY_SCHEMA, DECISION_GROUNDING_LEGACY_SCHEMA),
+        (DECISION_SCOPE_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA),
+        (DECISION_SCOPE_CURRENT_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA),
+    }
+    if pair not in allowed:
+        raise GroundingError("current decision scope cannot use legacy grounding")
 
 
 def validate_grounding_result(store, scope, observation, *, current_scope_semantics=False):
@@ -252,7 +292,7 @@ def validate_discovery_evidence(store, scope, observation):
         return
     query = evidence.query
     snap = store.snapshots.get(scope.snapshot.value)
-    if snap is None or query.participants != (observation.candidate, DescriptionId("intent:selection")):
+    if snap is None or query.participants != (observation.candidate, scope.intention):
         raise GroundingError("discovery query bindings disagree with scope")
     versions = [version for predicate, version in snap.predicate_versions if predicate == query.predicate.value]
     if len(versions) != 1 or versions[0] != query.version:
@@ -276,7 +316,7 @@ def discover_relation(store, scope, candidate):
     if len(relation_version) != 1:
         raise GroundingError("discovery predicate version is not unique in snapshot")
     query = DiscoveryQuery("relation", PredicateId("realizes"), relation_version[0],
-                           (candidate, DescriptionId("intent:selection")), "positive")
+                           (candidate, scope.intention), "positive")
     effective_ids = set(store._effective_record_ids(snap.id))
     matches = [record for record in store.records.values()
                if type(record).__name__ == "RelationAssertion" and record.id in effective_ids
@@ -320,6 +360,7 @@ def _missing_read_is_outside_context(store, scope, result):
 def compute_declared_scope_completeness(store, scope, grounding):
     """Recompute status from the run, never from its persisted status field."""
     validate_scope_environment(store, scope)
+    validate_scope_grounding_compatibility(scope, grounding)
     manifest_ids = {x.value for x in scope.manifest.candidate_description_ids}
     observed_ids = [x.candidate.value for x in grounding.observations]
     if len(observed_ids) != len(set(observed_ids)):

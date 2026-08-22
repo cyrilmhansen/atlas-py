@@ -31,8 +31,7 @@ def prepared(tmp_path, candidates, *, costs=None, unknown=(), make_r1_true=True)
             if fact["id"] == "fact:r1-capabilities":
                 fact["value"]["items"] = ["a", "b"]
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
-    scope = store.create_decision_scope("decision-scope:test", "snapshot:m1", "context:m1", "request:q1",
-                                        GroundingManifest("m1-grounding/1", tuple(DescriptionId(x) for x in candidates), (RuleId("coverage:v1"),)))
+    scope = store.create_decision_scope("decision-scope:test", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", tuple(DescriptionId(x) for x in candidates), (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     store.admit_grounded_decision_problem("decision-problem:test", problem)
@@ -57,8 +56,7 @@ def test_selection_all_statuses_and_exact_boundaries(tmp_path):
     data = json.loads(FIXTURE.read_text())
     (tmp_path / "all-false").mkdir(parents=True, exist_ok=True)
     false = admit_fixture(open_store(tmp_path / "all-false" / "atlas.sqlite"), data)
-    scope = false.create_decision_scope("decision-scope:test", "snapshot:m1", "context:m1", "request:q1",
-                                        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r1"),), (RuleId("coverage:v1"),)))
+    scope = false.create_decision_scope("decision-scope:test", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r1"),), (RuleId("coverage:v1"),)))
     false.evaluate_decision_scope(scope.id)
     problem = false.ground_decision_problem(scope.id)
     false.admit_grounded_decision_problem("decision-problem:test", problem)

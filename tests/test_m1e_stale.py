@@ -18,7 +18,7 @@ def store_with_decision(tmp_path):
         if f["id"] == "fact:r2-cost": f["value"]["value"] = "50"
     s = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
     m = GroundingManifest("m1-grounding/1", (DescriptionId("realization:r1"), DescriptionId("realization:r2")), (RuleId("coverage:v1"),))
-    scope = s.create_decision_scope("scope", "snapshot:m1", "context:m1", "request:q1", m)
+    scope = s.create_decision_scope("scope", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=m)
     s.evaluate_decision_scope(scope.id); p = s.ground_decision_problem(scope.id)
     s.admit_grounded_decision_problem("problem", p); s.admit_m1_decision("decision", s.select_m1("problem"))
     return s

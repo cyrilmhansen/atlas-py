@@ -268,6 +268,21 @@ effectivement lues.
 
 ### DecisionScope M1
 
+Le `DecisionScope` courant porte explicitement deux `DescriptionId` distinctes :
+`intention` (`I`, ce qui doit être réalisé) et `request` (les exigences
+concrètes). Les nouveaux scopes sont persistés sous la forme fermée
+`atlas.core-v1.decision-scope/2`; l'intention est obligatoire et appartient au
+snapshot déclaré. La découverte interroge exactement `realizes(R, I)` et le
+grounding conserve séparément la lecture de couverture
+`covers(candidate, request)`. Aucun restore ne migre, ne répare SQLite ou ne
+choisit un scope latest/current.
+
+Les scopes historiques `/1` n'avaient pas de champ `schema` ni d'intention :
+leur forme legacy exacte reste lisible et leur intention mémoire est
+implicitement `intent:selection`. Cette constante reste donc légitime pour la
+sémantique de ce format historique uniquement ; elle ne gouverne pas les
+calculs des nouveaux scopes.
+
 Pour rendre ce scope falsifiable, M1 utilise un manifeste de grounding
 versionné. C’est un `CORE_V1_CHOICE`, non un mécanisme universel Atlas. Le
 manifeste déclare avant toute exécution :

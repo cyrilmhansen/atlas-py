@@ -48,8 +48,7 @@ def _base(tmp_path):
 
 
 def _resolve(store, prefix, snapshot, *, decision_id=None, problem_id=None):
-    scope = store.create_decision_scope(
-        f"decision-scope:{prefix}", snapshot, "context:m1", "request:q1", _manifest())
+    scope = store.create_decision_scope(f"decision-scope:{prefix}", snapshot, "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope(scope.id)
     grounded = store.ground_decision_problem(scope.id)
     pid = problem_id or f"decision-problem:{prefix}"
@@ -244,8 +243,7 @@ def test_corrupt_current_grounding_old_support_isolated_before_gdp(tmp_path):
     store.snapshot("S2", parent="snapshot:m1")
     store.supersede("fact:DEEP_THOUGHT-capabilities",
                     "fact:DEEP_THOUGHT-capabilities-v2", "S2")
-    scope2 = store.create_decision_scope(
-        "decision-scope:S2", "S2", "context:m1", "request:q1", _manifest())
+    scope2 = store.create_decision_scope("decision-scope:S2", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope(scope2.id)
     assert next(x for x in store.decision_grounding(scope2.id).observations
                 if x.candidate == DescriptionId("DEEP_THOUGHT")).truth is EvaluationTruth.FALSE

@@ -47,8 +47,7 @@ def _corrupt_snapshot(path, snapshot_id, field):
 
 def _order_case(tmp_path, corrupt_id, field):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -143,8 +142,7 @@ def _terminal_case(tmp_path, ident="derived:k"):
         "request": DescriptionId("request:q1")}, "snapshot:m1", "context:m1")
     store.admit_derived(KnowledgeId(ident), result)
     store.snapshot("snapshot:with-derived")
-    store.create_decision_scope("decision-scope:ds", "snapshot:with-derived",
-                                "context:m1", "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:with-derived", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -189,8 +187,7 @@ def test_r2_02_closure_is_independent_of_lexical_derived_ids(tmp_path):
 
 def test_r2_03_invalid_snapshot_invalidates_declared_scope_without_run(tmp_path):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.close()
     path = tmp_path / "atlas.sqlite"
     db = sqlite3.connect(path)
@@ -203,8 +200,7 @@ def test_r2_03_invalid_snapshot_invalidates_declared_scope_without_run(tmp_path)
 
 def test_r2_04_corrupt_run_does_not_invalidate_healthy_scope(tmp_path):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -219,8 +215,7 @@ def test_r2_04_corrupt_run_does_not_invalidate_healthy_scope(tmp_path):
 
 def test_r2_05_invalid_scope_invalidates_run_but_not_snapshot(tmp_path):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -241,8 +236,7 @@ def test_r2_05_invalid_scope_invalidates_run_but_not_snapshot(tmp_path):
 def test_r2_06_r2_07_historical_context_or_rule_invalidation_closes_scope_and_run(
         tmp_path, kind, ident, path, value):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     db = sqlite3.connect(tmp_path / "atlas.sqlite")
@@ -263,8 +257,7 @@ def test_r2_06_r2_07_historical_context_or_rule_invalidation_closes_scope_and_ru
                                            ("candidate_description_ids", ["realization:missing"])])
 def test_r2_08_unresolved_scope_request_or_candidate_is_not_unknown(tmp_path, field, value):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.close()
     path = tmp_path / "atlas.sqlite"
     db = sqlite3.connect(path)
@@ -352,8 +345,7 @@ def test_r2_2_hostile_snapshot_roots_are_isolated_without_breaking_restore(tmp_p
 
 def test_r2_2_conclusion_dependencies_are_closed_over_effective_dependencies(tmp_path):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -515,8 +507,7 @@ def test_r2_3_07_snapshot_cannot_self_legitimize_invalid_rule(tmp_path):
 
 def test_r2_3_08_branch_dependent_on_invalid_definition_closes(tmp_path):
     store = _store(tmp_path)
-    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1",
-                                "request:q1", _manifest())
+    store.create_decision_scope("decision-scope:ds", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
     store.evaluate_decision_scope("decision-scope:ds")
     store.close()
     path = tmp_path / "atlas.sqlite"
@@ -532,8 +523,7 @@ def test_r2_3_08_branch_dependent_on_invalid_definition_closes(tmp_path):
 def test_r2_3_09_independent_healthy_scope_branch_survives(tmp_path):
     store = _store(tmp_path)
     for ident in ("decision-scope:bad", "decision-scope:healthy"):
-        store.create_decision_scope(ident, "snapshot:m1", "context:m1",
-                                    "request:q1", _manifest())
+        store.create_decision_scope(ident, "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=_manifest())
         store.evaluate_decision_scope(ident)
     store.close()
     path = tmp_path / "atlas.sqlite"

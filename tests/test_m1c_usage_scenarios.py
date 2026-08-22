@@ -19,7 +19,7 @@ def manifest(*ids, rule="coverage:v1"):
 
 
 def run(store, sid, candidates, context="context:m1", request="request:q1", rule="coverage:v1"):
-    scope = store.create_decision_scope(sid, "snapshot:m1", context, request, manifest(*candidates, rule=rule))
+    scope = store.create_decision_scope(sid, "snapshot:m1", context, intention='intent:selection', request=request, manifest=manifest(*candidates, rule=rule))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     store.admit_grounded_decision_problem("decision-problem:" + sid.rsplit(":", 1)[-1], problem)
@@ -108,7 +108,7 @@ def test_scenario_d_v1_and_v2_are_historical_and_separate(tmp_path):
         if fact["id"] == "fact:r1-capabilities":
             fact["value"]["items"] = ["a", "b"]
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
-    scope1 = store.create_decision_scope("decision-scope:v1", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r1", "realization:r2"))
+    scope1 = store.create_decision_scope("decision-scope:v1", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1", "realization:r2"))
     store.evaluate_decision_scope(scope1.id)
     problem1 = store.ground_decision_problem(scope1.id)
     store.admit_grounded_decision_problem("decision-problem:v1", problem1)
@@ -123,7 +123,7 @@ def test_scenario_d_v1_and_v2_are_historical_and_separate(tmp_path):
         {"kind": "property", "payload": {"id": "fact:r2-cost-v2", "description": "realization:r2", "property": "cost", "version": "2", "value": {"kind": "integer", "value": "80"}, "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]}},
     ])
     store.snapshot("snapshot:v2")
-    scope2 = store.create_decision_scope("decision-scope:v2", "snapshot:v2", "context:v2", "request:q1", manifest("realization:r1", "realization:r2", "implementation:npu", rule="coverage:v2"))
+    scope2 = store.create_decision_scope("decision-scope:v2", "snapshot:v2", "context:v2", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1", "realization:r2", "implementation:npu", rule="coverage:v2"))
     store.evaluate_decision_scope(scope2.id)
     problem2 = store.ground_decision_problem(scope2.id)
     store.admit_grounded_decision_problem("decision-problem:v2", problem2)
@@ -149,7 +149,7 @@ def test_scenario_e_independent_context_scopes_do_not_leak(tmp_path):
     ])
     store.snapshot("snapshot:contexts")
     def make(sid, context):
-        scope = store.create_decision_scope(sid, "snapshot:contexts", context, "request:q1", manifest("realization:r2"))
+        scope = store.create_decision_scope(sid, "snapshot:contexts", context, intention='intent:selection', request="request:q1", manifest=manifest("realization:r2"))
         store.evaluate_decision_scope(scope.id)
         problem = store.ground_decision_problem(scope.id)
         store.admit_grounded_decision_problem("decision-problem:" + context.rsplit(":", 1)[-1], problem)

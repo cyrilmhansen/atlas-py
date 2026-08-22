@@ -21,7 +21,7 @@ def manifest(*candidates):
 
 def prepared(tmp_path, candidates=("realization:r1", "realization:r2")):
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), fixture())
-    scope = store.create_decision_scope("decision-scope:problem", "snapshot:m1", "context:m1", "request:q1", manifest(*candidates))
+    scope = store.create_decision_scope("decision-scope:problem", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest(*candidates))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     return store, scope, problem
@@ -360,7 +360,7 @@ def test_m1c22_17_unknown_survives_restart_and_18_no_selection(tmp_path):
     data = fixture()
     data["facts"] = [x for x in data["facts"] if x["id"] != "fact:r2-capabilities"]
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), data)
-    scope = store.create_decision_scope("decision-scope:unknown", "snapshot:m1", "context:m1", "request:q1", manifest("realization:r2"))
+    scope = store.create_decision_scope("decision-scope:unknown", "snapshot:m1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r2"))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     assert problem.candidates[0].truth is EvaluationTruth.UNKNOWN

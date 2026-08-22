@@ -354,6 +354,8 @@ class DiscoveryEvidence:
 # M1c.1 has one deliberately closed manifest format.  Unknown versions are
 # not interpreted as an unevaluable future format.
 SUPPORTED_MANIFEST_VERSIONS = frozenset({"m1-grounding/1"})
+DECISION_SCOPE_LEGACY_SCHEMA = "atlas.core-v1.decision-scope/1"
+DECISION_SCOPE_CURRENT_SCHEMA = "atlas.core-v1.decision-scope/2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,13 +386,17 @@ class DecisionScope:
     id: DecisionScopeId
     snapshot: SnapshotId
     context: ContextId
+    intention: DescriptionId
     request: DescriptionId
     manifest: GroundingManifest
+    schema: str = DECISION_SCOPE_CURRENT_SCHEMA
     def __post_init__(self):
-        if type(self.id) is not DecisionScopeId or type(self.snapshot) is not SnapshotId or type(self.context) is not ContextId or type(self.request) is not DescriptionId:
+        if type(self.id) is not DecisionScopeId or type(self.snapshot) is not SnapshotId or type(self.context) is not ContextId or type(self.intention) is not DescriptionId or type(self.request) is not DescriptionId:
             raise ValidationError("invalid decision scope identity domains")
         if type(self.manifest) is not GroundingManifest:
             raise ValidationError("decision scope requires a grounding manifest")
+        if self.schema not in {DECISION_SCOPE_LEGACY_SCHEMA, DECISION_SCOPE_CURRENT_SCHEMA}:
+            raise ValidationError("unsupported decision scope schema")
     def __eq__(self, other): return type(other) is type(self) and self.id == other.id
     def __hash__(self): return hash((type(self), self.id))
 

@@ -25,8 +25,7 @@ def manifest(*candidates):
 
 def decide(store, decision_id="decision:old", scope_id="decision-scope:old",
            snapshot="snapshot:m1", candidates=("EASY_SHORTCUT", "DEEP_THOUGHT")):
-    scope = store.create_decision_scope(scope_id, snapshot, "context:m1", "request:q1",
-                                        manifest(*candidates))
+    scope = store.create_decision_scope(scope_id, snapshot, "context:m1", intention='intent:selection', request="request:q1", manifest=manifest(*candidates))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     problem_id = "decision-problem:" + scope_id.rsplit(":", 1)[-1]
@@ -125,3 +124,19 @@ def test_e_corruption_is_invalid_not_stale(tmp_path):
     db.commit(); db.close()
     restored = open_store(tmp_path / "atlas.sqlite")
     assert restored.status_of("decision:old", relative_to="snapshot:m1") is ArtifactStatus.INVALID
+
+
+def test_included_discovery_identity_stales_only_the_superseding_branch(tmp_path):
+    store = base_store(tmp_path)
+    d1 = decide(store)
+    before = store.explain_m1(d1.id)
+    store.admit([{"kind": "relation", "payload": {
+        "id": "rel:r2-realizes-v2", "predicate": "realizes", "version": "1",
+        "participants": ["DEEP_THOUGHT", "intent:selection"], "polarity": "positive",
+        "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]}}])
+    store.snapshot("snapshot:branch-a", parent="snapshot:m1")
+    store.snapshot("snapshot:branch-b", parent="snapshot:m1")
+    store.supersede("rel:r2-realizes", "rel:r2-realizes-v2", "snapshot:branch-a")
+    assert store.status_of(d1.id, relative_to="snapshot:branch-a") is ArtifactStatus.STALE
+    assert store.status_of(d1.id, relative_to="snapshot:branch-b") is ArtifactStatus.CURRENT
+    assert store.explain_m1(d1.id) == before

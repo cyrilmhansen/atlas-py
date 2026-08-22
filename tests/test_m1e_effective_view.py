@@ -57,7 +57,7 @@ def add_scan_relation(store, ident, candidate="realization:r2", scope="catalog")
 def relation_scope(store, scope_id, snapshot, candidates=("realization:r2",), context="context:m1"):
     manifest = GroundingManifest("m1-grounding/1", tuple(DescriptionId(x) for x in candidates),
                                  (RuleId("coverage:v1"),))
-    scope = store.create_decision_scope(scope_id, snapshot, context, "request:q1", manifest)
+    scope = store.create_decision_scope(scope_id, snapshot, context, intention='intent:selection', request="request:q1", manifest=manifest)
     return store.evaluate_decision_scope(scope.id)
 
 
@@ -250,7 +250,7 @@ def test_new_gdp_uses_effective_objective_but_old_gdp_stays_historical(tmp_path)
     manifest = GroundingManifest("m1-grounding/1",
                                  (DescriptionId("realization:r1"), DescriptionId("realization:r2")),
                                  (RuleId("coverage:v1"),))
-    old_scope = store.create_decision_scope("scope:S1", "S1", "context:m1", "request:q1", manifest)
+    old_scope = store.create_decision_scope("scope:S1", "S1", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest)
     store.evaluate_decision_scope(old_scope.id)
     old_problem = store.ground_decision_problem(old_scope.id)
     store.admit_grounded_decision_problem("problem:S1", old_problem)
@@ -259,7 +259,7 @@ def test_new_gdp_uses_effective_objective_but_old_gdp_stays_historical(tmp_path)
     add_property(store, "r2-cost-v2", "realization:r2", 120)
     store.snapshot("S2", parent="S1")
     store.supersede("fact:r2-cost", "r2-cost-v2", "S2")
-    new_scope = store.create_decision_scope("scope:S2", "S2", "context:m1", "request:q1", manifest)
+    new_scope = store.create_decision_scope("scope:S2", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest)
     store.evaluate_decision_scope(new_scope.id)
     new_problem = store.ground_decision_problem(new_scope.id)
     objective = next(x.objective_value for x in new_problem.candidates
@@ -279,7 +279,7 @@ def test_new_gdp_keeps_real_objective_ambiguity(tmp_path):
     manifest = GroundingManifest("m1-grounding/1",
                                  (DescriptionId("realization:r2"),),
                                  (RuleId("coverage:v1"),))
-    scope = store.create_decision_scope("scope:ambiguous", "S2", "context:m1", "request:q1", manifest)
+    scope = store.create_decision_scope("scope:ambiguous", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest)
     store.evaluate_decision_scope(scope.id)
     with pytest.raises(GroundingError, match="ambiguous"):
         store.ground_decision_problem(scope.id)
@@ -318,9 +318,7 @@ def test_h_exclusion_is_not_an_admissible_gdp_candidate_or_false(tmp_path):
     store = base(tmp_path)
     add_scan_relation(store, "rel:hidden", scope="private")
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:H-gdp", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
+    scope = store.create_decision_scope("scope:H-gdp", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
@@ -335,9 +333,7 @@ def test_h_exclusion_is_not_an_admissible_gdp_candidate_or_false(tmp_path):
 def test_empty_found_true_is_no_admissible_candidate(tmp_path):
     store = base(tmp_path)
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:empty-gdp", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
+    scope = store.create_decision_scope("scope:empty-gdp", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
@@ -352,9 +348,7 @@ def test_mixed_relation_support_keeps_candidate_in_scope(tmp_path):
     add_scan_relation(store, "rel:hidden", scope="private")
     add_scan_relation(store, "rel:visible", scope="catalog")
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:mixed", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
+    scope = store.create_decision_scope("scope:mixed", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     evidence = store.decision_grounding(scope.id).observations[0].discovery_evidence
@@ -376,9 +370,7 @@ def test_excluded_unknown_does_not_block_included_true(tmp_path):
     add_property(store, "r1-capabilities-v2", "realization:r1", "a,b", "available-capabilities")
     store.snapshot("S2", parent="snapshot:m1")
     store.supersede("fact:r1-capabilities", "r1-capabilities-v2", "S2")
-    scope = store.create_decision_scope(
-        "scope:excluded-unknown", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"), DescriptionId("realization:r1")),
+    scope = store.create_decision_scope("scope:excluded-unknown", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"), DescriptionId("realization:r1")),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
@@ -394,9 +386,7 @@ def test_included_unknown_still_needs_information(tmp_path):
     add_scan_relation(store, "rel:r2-visible", candidate="realization:r2")
     add_property(store, "r2-capabilities-extra", "realization:r2", "other", "available-capabilities")
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:included-unknown", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
+    scope = store.create_decision_scope("scope:included-unknown", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
@@ -561,9 +551,7 @@ def test_v2_admission_matches_restore_for_forged_legacy_outcome(tmp_path):
     """A v2 GDP rejects legacy NEEDS_INFORMATION at admission and restore."""
     store = base(tmp_path)
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:admission-parity", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
+    scope = store.create_decision_scope("scope:admission-parity", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),),
                           (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     assert store.decision_grounding(scope.id).schema == "atlas.core-v1.decision-grounding/2"
@@ -617,9 +605,7 @@ def test_legacy_grounding_shape_is_closed_and_skips_current_discovery_semantics(
     store = base(tmp_path)
     add_scan_relation(store, "rel:hidden", scope="private")
     store.snapshot("S2", parent="snapshot:m1")
-    scope = store.create_decision_scope(
-        "scope:legacy", "S2", "context:m1", "request:q1",
-        GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),), (RuleId("coverage:v1"),)))
+    scope = store.create_decision_scope("scope:legacy", "S2", "context:m1", intention='intent:selection', request="request:q1", manifest=GroundingManifest("m1-grounding/1", (DescriptionId("realization:r2"),), (RuleId("coverage:v1"),)))
     store.evaluate_decision_scope(scope.id)
     path = store.path
     store.close()
@@ -628,6 +614,12 @@ def test_legacy_grounding_shape_is_closed_and_skips_current_discovery_semantics(
     payload = json.loads(row[0]); payload.pop("schema")
     for observation in payload["observations"]:
         observation.pop("discovery_evidence")
+    scope_row = db.execute("SELECT payload FROM records WHERE kind='decision_scope' AND id='scope:legacy'").fetchone()
+    scope_payload = json.loads(scope_row[0])
+    scope_payload.pop("schema")
+    scope_payload.pop("intention")
+    db.execute("UPDATE records SET payload=? WHERE kind='decision_scope' AND id='scope:legacy'",
+               (json.dumps(scope_payload),))
     db.execute("UPDATE records SET payload=? WHERE kind='decision_grounding' AND id='scope:legacy'", (json.dumps(payload),))
     db.commit(); db.close()
     reopened = open_store(path)

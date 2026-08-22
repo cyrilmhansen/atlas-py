@@ -21,8 +21,7 @@ def manifest(*candidates):
 
 def decide(store, scope_name, candidates, *, context="context:m1", snapshot="snapshot:m1",
            problem_id=None, decision_id=None):
-    scope = store.create_decision_scope(scope_name, snapshot, context,
-                                        "request:q1", manifest(*candidates))
+    scope = store.create_decision_scope(scope_name, snapshot, context, intention='intent:selection', request="request:q1", manifest=manifest(*candidates))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     problem_id = problem_id or "decision-problem:" + scope_name.rsplit(":", 1)[-1]
@@ -186,7 +185,7 @@ def test_scenario_e_v1_and_v2_decisions_remain_separate(tmp_path):
     store.admit([{"kind": "property", "payload": {"id": "fact:r1-cost-v2", "description": "realization:r1", "property": "cost", "version": "2", "value": {"kind": "integer", "value": "30"}, "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]}},
                  {"kind": "property", "payload": {"id": "fact:r2-cost-v2", "description": "realization:r2", "property": "cost", "version": "2", "value": {"kind": "integer", "value": "80"}, "scope": "catalog", "epistemic_status": "exact", "provenance": ["source:m1-fixture"]}}])
     store.snapshot("snapshot:v2")
-    scope = store.create_decision_scope("decision-scope:v2", "snapshot:v2", "context:m1", "request:q1", manifest("realization:r1", "realization:r2"))
+    scope = store.create_decision_scope("decision-scope:v2", "snapshot:v2", "context:m1", intention='intent:selection', request="request:q1", manifest=manifest("realization:r1", "realization:r2"))
     store.evaluate_decision_scope(scope.id)
     problem = store.ground_decision_problem(scope.id)
     store.admit_grounded_decision_problem("decision-problem:v2", problem)
@@ -215,8 +214,7 @@ def test_scenario_f_independent_contexts_have_independent_outcomes(tmp_path):
     store = admit_fixture(open_store(tmp_path / "atlas.sqlite"), fixture)
     store.snapshot("snapshot:contexts")
     def make(context, decision_id):
-        scope = store.create_decision_scope("decision-scope:" + context.rsplit(":", 1)[-1],
-            "snapshot:contexts", context, "request:q1", manifest("realization:r1", "realization:r2"))
+        scope = store.create_decision_scope("decision-scope:" + context.rsplit(":", 1)[-1], "snapshot:contexts", context, intention='intent:selection', request="request:q1", manifest=manifest("realization:r1", "realization:r2"))
         store.evaluate_decision_scope(scope.id)
         problem = store.ground_decision_problem(scope.id)
         problem_id = "decision-problem:" + context.rsplit(":", 1)[-1]

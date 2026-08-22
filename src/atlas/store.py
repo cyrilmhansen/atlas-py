@@ -813,6 +813,16 @@ class Store:
 
     def _decision_dependency_closure(self, problem):
         direct=[]
+        grounding = self.decision_groundings.get(problem.scope_id.value)
+        if grounding is not None:
+            for observation in grounding.observations:
+                evidence = observation.discovery_evidence
+                if evidence is not None:
+                    # Included discovery identities are scope-admission
+                    # evidence.  A supersession can therefore change the
+                    # historical candidate population and must stale the
+                    # decision that relied on it.
+                    direct.extend(evidence.included)
         for candidate in problem.candidates:
             result=candidate.grounding_result
             if result is not None: direct.extend(result.effective_dependencies)
@@ -862,10 +872,10 @@ class Store:
         from .rules import ground
         return ground(self, rule_id, bindings, snapshot, context)
 
-    def create_decision_scope(self, scope_id, snapshot, context, request, manifest):
+    def create_decision_scope(self, scope_id, snapshot, context, *, intention, request, manifest):
         """Atomically admit an immutable finite M1c.1 scope declaration."""
         self._check()
-        scope=DecisionScope(_id(DecisionScopeId, scope_id), _id(SnapshotId, snapshot), _id(ContextId, context), _id(DescriptionId, request), manifest if type(manifest) is GroundingManifest else _manifest_for_store(manifest))
+        scope=DecisionScope(_id(DecisionScopeId, scope_id), _id(SnapshotId, snapshot), _id(ContextId, context), _id(DescriptionId, intention), _id(DescriptionId, request), manifest if type(manifest) is GroundingManifest else _manifest_for_store(manifest))
         if scope.id.value in self.decision_scopes: raise AdmissionError("duplicate decision scope identity")
         validate_grounding_manifest(scope.manifest)
         validate_scope_environment(self, scope)
