@@ -656,7 +656,8 @@ def _eligible_effective_objective_supports(store, candidate, property_id, versio
 
 
 def _validate_persisted_objective_support(store, candidate, problem_objective,
-                                          objective_value, snapshot, visible_scopes):
+                                          objective_value, snapshot, visible_scopes,
+                                          *, current_scope_semantics):
     """Validate a persisted support under the problem's objective authority."""
     if type(objective_value) is not ObjectiveValue:
         raise GroundingError(f"TRUE candidate has no persisted objective support: {candidate.value}")
@@ -669,7 +670,9 @@ def _validate_persisted_objective_support(store, candidate, problem_objective,
         raise GroundingError(f"persisted objective support is not the referenced property: {candidate.value}")
     if ("property", record.id.value) in store.isolated:
         raise GroundingError(f"persisted objective support is isolated: {candidate.value}")
-    if record.id not in snapshot.record_ids:
+    effective_ids = (set(store._effective_record_ids(snapshot.id))
+                     if current_scope_semantics else set(snapshot.record_ids))
+    if record.id not in effective_ids:
         raise GroundingError(f"persisted objective support is outside the historical snapshot: {candidate.value}")
     if record.scope not in visible_scopes:
         raise GroundingError(f"persisted objective support is outside the historical context: {candidate.value}")
@@ -678,11 +681,11 @@ def _validate_persisted_objective_support(store, candidate, problem_objective,
             record.epistemic_status != problem_objective.epistemic_status or
             record.value != objective_value.value):
         raise GroundingError(f"persisted objective support disagrees with the candidate: {candidate.value}")
-    eligible = _eligible_historical_objective_supports(
+    eligible = _eligible_objective_supports(
         store, candidate, problem_objective.property, problem_objective.version,
-        snapshot, visible_scopes)
+        effective_ids, visible_scopes)
     if len(eligible) != 1:
-        raise GroundingError(f"historical M1 cost is not uniquely admissible for {candidate.value}")
+        raise GroundingError(f"M1 cost is not uniquely admissible for {candidate.value}")
     if eligible[0].id != objective_value.knowledge_id:
         raise GroundingError(f"persisted objective support is not the unique historical support: {candidate.value}")
 
@@ -744,10 +747,10 @@ def validate_persisted_grounded_decision_problem(store, problem):
                     candidate.objective_value.epistemic_status != problem.objective.epistemic_status):
                 raise GroundingError(
                     f"persisted objective value disagrees with the problem objective: {candidate.candidate.value}")
-            _validate_persisted_objective_support(store, candidate.candidate,
-                                                  problem.objective, candidate.objective_value,
-                                                  snapshot,
-                                                  visible_scopes)
+            _validate_persisted_objective_support(
+                store, candidate.candidate, problem.objective,
+                candidate.objective_value, snapshot, visible_scopes,
+                current_scope_semantics=current_scope_semantics)
         elif candidate.objective_value is not None:
             raise GroundingError(f"non-TRUE candidate has an objective value: {candidate.candidate.value}")
 

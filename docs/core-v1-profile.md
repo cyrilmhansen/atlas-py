@@ -92,7 +92,14 @@ Les décisions suivantes sont locales à Core V1 :
   snapshot; il ne réécrit ni la décision ni son GDP ni son explication, ne
   lance aucun recalcul et n’implique aucun snapshot « latest » global. Une
   dérivation stale ne doit pas être réutilisée silencieusement; sa révision
-  explicite est hors de M1e.1 ;
+  explicite est hors de M1e.1. M1e.2.2 précise qu'une telle révision est une
+  nouvelle chaîne explicitement demandée `DecisionScope -> DecisionGrounding
+  -> GroundedDecisionProblem -> Selection -> Decision`, ancrée dans le
+  snapshot descendant. La décision historique stale n'est jamais réécrite :
+  ses supports `KnowledgeId`, son GDP et son explication restent reproductibles
+  simultanément avec ceux de la nouvelle décision. Chaque chaîne possède ses
+  propres identités nominales et aucune opération de recalcul ou de sélection
+  « latest » implicite n'existe ;
 - la décision M1 est monoobjectif, avec un coût entier exact et une réalisation
   choisie par problème ; toutes les solutions co-optimales sont retournées ;
 - aucun artefact de `experiments/` n’est importé comme code, donnée ou API.

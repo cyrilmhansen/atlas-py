@@ -191,7 +191,7 @@ def validate_scope_environment(store, scope):
             raise GroundingError("decision scope rule is absent from final rules")
 
 
-def validate_grounding_result(store, scope, observation):
+def validate_grounding_result(store, scope, observation, *, current_scope_semantics=False):
     """Validate a persisted result against the scope's historical world."""
     result = observation.grounding_result
     if result is None:
@@ -230,10 +230,12 @@ def validate_grounding_result(store, scope, observation):
         raise GroundingError("non-TRUE grounding cannot carry a conclusion")
     if len(set(result.effective_dependencies)) != len(result.effective_dependencies):
         raise GroundingError("grounding result contains duplicate dependencies")
-    if any(dep not in snap.record_ids or dep.value not in store.records for dep in result.effective_dependencies):
+    admissible_record_ids = (set(store._effective_record_ids(snap.id))
+                             if current_scope_semantics else set(snap.record_ids))
+    if any(dep not in admissible_record_ids or dep.value not in store.records for dep in result.effective_dependencies):
         raise GroundingError("grounding result references an unresolved historical dependency")
     if result.truth is EvaluationTruth.TRUE and any(
-            dep not in snap.record_ids or dep.value not in store.records
+            dep not in admissible_record_ids or dep.value not in store.records
             for dep in result.conclusion.dependencies):
         raise GroundingError("grounding conclusion references an unresolved historical dependency")
     validate_grounding_evidence(result, participants)
@@ -325,7 +327,9 @@ def compute_declared_scope_completeness(store, scope, grounding):
     if any(x not in manifest_ids for x in observed_ids):
         raise ValidationError("grounding observation is outside the manifest")
     for observation in grounding.observations:
-        validate_grounding_result(store, scope, observation)
+        validate_grounding_result(
+            store, scope, observation,
+            current_scope_semantics=(grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA))
         if grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA:
             validate_discovery_evidence(store, scope, observation)
     if any(x.structural_error is not None for x in grounding.observations):
