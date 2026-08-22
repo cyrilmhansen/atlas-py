@@ -237,6 +237,16 @@ snapshot ne suffit pas. Une absence historique qui reçoit ultérieurement un
 nouveau fait n’est pas modélisée comme une supersession et reste une frontière
 M1e.2.
 
+Pour M1e.2.1, les lectures sémantiques d’un nouveau calcul relatif à un
+`SnapshotId` utilisent une vue effective pure : les enregistrements physiques
+du snapshot sont filtrés par les arêtes de supersession validées et visibles
+par ascendance. Une arête masque l’ancien enregistrement et rend son
+remplaçant visible uniquement sur sa branche et ses descendants ; les faits
+ordinaires nouvellement présents restent visibles. Il n’existe aucun
+`latest`/`first` global. Un lookup exact par `KnowledgeId`, notamment celui
+d’un artefact historique persisté, continue de consulter l’enregistrement
+physique et n’est pas réécrit par cette vue.
+
 ## 5. Règles, grounding et décision
 
 Une règle reçoit un binding exact pour chaque participant déclaré. Chaque
@@ -279,12 +289,19 @@ M1 est l’univers fermé décrit par ce manifeste :
 5. la fermeture transitive des dépendances de toute connaissance dérivée
    incluse dans le `Grounded Decision Problem` est parcourue.
 
-Une preuve structurée de couverture doit être produite. Elle contient le
-snapshot, le contexte, la version du manifeste, les versions de règle et de
-vocabulaire, puis, pour chaque catégorie prescrite : la recherche effectuée,
-ses paramètres exacts, les identités trouvées ou l’absence explicite de
-résultat, les identités incluses, les identités exclues et la raison structurée
-de chaque exclusion. Pour chaque connaissance dérivée incluse, elle contient
+Une preuve structurée de couverture doit être produite. Le
+`GroundingManifest` décrit le plan attendu ; la `GroundingObservation` porte
+l’exécution réelle. Pour la découverte relationnelle Core V1, chaque
+observation persiste un certificat versionné `atlas.core-v1.discovery-evidence/1`
+avec la requête exacte (`realizes`, version, participants et polarité), puis
+les tuples déterministes `found`, `included` et `excluded`. Les identités
+`included` et `excluded` sont des sous-ensembles disjoints de `found`; chaque
+exclusion porte une raison fermée structurée (`outside_context`). Le certificat
+est produit pendant le calcul et validé avant persistence puis à la
+restauration. Une connaissance masquée par supersession, ou une dérivation
+stale, n’est pas réenregistrée comme exclusion métier si elle n’appartient plus
+à la vue effective. Les observations historiques M1c/M1d/M1e.1 sans ce champ
+restent restaurables sous leur ancien format. Pour chaque connaissance dérivée incluse, elle contient
 le parcours de la fermeture transitive de ses dépendances et son résultat.
 Cette preuve est inspectable par la future façade de conformance.
 

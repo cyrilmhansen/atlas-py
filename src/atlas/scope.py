@@ -6,7 +6,10 @@ from .errors import AdmissionError, GroundingError, ValidationError
 from .identity import DecisionScopeId, DescriptionId, RuleId, SnapshotId, ContextId, KnowledgeId, PredicateId, PropertyId, SourceId
 from .model import (AmbiguousRead, DecisionGrounding, DecisionScope, EvaluationTruth,
                     GroundedConclusion, GroundingManifest, GroundingObservation,
-                    GroundingResult, GroundingStatus, MissingRead, RelationTerm)
+                    GroundingResult, GroundingStatus, MissingRead, RelationTerm,
+                    DiscoveryEvidence, DiscoveryExclusion, DiscoveryExclusionReason,
+                    DiscoveryQuery)
+from .model import DECISION_GROUNDING_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA
 from .model import SUPPORTED_MANIFEST_VERSIONS
 from .evidence import validate_grounding_evidence
 
@@ -87,11 +90,30 @@ def scope_payload(scope):
 
 
 def grounding_payload(grounding):
-    return {"id": grounding.scope_id.value, "scope_id": grounding.scope_id.value,
-            "status": grounding.status.value, "interrupted": grounding.interrupted, "pruned": grounding.pruned,
-            "observations": [{"candidate": x.candidate.value, "traversed": x.traversed,
+    def discovery_payload(evidence):
+        if evidence is None:
+            return None
+        return {"schema": evidence.schema,
+                "query": {"kind": evidence.query.kind, "predicate": evidence.query.predicate.value,
+                          "version": evidence.query.version,
+                          "participants": [x.value for x in evidence.query.participants],
+                          "polarity": evidence.query.polarity},
+                "found": [x.value for x in evidence.found],
+                "included": [x.value for x in evidence.included],
+                "excluded": [{"knowledge_id": x.knowledge_id.value, "reason": x.reason.value}
+                             for x in evidence.excluded]}
+    observations = [{"candidate": x.candidate.value, "traversed": x.traversed,
                 "truth": None if x.truth is None else x.truth.value, "grounding_result": None if x.grounding_result is None else _result_payload(x.grounding_result),
-                "exclusion_reason": x.exclusion_reason, "structural_error": x.structural_error} for x in grounding.observations]}
+                "exclusion_reason": x.exclusion_reason, "structural_error": x.structural_error,
+                "discovery_evidence": discovery_payload(x.discovery_evidence)} for x in grounding.observations]
+    if grounding.schema == DECISION_GROUNDING_LEGACY_SCHEMA:
+        observations = [{key: value for key, value in item.items() if key != "discovery_evidence"} for item in observations]
+        return {"id": grounding.scope_id.value, "scope_id": grounding.scope_id.value,
+            "status": grounding.status.value, "interrupted": grounding.interrupted, "pruned": grounding.pruned,
+            "observations": observations}
+    return {"schema": grounding.schema, "id": grounding.scope_id.value, "scope_id": grounding.scope_id.value,
+            "status": grounding.status.value, "interrupted": grounding.interrupted, "pruned": grounding.pruned,
+            "observations": observations}
 
 
 def restore_scope(p):
@@ -100,14 +122,48 @@ def restore_scope(p):
 
 
 def restore_grounding(p):
-    if set(p) != {"id", "scope_id", "status", "interrupted", "pruned", "observations"} or p["id"] != p["scope_id"] or type(p["observations"]) is not list:
+    legacy_keys = {"id", "scope_id", "status", "interrupted", "pruned", "observations"}
+    current_keys = legacy_keys | {"schema"}
+    if type(p) is not dict or set(p) not in (legacy_keys, current_keys) or p["id"] != p["scope_id"] or type(p["observations"]) is not list:
         raise ValidationError("invalid persisted decision grounding")
+    schema = DECISION_GROUNDING_LEGACY_SCHEMA if set(p) == legacy_keys else p["schema"]
+    if schema not in {DECISION_GROUNDING_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA}:
+        raise ValidationError("unsupported persisted decision grounding schema")
     observations=[]
     for x in p["observations"]:
-        if type(x) is not dict or set(x) != {"candidate", "traversed", "truth", "grounding_result", "exclusion_reason", "structural_error"}: raise ValidationError("invalid persisted grounding observation")
+        old_keys = {"candidate", "traversed", "truth", "grounding_result", "exclusion_reason", "structural_error"}
+        new_keys = old_keys | {"discovery_evidence"}
+        expected = new_keys if schema == DECISION_GROUNDING_CURRENT_SCHEMA else old_keys
+        if type(x) is not dict or set(x) != expected: raise ValidationError("invalid persisted grounding observation")
         result = None if x["grounding_result"] is None else _result_from_payload(x["grounding_result"])
-        observations.append(GroundingObservation(_id(DescriptionId, x["candidate"], "candidate"), x["traversed"], None if x["truth"] is None else EvaluationTruth(x["truth"]), result, x["exclusion_reason"], x["structural_error"]))
-    return DecisionGrounding(_id(DecisionScopeId, p["scope_id"], "decision scope"), tuple(observations), GroundingStatus(p["status"]), p["interrupted"], p["pruned"])
+        evidence = None
+        if "discovery_evidence" in x:
+            raw = x["discovery_evidence"]
+            if raw is not None:
+                if type(raw) is not dict or set(raw) != {"schema", "query", "found", "included", "excluded"}:
+                    raise ValidationError("invalid persisted discovery evidence")
+                q = raw["query"]
+                if type(q) is not dict or set(q) != {"kind", "predicate", "version", "participants", "polarity"}:
+                    raise ValidationError("invalid persisted discovery query")
+                evidence = DiscoveryEvidence(
+                    raw["schema"],
+                    DiscoveryQuery(q["kind"], _id(PredicateId, q["predicate"], "predicate"), q["version"],
+                                   tuple(_id(DescriptionId, x, "participant") for x in q["participants"]), q["polarity"]),
+                    tuple(_id(KnowledgeId, x, "found knowledge") for x in raw["found"]),
+                    tuple(_id(KnowledgeId, x, "included knowledge") for x in raw["included"]),
+                    tuple(_restore_discovery_exclusion(item) for item in raw["excluded"]))
+        observations.append(GroundingObservation(_id(DescriptionId, x["candidate"], "candidate"), x["traversed"], None if x["truth"] is None else EvaluationTruth(x["truth"]), result, x["exclusion_reason"], x["structural_error"], evidence))
+    grounding = DecisionGrounding(_id(DecisionScopeId, p["scope_id"], "decision scope"), tuple(observations), GroundingStatus(p["status"]), p["interrupted"], p["pruned"], schema)
+    if schema == DECISION_GROUNDING_CURRENT_SCHEMA and any(x.discovery_evidence is None for x in observations if x.structural_error is None):
+        raise ValidationError("current decision grounding requires discovery evidence")
+    return grounding
+
+
+def _restore_discovery_exclusion(item):
+    if type(item) is not dict or set(item) != {"knowledge_id", "reason"}:
+        raise ValidationError("invalid persisted discovery exclusion")
+    return DiscoveryExclusion(_id(KnowledgeId, item["knowledge_id"], "excluded knowledge"),
+                             DiscoveryExclusionReason(item["reason"]))
 
 
 def validate_scope_environment(store, scope):
@@ -183,6 +239,82 @@ def validate_grounding_result(store, scope, observation):
     validate_grounding_evidence(result, participants)
 
 
+def validate_discovery_evidence(store, scope, observation):
+    """Validate a persisted certificate by pure recomputation.
+
+    The recomputation is an equality check only. It never replaces the
+    persisted certificate and never writes or repairs the SQLite payload.
+    """
+    evidence = observation.discovery_evidence
+    if evidence is None:
+        return
+    query = evidence.query
+    snap = store.snapshots.get(scope.snapshot.value)
+    if snap is None or query.participants != (observation.candidate, DescriptionId("intent:selection")):
+        raise GroundingError("discovery query bindings disagree with scope")
+    versions = [version for predicate, version in snap.predicate_versions if predicate == query.predicate.value]
+    if len(versions) != 1 or versions[0] != query.version:
+        raise GroundingError("discovery query predicate version is not fixed by snapshot")
+    if query.predicate != PredicateId("realizes") or query.polarity != "positive":
+        raise GroundingError("unsupported discovery query")
+    if not any(x[0] == scope.context.value for x in snap.context_definitions):
+        raise GroundingError("discovery query context is absent from snapshot")
+    expected = discover_relation(store, scope, observation.candidate)
+    if (evidence.query != expected.query or evidence.found != expected.found or
+            evidence.included != expected.included or evidence.excluded != expected.excluded):
+        raise GroundingError("discovery evidence disagrees with pure semantic discovery")
+
+
+def discover_relation(store, scope, candidate):
+    """Perform the one Core V1 discovery operation used by scope evaluation."""
+    snap = store.snapshots[scope.snapshot.value]
+    context = next(x for x in snap.context_definitions if x[0] == scope.context.value)
+    visible = set(context[1])
+    relation_version = [version for predicate, version in snap.predicate_versions if predicate == "realizes"]
+    if len(relation_version) != 1:
+        raise GroundingError("discovery predicate version is not unique in snapshot")
+    query = DiscoveryQuery("relation", PredicateId("realizes"), relation_version[0],
+                           (candidate, DescriptionId("intent:selection")), "positive")
+    effective_ids = set(store._effective_record_ids(snap.id))
+    matches = [record for record in store.records.values()
+               if type(record).__name__ == "RelationAssertion" and record.id in effective_ids
+               and ("relation", record.id.value) not in store.isolated
+               and record.predicate == query.predicate and record.version == query.version
+               and record.participants == query.participants and record.polarity == query.polarity]
+    matches.sort(key=lambda record: record.id.value)
+    found = tuple(record.id for record in matches)
+    included = tuple(record.id for record in matches
+                     if (set(record.scope) if type(record.scope) is tuple else {record.scope}) & visible)
+    return DiscoveryEvidence("atlas.core-v1.discovery-evidence/1", query, found, included,
+                             tuple(DiscoveryExclusion(record.id, DiscoveryExclusionReason.OUTSIDE_CONTEXT)
+                                   for record in matches if record.id not in included))
+
+
+def _missing_read_is_outside_context(store, scope, result):
+    """Retain the pre-R1A diagnostic for a property hidden by the context.
+
+    This is not a second relation discovery: it only explains an UNKNOWN
+    property read already reported by the rule evaluator.
+    """
+    if result is None or not result.missing_reads:
+        return False
+    snap = store.snapshots[scope.snapshot.value]
+    context = next(x for x in snap.context_definitions if x[0] == scope.context.value)
+    visible = set(context[1])
+    effective = set(store._effective_record_ids(snap.id))
+    for read in result.missing_reads:
+        if read.participant not in {"candidate", "request"}:
+            continue
+        for record in store.records.values():
+            if (type(record).__name__ == "PropertyAssertion" and record.id in effective
+                    and ("property", record.id.value) not in store.isolated
+                    and record.description == read.description and record.property == read.property
+                    and record.version == read.version
+                    and not ((set(record.scope) if type(record.scope) is tuple else {record.scope}) & visible)):
+                return True
+    return False
+
+
 def compute_declared_scope_completeness(store, scope, grounding):
     """Recompute status from the run, never from its persisted status field."""
     validate_scope_environment(store, scope)
@@ -194,6 +326,8 @@ def compute_declared_scope_completeness(store, scope, grounding):
         raise ValidationError("grounding observation is outside the manifest")
     for observation in grounding.observations:
         validate_grounding_result(store, scope, observation)
+        if grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA:
+            validate_discovery_evidence(store, scope, observation)
     if any(x.structural_error is not None for x in grounding.observations):
         return GroundingStatus.INVALID
     if grounding.interrupted or grounding.pruned:
@@ -210,25 +344,18 @@ def evaluate(store, scope):
     observations=[]; invalid=False
     for candidate in scope.manifest.candidate_description_ids:
         try:
+            evidence = discover_relation(store, scope, candidate)
             result = store.ground(rule, {"candidate": candidate, "request": scope.request}, scope.snapshot, scope.context)
-            excluded = None
-            snap = store.snapshots[scope.snapshot.value]
-            context = next(x for x in snap.context_definitions if x[0] == scope.context.value)
-            visible = set(context[1])
-            for record in store.records.values():
-                relevant = ((getattr(record, "predicate", None) == PredicateId("realizes") and
-                             getattr(record, "participants", ()) == (candidate, scope.request) and
-                             getattr(record, "polarity", None) == "positive") or
-                            (getattr(record, "description", None) in {candidate, scope.request}))
-                if relevant and record.id in snap.record_ids:
-                    scopes = {record.scope} if type(record.scope) is str else set(record.scope)
-                    if not scopes.intersection(visible): excluded = "excluded_by_context"
-            observations.append(GroundingObservation(candidate, True, result.truth, result, excluded))
+            # Candidate scope membership is authoritative only when at least
+            # one discovered relation is included. Excluded relations remain
+            # certificate facts and do not veto another included relation.
+            excluded = None if evidence.included else "excluded_by_context"
+            observations.append(GroundingObservation(candidate, True, result.truth, result, excluded, None, evidence))
         except GroundingError as exc:
             observations.append(GroundingObservation(candidate, True, None, None, structural_error=str(exc)))
             invalid=True
     status = GroundingStatus.INVALID if invalid else GroundingStatus.COMPLETE_FOR_DECLARED_SCOPE
-    grounding = DecisionGrounding(scope.id, tuple(observations), status)
+    grounding = DecisionGrounding(scope.id, tuple(observations), status, schema=DECISION_GROUNDING_CURRENT_SCHEMA)
     computed = compute_declared_scope_completeness(store, scope, grounding)
     if computed is not status:
         raise GroundingError("evaluated grounding status is inconsistent")

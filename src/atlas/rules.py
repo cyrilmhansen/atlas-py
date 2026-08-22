@@ -75,9 +75,10 @@ def _expr(store, expression, bindings, snapshot, scopes, state):
         spec = store.vocabulary.prop(property_id, version)
         if spec is None: raise GroundingError("unresolved property vocabulary entry")
         description = bindings[participant]
+        effective_ids = set(store._effective_record_ids(snapshot.id))
         candidates = [record for record in store.records.values()
                       if isinstance(record, PropertyAssertion)
-                      and record.id in snapshot.record_ids
+                      and record.id in effective_ids
                       and ("property", record.id.value) not in store.isolated
                       and record.description == description
                       and record.property == property_id and record.version == version

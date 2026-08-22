@@ -136,7 +136,9 @@ def test_scenario_d_v1_and_v2_are_historical_and_separate(tmp_path):
     assert all(x.candidate != DescriptionId("implementation:npu") for x in restored1.candidates)
     assert any(x.candidate == DescriptionId("implementation:npu") for x in restored2.candidates)
     assert reopened.select_m1("decision-problem:v1").co_optima == (DescriptionId("realization:r1"),)
-    assert reopened.select_m1("decision-problem:v2").status is SelectionStatus.NEEDS_INFORMATION
+    # The added candidate has no included realizes support, so its UNKNOWN
+    # truth is removed before decision evaluation.
+    assert reopened.select_m1("decision-problem:v2").status is SelectionStatus.RESOLVED
 
 
 def test_scenario_e_independent_context_scopes_do_not_leak(tmp_path):
@@ -162,4 +164,4 @@ def test_scenario_e_independent_context_scopes_do_not_leak(tmp_path):
     assert reopened.decision_problem("decision-problem:desktop").context == ContextId("context:desktop")
     assert reopened.decision_problem("decision-problem:embedded").candidates[0].exclusion_reason == "excluded_by_context"
     assert reopened.select_m1("decision-problem:desktop").status is SelectionStatus.RESOLVED
-    assert reopened.select_m1("decision-problem:embedded").status is SelectionStatus.NEEDS_INFORMATION
+    assert reopened.select_m1("decision-problem:embedded").status is SelectionStatus.NO_ADMISSIBLE_CANDIDATE

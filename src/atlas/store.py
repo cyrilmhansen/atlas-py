@@ -776,6 +776,41 @@ class Store:
                 visible[old]=edge
         return visible
 
+    def _effective_record_ids(self, snapshot_id):
+        """Return the pure semantic record view for one explicit snapshot.
+
+        Physical snapshot membership remains historical. A replacement is
+        semantic evidence only on the branch where its validated edge is
+        visible; ordinary records are never inferred to replace anything.
+        """
+        snapshot = self.open_snapshot(snapshot_id)
+        visible = self._visible_supersessions(snapshot.id)
+        effective = {record_id.value for record_id in snapshot.record_ids}
+        replacement_targets = {edge.new.value for edge in self.supersessions.values()}
+        visible_targets = {edge.new.value for edge in visible.values()}
+
+        # Every visible edge masks its old identity.  This also resolves a
+        # visible chain (A -> B -> C): A and B are both removed, while C
+        # remains effective.  Non-visible branch edges never participate.
+        effective.difference_update(visible)
+        effective.difference_update(replacement_targets - visible_targets)
+
+        # A derivation is semantically reusable only while every exact
+        # dependency it was proved from remains effective.  Repeat to a fixed
+        # point so a stale derived dependency invalidates its own dependants.
+        changed = True
+        while changed:
+            changed = False
+            for knowledge_id, derivation in self.derivations.items():
+                if knowledge_id in effective and any(
+                        dependency.value not in effective
+                        for dependency in derivation.dependencies):
+                    effective.remove(knowledge_id)
+                    changed = True
+
+        return tuple(record_id for record_id in snapshot.record_ids
+                     if record_id.value in effective)
+
     def _decision_dependency_closure(self, problem):
         direct=[]
         for candidate in problem.candidates:
@@ -822,7 +857,7 @@ class Store:
     def read(self, ident, snapshot=None):
         self._check(); record=self.records.get(_id(KnowledgeId,ident).value); return record if snapshot is None or record and record.id in self.open_snapshot(snapshot).record_ids else None
     def find(self, *, kind=None, snapshot=None):
-        self._check(); allowed=None if snapshot is None else set(self.open_snapshot(snapshot).record_ids); return tuple(r for r in self.records.values() if (allowed is None or r.id in allowed) and (kind is None or (kind=="property" and isinstance(r,PropertyAssertion)) or (kind=="relation" and isinstance(r,RelationAssertion))))
+        self._check(); allowed=None if snapshot is None else set(self._effective_record_ids(snapshot)); return tuple(r for r in self.records.values() if (allowed is None or r.id in allowed) and (kind is None or (kind=="property" and isinstance(r,PropertyAssertion)) or (kind=="relation" and isinstance(r,RelationAssertion))))
     def ground(self, rule_id, bindings, snapshot, context):
         from .rules import ground
         return ground(self, rule_id, bindings, snapshot, context)
@@ -911,7 +946,10 @@ class Store:
         """Purely select from the exact persisted GDP identified by problem_id."""
         from .problem import _select_m1
         ident = problem_id if type(problem_id) is DecisionProblemId else DecisionProblemId(problem_id)
-        return _select_m1(ident, self.decision_problem(ident))
+        problem = self.decision_problem(ident)
+        grounding = self.decision_groundings.get(problem.scope_id.value)
+        current = grounding is not None and grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA
+        return _select_m1(ident, problem, current_scope_semantics=current)
 
     def admit_m1_decision(self, decision_id, selection_result):
         """Explicitly and atomically persist one pure M1 selection outcome."""
@@ -924,7 +962,12 @@ class Store:
                             selection_result.optimum, selection_result.co_optima)
         if ident.value in self.decisions:
             raise AdmissionError("duplicate decision identity")
-        validate_persisted_decision(self, decision)
+        problem = self.grounded_decision_problems.get(decision.source.value)
+        if problem is None:
+            raise GroundingError("decision references an invalid source grounded decision problem")
+        grounding = self.decision_groundings.get(problem.scope_id.value)
+        current = grounding is not None and grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA
+        validate_persisted_decision(self, decision, current_scope_semantics=current)
         try:
             self._persist("decision", ident.value, decision_payload(decision))
             self._db.commit()
@@ -953,7 +996,9 @@ class Store:
             raise GroundingError("decision references an absent historical grounded decision problem")
         validate_persisted_grounded_decision_problem(self, problem)
         validate_persisted_decision(self, decision)
-        return _explain_m1(ident, decision, problem, self)
+        grounding = self.decision_groundings.get(problem.scope_id.value)
+        current = grounding is not None and grounding.schema == DECISION_GROUNDING_CURRENT_SCHEMA
+        return _explain_m1(ident, decision, problem, self, current_scope_semantics=current)
 
     def decision_observations(self, scope_id):
         return self.decision_grounding(scope_id).observations

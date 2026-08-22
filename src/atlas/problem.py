@@ -176,6 +176,7 @@ class CandidateExplanation:
     exclusion_reason: str | None
     provenance: tuple[SourceId, ...]
     grounding_evidence: str
+    current_scope_semantics: bool = True
 
     def __post_init__(self):
         if type(self.candidate) is not DescriptionId or type(self.truth) is not EvaluationTruth:
@@ -198,7 +199,13 @@ class CandidateExplanation:
             raise ValidationError("invalid candidate explanation provenance")
         if type(self.grounding_evidence) is not str or not self.grounding_evidence:
             raise ValidationError("candidate explanation requires grounding evidence")
+        if type(self.current_scope_semantics) is not bool:
+            raise ValidationError("invalid candidate explanation scope semantics")
 
+        if self.current_scope_semantics and self.exclusion_reason is not None:
+            if self.selected or self.objective_value is not None or self.reason is not ExplanationReason.NOT_ADMISSIBLE:
+                raise ValidationError("scope-excluded candidate explanation must be non-admissible")
+            return
         if self.truth is EvaluationTruth.TRUE:
             if self.objective_value is None:
                 raise ValidationError("TRUE candidate explanation requires an objective value")
@@ -229,6 +236,7 @@ class DecisionExplanation:
     status: SelectionStatus
     optimum: Integer | None
     candidates: tuple[CandidateExplanation, ...]
+    current_scope_semantics: bool = True
 
     def __post_init__(self):
         if type(self.source) is not DecisionId or type(self.decision_problem) is not DecisionProblemId:
@@ -237,6 +245,8 @@ class DecisionExplanation:
             raise ValidationError("invalid decision explanation outcome")
         if type(self.candidates) is not tuple or any(type(x) is not CandidateExplanation for x in self.candidates):
             raise ValidationError("invalid decision explanation candidates")
+        if type(self.current_scope_semantics) is not bool:
+            raise ValidationError("invalid decision explanation scope semantics")
         if len({x.candidate for x in self.candidates}) != len(self.candidates):
             raise ValidationError("decision explanation contains duplicate candidates")
 
@@ -252,9 +262,10 @@ class DecisionExplanation:
             for candidate in self.candidates:
                 if not candidate.selected and candidate.reason is ExplanationReason.SELECTED_CO_OPTIMUM:
                     raise ValidationError("resolved explanation has an unselected co-optimum")
-                if candidate.truth is EvaluationTruth.UNKNOWN:
+                if candidate.truth is EvaluationTruth.UNKNOWN and (not self.current_scope_semantics or candidate.exclusion_reason is None):
                     raise ValidationError("resolved explanation must not contain UNKNOWN candidates")
-                if not candidate.selected and candidate.truth is EvaluationTruth.TRUE:
+                if (not candidate.selected and candidate.truth is EvaluationTruth.TRUE
+                        and (not self.current_scope_semantics or candidate.exclusion_reason is None)):
                     if (candidate.objective_value is None or
                             candidate.objective_value.value.value <= self.optimum.value or
                             candidate.reason is not ExplanationReason.ADMISSIBLE_HIGHER_OBJECTIVE):
@@ -263,14 +274,18 @@ class DecisionExplanation:
             if self.optimum is not None or selected or not any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in self.candidates):
                 raise ValidationError("information-limited explanation has an invalid outcome")
             for candidate in self.candidates:
-                if candidate.truth is EvaluationTruth.TRUE and candidate.reason is not ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED:
+                if (candidate.truth is EvaluationTruth.TRUE and (not self.current_scope_semantics or candidate.exclusion_reason is None)
+                        and candidate.reason is not ExplanationReason.ADMISSIBLE_BUT_OPTIMALITY_UNCERTIFIED):
                     raise ValidationError("information-limited explanation has a certified admissible reason")
                 if candidate.truth is EvaluationTruth.FALSE and candidate.reason is not ExplanationReason.NOT_ADMISSIBLE:
                     raise ValidationError("information-limited explanation has an invalid inadmissible reason")
-                if candidate.truth is EvaluationTruth.UNKNOWN and candidate.reason is not ExplanationReason.INSUFFICIENT_INFORMATION:
+                if (candidate.truth is EvaluationTruth.UNKNOWN and (not self.current_scope_semantics or candidate.exclusion_reason is None)
+                        and candidate.reason is not ExplanationReason.INSUFFICIENT_INFORMATION):
                     raise ValidationError("information-limited explanation has an invalid unknown reason")
         elif self.status is SelectionStatus.NO_ADMISSIBLE_CANDIDATE:
-            if self.optimum is not None or selected or any(candidate.truth is not EvaluationTruth.FALSE for candidate in self.candidates):
+            if (self.optimum is not None or selected or any(
+                    candidate.truth is not EvaluationTruth.FALSE and (not self.current_scope_semantics or candidate.exclusion_reason is None)
+                    for candidate in self.candidates)):
                 raise ValidationError("no-candidate explanation has an invalid outcome")
             if any(candidate.reason is not ExplanationReason.NOT_ADMISSIBLE for candidate in self.candidates):
                 raise ValidationError("no-candidate explanation has an invalid candidate reason")
@@ -308,7 +323,7 @@ def grounded_decision_problem_payload(problem_id, problem):
     }
 
 
-def _select_m1(problem_id, problem):
+def _select_m1(problem_id, problem, *, current_scope_semantics=True):
     """Purely select from one GDP supplied by the authoritative Store lookup."""
     if type(problem_id) is not DecisionProblemId or type(problem) is not GroundedDecisionProblem:
         raise ValidationError("M1 selection requires an exact GDP identity and problem")
@@ -316,7 +331,9 @@ def _select_m1(problem_id, problem):
     # Validate every local candidate invariant before UNKNOWN can short-circuit
     # the selection result.  This helper cannot establish persistence; that is
     # the Store's responsibility.
-    for candidate in problem.candidates:
+    scoped_candidates = tuple(candidate for candidate in problem.candidates
+                              if not current_scope_semantics or candidate.exclusion_reason is None)
+    for candidate in scoped_candidates:
         if candidate.truth is EvaluationTruth.TRUE:
             if candidate.objective_value is None:
                 raise ValidationError("TRUE candidate has no exact M1 objective value")
@@ -329,10 +346,10 @@ def _select_m1(problem_id, problem):
         elif candidate.objective_value is not None:
             raise ValidationError("non-TRUE candidate must not have an M1 objective value")
 
-    if any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in problem.candidates):
+    if any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in scoped_candidates):
         return M1SelectionResult(problem_id, SelectionStatus.NEEDS_INFORMATION, None, ())
 
-    true_candidates = tuple(candidate for candidate in problem.candidates
+    true_candidates = tuple(candidate for candidate in scoped_candidates
                             if candidate.truth is EvaluationTruth.TRUE)
     if not true_candidates:
         return M1SelectionResult(problem_id, SelectionStatus.NO_ADMISSIBLE_CANDIDATE, None, ())
@@ -381,7 +398,7 @@ def restore_decision(raw):
                     tuple(DescriptionId(item) for item in raw["co_optima"]))
 
 
-def validate_persisted_decision(store, decision):
+def validate_persisted_decision(store, decision, *, current_scope_semantics=None):
     """Validate the outcome directly against its persisted historical GDP.
 
     This is intentionally not implemented by calling _select_m1: restore is
@@ -390,9 +407,15 @@ def validate_persisted_decision(store, decision):
     source = store.grounded_decision_problems.get(decision.source.value)
     if source is None:
         raise GroundingError("decision references an invalid source grounded decision problem")
-    truths = tuple(candidate for candidate in source.candidates
+    if current_scope_semantics is None:
+        grounding = store.decision_groundings.get(source.scope_id.value)
+        current_scope_semantics = (grounding is not None and
+                                   grounding.schema == "atlas.core-v1.decision-grounding/2")
+    scoped_candidates = tuple(candidate for candidate in source.candidates
+                              if not current_scope_semantics or candidate.exclusion_reason is None)
+    truths = tuple(candidate for candidate in scoped_candidates
                    if candidate.truth is EvaluationTruth.TRUE)
-    unknown = any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in source.candidates)
+    unknown = any(candidate.truth is EvaluationTruth.UNKNOWN for candidate in scoped_candidates)
     if unknown:
         expected = SelectionStatus.NEEDS_INFORMATION
         if decision.status is not expected or decision.optimum is not None or decision.co_optima != ():
@@ -414,7 +437,7 @@ def validate_persisted_decision(store, decision):
         raise GroundingError("persisted decision must contain exactly all historical co-optima")
 
 
-def _explain_m1(decision_id, decision, problem, store):
+def _explain_m1(decision_id, decision, problem, store, *, current_scope_semantics=True):
     """Purely reconstruct one explanation from one exact historical GDP.
 
     The Store supplies the nominal decision lookup and this function never
@@ -425,7 +448,7 @@ def _explain_m1(decision_id, decision, problem, store):
             decision.source.value not in store.grounded_decision_problems or
             store.grounded_decision_problems[decision.source.value] is not problem):
         raise GroundingError("decision explanation requires its exact historical GDP")
-    validate_persisted_decision(store, decision)
+    validate_persisted_decision(store, decision, current_scope_semantics=current_scope_semantics)
     selected = set(decision.co_optima)
 
     def dependencies_for(candidate):
@@ -450,6 +473,8 @@ def _explain_m1(decision_id, decision, problem, store):
 
     def reason_for(candidate):
         truth = candidate.truth
+        if current_scope_semantics and candidate.exclusion_reason is not None:
+            return ExplanationReason.NOT_ADMISSIBLE
         if truth is EvaluationTruth.FALSE:
             return ExplanationReason.NOT_ADMISSIBLE
         if decision.status is SelectionStatus.RESOLVED:
@@ -485,9 +510,10 @@ def _explain_m1(decision_id, decision, problem, store):
             exclusion_reason=candidate.exclusion_reason,
             provenance=canonical_provenance(sources),
             grounding_evidence=result.grounding_evidence,
+            current_scope_semantics=current_scope_semantics,
         ))
     return DecisionExplanation(decision.id, decision.source, decision.status,
-                               decision.optimum, tuple(explanations))
+                               decision.optimum, tuple(explanations), current_scope_semantics)
 
 
 def restore_grounded_decision_problem(raw):
@@ -599,12 +625,12 @@ def _objective_version(snapshot):
     return versions[0]
 
 
-def _eligible_historical_objective_supports(store, candidate, property_id, version,
-                                            snapshot, visible_scopes):
-    """Return the M1-admissible objective supports in one history."""
+def _eligible_objective_supports(store, candidate, property_id, version,
+                                  record_ids, visible_scopes):
+    """Return admissible objective supports from an explicit record view."""
     return tuple(record for record in store.records.values()
                  if isinstance(record, PropertyAssertion)
-                 and record.id in snapshot.record_ids
+                 and record.id in record_ids
                  and ("property", record.id.value) not in store.isolated
                  and record.description == candidate
                  and record.property == property_id
@@ -612,6 +638,21 @@ def _eligible_historical_objective_supports(store, candidate, property_id, versi
                  and record.scope in visible_scopes
                  and record.epistemic_status == "exact"
                  and type(record.value) is Integer)
+
+
+def _eligible_historical_objective_supports(store, candidate, property_id, version,
+                                            snapshot, visible_scopes):
+    """Historical support lookup used to validate/reproduce persisted GDPs."""
+    return _eligible_objective_supports(
+        store, candidate, property_id, version, snapshot.record_ids, visible_scopes)
+
+
+def _eligible_effective_objective_supports(store, candidate, property_id, version,
+                                           snapshot, visible_scopes):
+    """Effective support lookup used only when constructing a new GDP."""
+    return _eligible_objective_supports(
+        store, candidate, property_id, version,
+        store._effective_record_ids(snapshot.id), visible_scopes)
 
 
 def _validate_persisted_objective_support(store, candidate, problem_objective,
@@ -694,7 +735,8 @@ def validate_persisted_grounded_decision_problem(store, problem):
                 candidate.grounding_result != observation.grounding_result or
                 candidate.exclusion_reason != observation.exclusion_reason):
             raise GroundingError("persisted candidate disagrees with its historical grounding observation")
-        if candidate.truth is EvaluationTruth.TRUE:
+        current_scope_semantics = (grounding.schema == "atlas.core-v1.decision-grounding/2")
+        if candidate.truth is EvaluationTruth.TRUE and (not current_scope_semantics or candidate.exclusion_reason is None):
             if candidate.objective_value is None:
                 raise GroundingError(f"TRUE candidate has no objective value: {candidate.candidate.value}")
             if (candidate.objective_value.property != problem.objective.property or
@@ -710,15 +752,19 @@ def validate_persisted_grounded_decision_problem(store, problem):
             raise GroundingError(f"non-TRUE candidate has an objective value: {candidate.candidate.value}")
 
 
-def _objective_for_true(store, candidate, snapshot, visible_scopes, version):
-    records = _eligible_historical_objective_supports(
+def _objective_for_true(store, candidate, snapshot, visible_scopes, version, *, current_scope_semantics=True):
+    records = (_eligible_effective_objective_supports(
         store, candidate, PropertyId("cost"), version, snapshot, visible_scopes)
+               if current_scope_semantics else
+               _eligible_historical_objective_supports(
+                   store, candidate, PropertyId("cost"), version, snapshot, visible_scopes))
     if not records:
         # Keep the M1c.2.1 diagnostic for a present but unusable assertion;
         # unusable assertions are not members of the admissible support set.
         matching = tuple(record for record in store.records.values()
                          if isinstance(record, PropertyAssertion)
-                         and record.id in snapshot.record_ids
+                         and record.id in (set(store._effective_record_ids(snapshot.id))
+                                           if current_scope_semantics else snapshot.record_ids)
                          and ("property", record.id.value) not in store.isolated
                          and record.description == candidate
                          and record.property == PropertyId("cost")
@@ -758,8 +804,12 @@ def build_grounded_decision_problem(store, decision_scope_id):
         observation = observations.get(candidate)
         if observation is None or not observation.traversed or observation.grounding_result is None:
             raise GroundingError("grounding does not contain the complete manifest candidate")
-        objective = (_objective_for_true(store, candidate, snapshot, visible_scopes, cost_version)
-                     if observation.truth is EvaluationTruth.TRUE else None)
+        current_scope_semantics = grounding.schema == "atlas.core-v1.decision-grounding/2"
+        objective = (_objective_for_true(store, candidate, snapshot, visible_scopes, cost_version,
+                                         current_scope_semantics=current_scope_semantics)
+                     if observation.truth is EvaluationTruth.TRUE and
+                     (not current_scope_semantics or observation.exclusion_reason is None)
+                     else None)
         candidates.append(GroundedCandidate(candidate, observation.truth, observation.grounding_result,
                                             observation.exclusion_reason, objective))
     return GroundedDecisionProblem(scope.id, scope.snapshot, scope.context, scope.request,

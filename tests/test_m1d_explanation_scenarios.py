@@ -159,4 +159,6 @@ def test_scenario_f_contexts_have_separate_explanations(tmp_path):
     gpu = candidate_map(embedded)["realization:r2"]
     assert embedded.status is SelectionStatus.NEEDS_INFORMATION
     assert gpu.reason is ExplanationReason.INSUFFICIENT_INFORMATION
-    assert gpu.exclusion_reason == "excluded_by_context"
+    # The relation remains included in the embedded context; only the
+    # grounding truth is UNKNOWN because the required property is hidden.
+    assert gpu.exclusion_reason is None

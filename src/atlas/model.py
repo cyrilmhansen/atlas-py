@@ -287,6 +287,70 @@ class GroundingStatus(str, Enum):
     INVALID = "invalid"
 
 
+DECISION_GROUNDING_LEGACY_SCHEMA = "atlas.core-v1.decision-grounding/1"
+DECISION_GROUNDING_CURRENT_SCHEMA = "atlas.core-v1.decision-grounding/2"
+
+
+class DiscoveryExclusionReason(str, Enum):
+    OUTSIDE_CONTEXT = "outside_context"
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryQuery:
+    kind: str
+    predicate: PredicateId
+    version: str
+    participants: tuple[DescriptionId, ...]
+    polarity: str
+    def __post_init__(self):
+        if self.kind != "relation":
+            raise ValidationError("unsupported discovery query kind")
+        if type(self.predicate) is not PredicateId or type(self.version) is not str or not self.version:
+            raise ValidationError("invalid discovery query identity")
+        if type(self.participants) is not tuple or any(type(x) is not DescriptionId for x in self.participants):
+            raise ValidationError("invalid discovery query participants")
+        if self.polarity not in {"positive", "negative"}:
+            raise ValidationError("invalid discovery query polarity")
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryExclusion:
+    knowledge_id: KnowledgeId
+    reason: DiscoveryExclusionReason
+    def __post_init__(self):
+        if type(self.knowledge_id) is not KnowledgeId or type(self.reason) is not DiscoveryExclusionReason:
+            raise ValidationError("invalid discovery exclusion")
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryEvidence:
+    schema: str
+    query: DiscoveryQuery
+    found: tuple[KnowledgeId, ...]
+    included: tuple[KnowledgeId, ...]
+    excluded: tuple[DiscoveryExclusion, ...]
+    def __post_init__(self):
+        if self.schema != "atlas.core-v1.discovery-evidence/1":
+            raise ValidationError("unsupported discovery evidence schema")
+        if type(self.query) is not DiscoveryQuery:
+            raise ValidationError("discovery evidence requires a query")
+        for values, label in ((self.found, "found"), (self.included, "included")):
+            if type(values) is not tuple or any(type(x) is not KnowledgeId for x in values):
+                raise ValidationError(f"discovery {label} requires KnowledgeId values")
+            if len(set(values)) != len(values):
+                raise ValidationError(f"discovery {label} contains a duplicate")
+        if type(self.excluded) is not tuple or any(type(x) is not DiscoveryExclusion for x in self.excluded):
+            raise ValidationError("discovery exclusions require structured values")
+        excluded_ids = tuple(x.knowledge_id for x in self.excluded)
+        if len(set(excluded_ids)) != len(excluded_ids):
+            raise ValidationError("discovery exclusions contain a duplicate")
+        found = set(self.found)
+        if not set(self.included) <= found or not set(excluded_ids) <= found:
+            raise ValidationError("discovery included/excluded ids must be found")
+        if set(self.included) & set(excluded_ids):
+            raise ValidationError("discovery included and excluded ids overlap")
+
+
 # M1c.1 has one deliberately closed manifest format.  Unknown versions are
 # not interpreted as an unevaluable future format.
 SUPPORTED_MANIFEST_VERSIONS = frozenset({"m1-grounding/1"})
@@ -339,6 +403,7 @@ class GroundingObservation:
     grounding_result: GroundingResult | None = None
     exclusion_reason: str | None = None
     structural_error: str | None = None
+    discovery_evidence: DiscoveryEvidence | None = None
     def __post_init__(self):
         if type(self.candidate) is not DescriptionId or type(self.traversed) is not bool:
             raise ValidationError("invalid grounding observation identity")
@@ -346,6 +411,8 @@ class GroundingObservation:
             raise ValidationError("invalid grounding observation truth")
         if self.grounding_result is not None and type(self.grounding_result) is not GroundingResult:
             raise ValidationError("invalid grounding observation result")
+        if self.discovery_evidence is not None and type(self.discovery_evidence) is not DiscoveryEvidence:
+            raise ValidationError("invalid grounding discovery evidence")
         for value in (self.exclusion_reason, self.structural_error):
             if value is not None and (type(value) is not str or not value): raise ValidationError("invalid grounding observation reason")
         if self.grounding_result is not None and self.structural_error is not None:
@@ -367,10 +434,13 @@ class DecisionGrounding:
     status: GroundingStatus
     interrupted: bool = False
     pruned: bool = False
+    schema: str = DECISION_GROUNDING_LEGACY_SCHEMA
     def __post_init__(self):
         if type(self.scope_id) is not DecisionScopeId or type(self.observations) is not tuple or any(type(x) is not GroundingObservation for x in self.observations):
             raise ValidationError("invalid decision grounding")
         if type(self.status) is not GroundingStatus or type(self.interrupted) is not bool or type(self.pruned) is not bool:
             raise ValidationError("invalid decision grounding status")
+        if self.schema not in {DECISION_GROUNDING_LEGACY_SCHEMA, DECISION_GROUNDING_CURRENT_SCHEMA}:
+            raise ValidationError("unsupported decision grounding schema")
         ids = [x.candidate.value for x in self.observations]
         if len(ids) != len(set(ids)): raise ValidationError("duplicate grounding observation")

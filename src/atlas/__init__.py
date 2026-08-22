@@ -9,7 +9,8 @@ from .model import (AmbiguousRead, Context, Description, EvaluationTruth,
                     Derivation, GroundedConclusion, GroundingResult, KnowledgeRecord,
                     MissingRead, PropertyAssertion, RelationAssertion, RelationTerm,
                     Rule, Snapshot, Supersession, Source, GroundingManifest, DecisionScope,
-                    GroundingObservation, DecisionGrounding, GroundingStatus)
+                    GroundingObservation, DecisionGrounding, GroundingStatus,
+                    DiscoveryQuery, DiscoveryExclusion, DiscoveryExclusionReason, DiscoveryEvidence)
 from .values import FiniteSetSymbol, Integer, SequenceSymbol, Symbol, Value
 from .vocabulary import PredicateSpec, PropertySpec, Vocabulary
 from .store import Store, admit_fixture, open_store
@@ -27,6 +28,7 @@ __all__ = [
     "EvaluationTruth", "RelationTerm", "Derivation", "GroundedConclusion", "GroundingResult",
     "MissingRead", "AmbiguousRead",
     "GroundingManifest", "DecisionScope", "GroundingObservation", "DecisionGrounding", "GroundingStatus",
+    "DiscoveryQuery", "DiscoveryExclusion", "DiscoveryExclusionReason", "DiscoveryEvidence",
     "Source", "Symbol", "Integer", "FiniteSetSymbol", "SequenceSymbol", "Value",
     "PredicateSpec", "PropertySpec", "Vocabulary", "Store", "open_store",
     "admit_fixture",
