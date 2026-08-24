@@ -70,3 +70,106 @@ python -m tools.atlas_agent start-run 1
 python -m tools.atlas_agent complete-run 1 --result '{"generation":1,"prompt_sha256":"…","action":"implementation","outcome":"done","classification":"manual"}'
 python -m tools.atlas_agent doctor
 ```
+
+## W2.1 — generic Codex executor
+
+W2.1 adds an explicit executor boundary without choosing a model, role, or
+fresh/reuse policy. The locally installed Codex CLI was inspected rather than
+assuming an older interface: `/usr/bin/codex` reports `codex-cli 0.149.1`, and
+its non-interactive form is `codex exec`. It accepts a prompt argument or `-`
+on stdin, supports `--json`, `--model`, `--sandbox`, `--ephemeral`, `--cd`, and
+`-o`; the current help also exposes `--approve-for-me` and a separate dangerous
+bypass option, neither of which W2.1 enables. `resume` is a separate command.
+JSONL output
+may expose a thread/session id. These are capabilities of the observed local
+installation, not a promise about every Codex version.
+
+`tools/atlas_agent/executor.py` defines the versioned generic boundary and a
+`FakeExecutor` used by tests. `codex_executor.py` builds an explicit argv with
+no shell interpolation, streams stdout and stderr directly to bounded-on-disk
+logs, and returns structured execution metadata. `execute GENERATION` is an
+explicit user operation; there is no watcher or daemon. It runs W1 preflight,
+starts the W1 lifecycle transition, launches the configured executor, stores
+`reports/executions/<execution_id>/execution.json`, `stdout.log`, `stderr.log`,
+and `result.json`, and completes or interrupts the W1 run from the process
+result. A non-zero exit, signal, or launcher exception is interrupted. A
+launcher crash after `RUN_STARTED` remains visible to doctor/rebuild and is not
+reported as completed.
+
+W2.1 deliberately leaves model/role selection and fresh/reuse session policy
+to W2.2. It does not dispatch Codex/Luna/Sol automatically, and it does not
+add an executor-specific commit event to the W1 journal.
+
+Every W2.1 launch is a hermetic, headless permission envelope. The executor
+always requests `--strict-config`, `--ignore-rules`,
+`approval_policy="never"`, `approvals_reviewer="user"`, and an explicit
+sandbox. For `workspace-write`, it also passes an explicit
+`sandbox_workspace_write.network_access=true|false`; the boolean records the
+requested sandbox setting, not an end-to-end guarantee that DNS or network
+access works. W2.1 does not map actions to these policies; callers provide an
+explicit sandbox configuration. Unsupported non-interactive settings fail
+closed, and `--approve-for-me` is not enabled by default.
+
+The durable `result.json` contains `permission_envelope`,
+`permission_observation_status` (`observed`, `partial`, or `unavailable`), and
+`permission_failures`. Codex 0.149.1 may refuse a tool command while still
+returning process exit 0 with no JSONL or stderr signal. Therefore exit 0 means
+only that the executor process/session ended normally; it does not mean all
+tool commands succeeded. When no explicit refusal is published,
+`permission_failures` is `null`, never an invented empty list. `usage.json`
+and `usage/events.jsonl` remain limited to token/quota telemetry and do not
+carry permission claims.
+
+Headless execution has a configurable, non-aggressive watchdog. A timeout
+interrupts the child, records `outcome: "timeout"`, and interrupts the W1
+run; it never waits for a human approval. The fake executor implements the
+same permission result fields so lifecycle tests do not have a second schema.
+
+`prepare_execution()` is pure with respect to external execution: it validates
+the request and constructs argv without launching Codex or discovering its
+version. W1 preflight and `RUN_STARTED` happen first; version discovery and
+the child process happen only after the run is `RUNNING`. A discovery failure
+interrupts the run. Execution ids are checked against lifecycle owners and
+existing report directories under the workflow lock; a collision fails closed
+and never reuses a report directory.
+
+`execution.json` and `result.json` are owner-bound artifacts. Their execution
+id, generation, prompt hash, action, and permission metadata are checked by
+spool validation/doctor. The lifecycle journal/state remains authoritative;
+the JSON artifacts are evidence and cannot complete a run by themselves.
+Historical W1 `RUN_STARTED` events without execution metadata remain without
+an `execution` key during replay. The candidate performs no projection
+migration and does not synthesize `execution: null`.
+
+### W2.1 passive telemetry
+
+Each execution also gets a versioned `usage.json` beside its execution logs.
+The collector prefers the structured `codex exec --json` JSONL. In Codex
+0.149.1 the observed JSONL includes `thread.started.thread_id` and
+`turn.completed.usage` with `input_tokens`, `cached_input_tokens`,
+`output_tokens`, `reasoning_output_tokens`, and sometimes `total_tokens`.
+Missing fields remain null; totals are never estimated. Multiple conflicting
+usage envelopes are retained as separate observations and marked partial.
+
+Passive observations are appended to the non-authoritative
+`usage/events.jsonl`, associated with execution id, generation, prompt hash,
+action, checkpoint, requested model, observed model, thread id, Codex version,
+source, and metrics. Requested and observed model are separate: a requested
+model is configuration, not proof of what Codex used. Each `turn.completed`
+usage observation is associated with the most recent supported
+`thread.started`; unknown JSONL event types are ignored, including unknown
+events that happen to contain a `usage` object. `usage.json` and history use
+an explicit allow-list of fields, never a blacklist, so arbitrary metadata and
+credential-shaped keys are discarded. Every JSONL consumer uses the shared
+bounded reader with a 1 MiB maximum physical line payload; an oversized line
+is discarded through its newline and counted malformed, so later records
+remain parseable. `quota_before` and `quota_after` are
+explicitly null/unavailable in this installation: the inspected `codex` and
+`codex exec` help expose no machine-readable `/status`, `/usage`, or
+`/statusline` surface, and W2.1 does not scrape the interactive TUI or call a
+private backend. A telemetry parser failure produces an unavailable or partial
+artifact and never changes a healthy executor lifecycle. A structural failure
+writing a telemetry/report artifact is an execution failure: cleanup interrupts
+the W1 run before reporting the secondary telemetry error. Secrets are
+excluded from both telemetry artifacts. Log permission scanning is line-based
+with bounded reads; it does not load complete stdout/stderr files into memory.

@@ -1,11 +1,15 @@
 from __future__ import annotations
 import copy, hashlib, json, os, re, tempfile, uuid, tomllib
+from dataclasses import replace
 from pathlib import Path
 from .model import Prompt
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError
 from .repository import find_root,runtime_path,witness
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
+from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
+from .codex_executor import CodexExecutor
+from .telemetry import collect_usage
 class WorkflowError(RuntimeError): pass
 def replay_journal(events):
     state={"initialized":False,"last_seq":0,"generations":{},"parentage":{},"prompt_hashes":{},"lifecycle":{},"checkpoint_action":{},"repository_witnesses":[],"latest_repository_witness":None,"outstanding_transactions":{},"committed_transactions":[],"results":{},"reports":{}}
@@ -31,7 +35,9 @@ def replay_journal(events):
             if e["event"]=="RUN_STARTED":
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
-                rec["status"]="RUNNING"; state["lifecycle"][g]="RUNNING"; continue
+                rec["status"]="RUNNING"
+                if "execution" in p: rec["execution"]=p["execution"]
+                state["lifecycle"][g]="RUNNING"; continue
             if e["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="RUNNING" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
@@ -134,28 +140,102 @@ class Workflow:
         hits=[p for p in folder.glob(f"g{g:06d}-*.txt") if p.is_file()]
         if len(hits)!=1 or sha(hits[0])!=digest: raise WorkflowError("SPOOL_CORRUPT")
         return hits[0]
-    def start_run(self,generation,hook=None):
+    def start_run(self,generation,hook=None,execution=None):
         with lock(self.base/"lock"):
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
             if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
-            src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"]},hook); s=replay_journal(self.journal.read()); self._save(s); return s
+            if execution is not None:
+                execution_id=execution.get("execution_id")
+                report_dir=Path(execution.get("report_dir",""))
+                if type(execution_id) is not str or not execution_id or report_dir.is_absolute() or ".." in report_dir.parts or not str(report_dir).startswith("reports/executions/"):
+                    raise WorkflowError("BAD_EXECUTION_METADATA")
+                if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()):
+                    raise WorkflowError("EXECUTION_ID_COLLISION")
+                if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+            src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"]}
+            if execution is not None: payload["execution"]=execution
+            move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); return s
     def complete_run(self,generation,result,hook=None):
         with lock(self.base/"lock"):
             s,x=self._record(generation)
             if x["status"]!="RUNNING": raise WorkflowError("generation is not running")
             r=result if isinstance(result,dict) else result.as_dict()
             if r.get("generation")!=generation or r.get("prompt_sha256")!=x["prompt_sha256"] or r.get("action")!=x["action"]: raise WorkflowError("RESULT_PROMPT_MISMATCH")
+            owner=x.get("execution")
+            if owner is not None:
+                executor_result=r.get("executor_result")
+                if not isinstance(executor_result,dict) or executor_result.get("execution_id")!=owner.get("execution_id"):
+                    raise WorkflowError("RESULT_EXECUTION_MISMATCH")
             before=x["witness"]; now=witness(self.root,self.allowed); violation=not witness_matches_policy(now,before,x["action"],running=True)
             src=self._find(self.base/"running"/x["action"],generation,x["prompt_sha256"])
             if violation:
-                move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",{"generation":generation,"action":x["action"],"reason":"REPOSITORY_POLICY_VIOLATION"},hook); s=replay_journal(self.journal.read()); self._save(s); raise WorkflowError("REPOSITORY_POLICY_VIOLATION")
-            move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",{"generation":generation,"action":x["action"],"result":r,"witness":now},hook); s=replay_journal(self.journal.read()); self._save(s); return s
+                payload={"generation":generation,"action":x["action"],"reason":"REPOSITORY_POLICY_VIOLATION"};
+                if x.get("execution") is not None: payload["execution"]=x["execution"]
+                move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); raise WorkflowError("REPOSITORY_POLICY_VIOLATION")
+            payload={"generation":generation,"action":x["action"],"result":r,"witness":now};
+            if x.get("execution") is not None: payload["execution"]=x["execution"]
+            move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); return s
     def interrupt_run(self,generation,reason):
         with lock(self.base/"lock"):
             s,x=self._record(generation)
             if x["status"]!="RUNNING": raise WorkflowError("generation is not running")
-            src=self._find(self.base/"running"/x["action"],generation,x["prompt_sha256"]); move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",{"generation":generation,"action":x["action"],"reason":reason}); s=replay_journal(self.journal.read()); self._save(s); return s
+            src=self._find(self.base/"running"/x["action"],generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"reason":reason};
+            if x.get("execution") is not None: payload["execution"]=x["execution"]
+            move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload); s=replay_journal(self.journal.read()); self._save(s); return s
+    def execute(self,generation,executor=None):
+        """Explicitly execute one accepted generation through W1 lifecycle."""
+        s,x=self._record(generation)
+        if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+        executor=executor or CodexExecutor()
+        execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
+        accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
+        spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"))
+        prepared=executor.prepare_execution(spec)
+        metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope}
+        self.start_run(generation,execution=metadata)
+        running= self.base/"running"/x["action"]/accepted.name
+        started=True; telemetry_failed=False
+        try:
+            report_dir.parent.mkdir(parents=True,exist_ok=True)
+            report_dir.mkdir(parents=False,exist_ok=False)
+            _write_json(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
+            prepared=getattr(executor,"post_start_prepare",lambda value: value)(prepared)
+            _write_json(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
+            prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=running))
+            result=executor.run_execution(prepared)
+            result_payload={**result.__dict__,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"]}
+            _write_json(report_dir/"result.json",result_payload)
+            try:
+                collect_usage(prepared.spec,result,report_dir,requested_model=getattr(executor,"model",None),requested_reasoning=getattr(executor,"reasoning_effort",None))
+            except OSError as error:
+                telemetry_failed=True
+                _write_json(report_dir/"result.json",{**result_payload,"telemetry_status":"failed","telemetry_error":str(error)})
+                self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE")
+                started=False
+                raise WorkflowError(f"TELEMETRY_WRITE_FAILURE: {error}") from error
+            if result.timed_out:
+                self.interrupt_run(generation,"EXECUTOR_TIMEOUT")
+                raise WorkflowError("EXECUTOR_TIMEOUT")
+            if result.exit_code != 0:
+                self.interrupt_run(generation,f"EXECUTOR_EXIT_{result.exit_code}")
+                raise WorkflowError(f"EXECUTOR_EXIT_{result.exit_code}")
+            envelope={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":result.outcome,"classification":"executor_process","report_path":result.report_path,"executor_result":result.__dict__}
+            return self.complete_run(generation,envelope)
+        except Exception as error:
+            if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT"): raise
+            stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
+            if started:
+                try: self.interrupt_run(generation,f"EXECUTOR_FAILURE: {error}")
+                finally: started=False
+            if not telemetry_failed:
+                try: collect_usage(prepared.spec,type("Result",(),{"session_id":None,"version":prepared.version})(),report_dir,requested_model=getattr(executor,"model",None))
+                except OSError: pass
+                try:
+                    stdout.touch(exist_ok=True); stderr.touch(exist_ok=True)
+                    _write_json(report_dir/"result.json",{"execution_id":execution_id,"executor":prepared.executor,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"exception","error":str(error),"permission_envelope":prepared.permission_envelope,"permission_observation_status":"unavailable","permission_failures":None})
+                except OSError: pass
+            raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
     def recover(self):
         with lock(self.base/"lock"):
             events=self.journal.read()
