@@ -66,10 +66,26 @@ Typical commands:
 python -m tools.atlas_agent init
 git rev-parse --git-path atlas-agent
 python -m tools.atlas_agent ingest
+atlas-agent dispatch
+atlas-agent status
 python -m tools.atlas_agent start-run 1
 python -m tools.atlas_agent complete-run 1 --result '{"generation":1,"prompt_sha256":"…","action":"implementation","outcome":"done","classification":"manual"}'
 python -m tools.atlas_agent doctor
 ```
+
+One-shot inbox usage:
+
+```text
+cp my-prompt.txt "$(git rev-parse --git-path atlas-agent)/inbox/"
+atlas-agent ingest
+atlas-agent dispatch
+atlas-agent status
+```
+
+`dispatch` executes at most one already accepted generation and then returns
+to the shell. It does not watch the inbox, repeat dispatches, or choose the
+next methodological action. A manual `checkpoint` prompt is reported as
+`CHECKPOINT_MANUAL_REQUIRED` without launching Codex.
 
 ## W2.1 — generic Codex executor
 

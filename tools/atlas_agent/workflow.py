@@ -362,6 +362,35 @@ class Workflow:
                 except OSError: pass
             if snapshot and snapshot.get("session_mode")=="reuse": raise WorkflowError("REUSE_SESSION_UNAVAILABLE") from error
             raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
+    def dispatch(self, executor=None):
+        """Execute exactly one already accepted generation.
+
+        Selection is deliberately limited to the first accepted generation.
+        Execution remains the authority for policy and lifecycle validation;
+        in particular, a blocked generation is never skipped.
+        """
+        with lock(self.base/"lock"):
+            _, state = self._preflight()
+            accepted = [record for record in state["generations"].values()
+                        if record["status"] == "ACCEPTED"]
+            if not accepted:
+                raise WorkflowError("NO_DISPATCHABLE_GENERATION")
+            record = min(accepted, key=lambda value: value["generation"])
+            generation = record["generation"]
+        try:
+            state = self.execute(generation, executor)
+        except WorkflowError as error:
+            raise WorkflowError(f"GENERATION_{generation}: {error}") from error
+        record = state["generations"][str(generation)]
+        result = record.get("result") or {}
+        executor_result = result.get("executor_result") or record.get("execution_result") or {}
+        return {
+            "generation": generation,
+            "action": record["action"],
+            "status": record["status"],
+            "execution_id": (record.get("execution") or {}).get("execution_id"),
+            "thread_id": executor_result.get("session_id"),
+        }
     def recover(self):
         with lock(self.base/"lock"):
             events=self.journal.read()
