@@ -78,6 +78,8 @@ def test_reuse_failure_interrupts_with_stable_code(tmp_path):
     with pytest.raises(WorkflowError, match="REUSE_SESSION_UNAVAILABLE"):
         workflow.execute(2, FakeExecutor(exit_code=7))
     assert workflow._state()["generations"]["2"]["status"] == "INTERRUPTED"
+    interrupted = [event for event in workflow.journal.read() if event["event"] == "RUN_INTERRUPTED"]
+    assert interrupted[-1]["payload"]["reason"] == "REUSE_SESSION_UNAVAILABLE"
 
 
 def test_state_audit_freshness_is_verified_after_observation(tmp_path):

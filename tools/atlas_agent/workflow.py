@@ -326,8 +326,9 @@ class Workflow:
                 self.interrupt_run(generation,"EXECUTOR_TIMEOUT",result.__dict__)
                 raise WorkflowError("EXECUTOR_TIMEOUT")
             if result.exit_code != 0:
-                self.interrupt_run(generation,f"EXECUTOR_EXIT_{result.exit_code}",result.__dict__)
-                raise WorkflowError("REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}")
+                reason="REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}"
+                self.interrupt_run(generation,reason,result.__dict__)
+                raise WorkflowError(reason)
             try:
                 observed_metadata=self._validate_observed_session(s,snapshot,result) if snapshot else {}
             except WorkflowError as error:
