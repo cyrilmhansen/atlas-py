@@ -31,22 +31,29 @@ class CodexExecutor:
         if not spec.prompt_path.is_file(): raise ExecutorError("PROMPT_MISSING")
         snapshot=spec.policy_snapshot
         if snapshot:
-            if snapshot.get("session_mode")=="reuse": raise ExecutorError("REUSE_SESSION_UNAVAILABLE")
             if snapshot.get("executor")!="codex" or self.model != snapshot.get("requested_model") or self.approval_policy != "never" or self.approvals_reviewer != "user" or self.sandbox != snapshot.get("sandbox_mode") or self.network_access != snapshot.get("network_access"):
                 raise ExecutorError("POLICY_RESOLUTION_MISMATCH")
-        argv=[self.executable,"exec","--json","-C",str(spec.repository_root),"--sandbox",self.sandbox]
+        reuse=bool(snapshot and snapshot.get("session_mode")=="reuse")
+        requested_thread_id=snapshot.get("requested_thread_id") if reuse else None
+        if reuse and (not isinstance(requested_thread_id,str) or not requested_thread_id):
+            raise ExecutorError("REUSE_TARGET_MISSING")
+        argv=[self.executable,"exec","resume"] if reuse else [self.executable,"exec"]
+        argv += ["--json"]
+        if not reuse: argv += ["-C",str(spec.repository_root)]
+        if reuse: argv += ["-c",f'sandbox_mode="{self.sandbox}"']
+        else: argv += ["--sandbox",self.sandbox]
         if snapshot: argv.append("--ignore-user-config")
         if self.strict_config: argv.append("--strict-config")
         if self.ignore_rules: argv.append("--ignore-rules")
         argv += ["-c",f'approval_policy="{self.approval_policy}"',"-c",f'approvals_reviewer="{self.approvals_reviewer}"']
         if snapshot:
-            argv += ["-c","features.apps=false","-c","features.web_search_request=false"]
+            argv += ["-c","features.apps=false","-c","web_search=\"disabled\""]
         if self.sandbox == "workspace-write": argv += ["-c",f"sandbox_workspace_write.network_access={str(self.network_access).lower()}"]
         if snapshot:
             argv += ["-c",f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"']
         if self.ephemeral and (not snapshot or snapshot.get("session_storage")=="ephemeral"): argv.append("--ephemeral")
         if self.model: argv += ["--model",self.model]
-        argv.append("-")
+        argv += [requested_thread_id,"-"] if reuse else ["-"]
         return PreparedExecution(spec,"codex",tuple(argv),"unresolved",self._envelope(),snapshot)
     def post_start_prepare(self, prepared):
         info=self.info()

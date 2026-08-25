@@ -12,6 +12,7 @@ from .codex_executor import CodexExecutor
 from .telemetry import collect_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 class WorkflowError(RuntimeError): pass
+SESSION_VALIDATION_ERRORS=frozenset({"FRESHNESS_UNVERIFIED","FRESHNESS_VIOLATION","REUSE_THREAD_UNVERIFIED","REUSE_THREAD_MISMATCH","OBSERVED_MODEL_MISMATCH","OBSERVED_REASONING_MISMATCH","REUSE_SESSION_UNAVAILABLE"})
 def replay_journal(events):
     state={"initialized":False,"last_seq":0,"generations":{},"parentage":{},"prompt_hashes":{},"lifecycle":{},"checkpoint_action":{},"repository_witnesses":[],"latest_repository_witness":None,"outstanding_transactions":{},"committed_transactions":[],"results":{},"reports":{}}
     for e in events:
@@ -191,6 +192,30 @@ class Workflow:
             raise WorkflowError("REUSE_TARGET_STALE")
         snapshot=dict(snapshot); snapshot.update({"reused_from_execution_id":target_id,"requested_thread_id":thread_id,"reuse_depth":depth})
         return snapshot
+    @staticmethod
+    def _known_thread_ids(state):
+        known=set()
+        for record in state["generations"].values():
+            result=Workflow._execution_result(record)
+            thread_id=result.get("session_id")
+            if isinstance(thread_id,str) and thread_id: known.add(thread_id)
+        return known
+    def _validate_observed_session(self,state,snapshot,result):
+        observed=result.session_id
+        mode=snapshot.get("session_mode")
+        if not isinstance(observed,str) or not observed:
+            raise WorkflowError("FRESHNESS_UNVERIFIED" if mode=="fresh" else "REUSE_THREAD_UNVERIFIED")
+        if mode=="fresh" and observed in self._known_thread_ids(state):
+            raise WorkflowError("FRESHNESS_VIOLATION")
+        if mode=="reuse" and observed!=snapshot.get("requested_thread_id"):
+            raise WorkflowError("REUSE_THREAD_MISMATCH")
+        requested_model=snapshot.get("requested_model")
+        if result.observed_model is not None and result.observed_model!=requested_model:
+            raise WorkflowError("OBSERVED_MODEL_MISMATCH")
+        requested_reasoning=snapshot.get("requested_reasoning_effort")
+        if result.observed_reasoning is not None and result.observed_reasoning!=requested_reasoning:
+            raise WorkflowError("OBSERVED_REASONING_MISMATCH")
+        return {"observed_thread_id":observed,"freshness_verification":"verified" if mode=="fresh" else "deferred"}
     def start_run(self,generation,hook=None,execution=None):
         with lock(self.base/"lock"):
             s,x=self._record(generation)
@@ -302,16 +327,29 @@ class Workflow:
                 raise WorkflowError("EXECUTOR_TIMEOUT")
             if result.exit_code != 0:
                 self.interrupt_run(generation,f"EXECUTOR_EXIT_{result.exit_code}",result.__dict__)
-                raise WorkflowError(f"EXECUTOR_EXIT_{result.exit_code}")
+                raise WorkflowError("REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}")
+            try:
+                observed_metadata=self._validate_observed_session(s,snapshot,result) if snapshot else {}
+            except WorkflowError as error:
+                self.interrupt_run(generation,str(error),result.__dict__)
+                started=False
+                result_payload["session_validation_error"]=str(error)
+                _write_json(report_dir/"result.json",result_payload)
+                raise
+            if observed_metadata:
+                result_payload.update(observed_metadata)
+                _write_json(report_dir/"result.json",result_payload)
             envelope={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":result.outcome,"classification":"executor_process","report_path":result.report_path,"executor_result":result.__dict__}
+            envelope.update(observed_metadata)
             return self.complete_run(generation,envelope)
         except Exception as error:
-            if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT"): raise
+            if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT" or str(error) in SESSION_VALIDATION_ERRORS): raise
             stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
             if started:
                 failed_result=locals().get("result")
                 executor_result=failed_result.__dict__ if failed_result is not None else None
-                try: self.interrupt_run(generation,f"EXECUTOR_FAILURE: {error}",executor_result)
+                interrupt_reason="REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_FAILURE: {error}"
+                try: self.interrupt_run(generation,interrupt_reason,executor_result)
                 finally: started=False
             if not telemetry_failed:
                 try: collect_usage(prepared.spec,type("Result",(),{"session_id":None,"version":prepared.version})(),report_dir,requested_model=getattr(executor,"model",None),policy_snapshot=snapshot)
@@ -322,6 +360,7 @@ class Workflow:
                     if snapshot: failure.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
                     _write_json(report_dir/"result.json",failure)
                 except OSError: pass
+            if snapshot and snapshot.get("session_mode")=="reuse": raise WorkflowError("REUSE_SESSION_UNAVAILABLE") from error
             raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
     def recover(self):
         with lock(self.base/"lock"):

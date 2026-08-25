@@ -215,5 +215,5 @@ ignorance, or absence of AGENTS.md. `checkpoint` is manual and fails with
 `.codex/config.toml` is unsupported and fails closed before launch. W2.2.1
 disables web search and Apps/connectors in the snapshot and uses Codex's
 `--ignore-user-config`, `features.apps=false`, and
-`features.web_search_request=false`; actual resume verification remains
+`web_search="disabled"`; actual resume verification remains
 W2.2.2.
