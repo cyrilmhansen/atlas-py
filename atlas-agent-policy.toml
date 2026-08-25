@@ -1,0 +1,39 @@
+schema = "atlas-agent-policy/1"
+
+[session_limits]
+max_hot_reuse_hops = 3
+max_reuse_generation_gap = 2
+
+[profiles.implementation]
+executor = "codex"
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+sandbox = "workspace-write"
+network_default = false
+network_override = "explicit"
+allowed_session_modes = ["fresh", "reuse"]
+fresh_storage = "persist"
+
+[profiles.patch_review]
+executor = "codex"
+model = "gpt-5.6-sol"
+reasoning_effort = "high"
+sandbox = "read-only"
+network_default = false
+network_override = "forbidden"
+allowed_session_modes = ["fresh", "reuse"]
+fresh_storage = "persist"
+
+[profiles.state_audit]
+executor = "codex"
+model = "gpt-5.6-sol"
+reasoning_effort = "high"
+sandbox = "read-only"
+network_default = false
+network_override = "forbidden"
+allowed_session_modes = ["fresh"]
+fresh_storage = "ephemeral"
+
+[profiles.checkpoint]
+executor = "manual"
+allowed_session_modes = ["fresh"]

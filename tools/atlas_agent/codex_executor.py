@@ -29,15 +29,25 @@ class CodexExecutor:
         self._validate_policy()
         if not self.executable: raise ExecutorError("CODEX_NOT_FOUND")
         if not spec.prompt_path.is_file(): raise ExecutorError("PROMPT_MISSING")
+        snapshot=spec.policy_snapshot
+        if snapshot:
+            if snapshot.get("session_mode")=="reuse": raise ExecutorError("REUSE_SESSION_UNAVAILABLE")
+            if snapshot.get("executor")!="codex" or self.model != snapshot.get("requested_model") or self.approval_policy != "never" or self.approvals_reviewer != "user" or self.sandbox != snapshot.get("sandbox_mode") or self.network_access != snapshot.get("network_access"):
+                raise ExecutorError("POLICY_RESOLUTION_MISMATCH")
         argv=[self.executable,"exec","--json","-C",str(spec.repository_root),"--sandbox",self.sandbox]
+        if snapshot: argv.append("--ignore-user-config")
         if self.strict_config: argv.append("--strict-config")
         if self.ignore_rules: argv.append("--ignore-rules")
         argv += ["-c",f'approval_policy="{self.approval_policy}"',"-c",f'approvals_reviewer="{self.approvals_reviewer}"']
+        if snapshot:
+            argv += ["-c","features.apps=false","-c","features.web_search_request=false"]
         if self.sandbox == "workspace-write": argv += ["-c",f"sandbox_workspace_write.network_access={str(self.network_access).lower()}"]
-        if self.ephemeral: argv.append("--ephemeral")
+        if snapshot:
+            argv += ["-c",f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"']
+        if self.ephemeral and (not snapshot or snapshot.get("session_storage")=="ephemeral"): argv.append("--ephemeral")
         if self.model: argv += ["--model",self.model]
         argv.append("-")
-        return PreparedExecution(spec,"codex",tuple(argv),"unresolved",self._envelope())
+        return PreparedExecution(spec,"codex",tuple(argv),"unresolved",self._envelope(),snapshot)
     def post_start_prepare(self, prepared):
         info=self.info()
         if not info["available"]: raise ExecutorError("CODEX_VERSION_FAILED")
@@ -90,4 +100,4 @@ class CodexExecutor:
         try: status, failures=self._permission_observations(out,err)
         except OSError: status, failures="partial",None
         finished=utc_now(); outcome="timeout" if timed_out else ("success" if exit_code==0 else "failed"); root=spec.runtime_root or spec.repository_root
-        return ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,started,finished,exit_code,str(out.relative_to(root)),str(err.relative_to(root)),session_id,outcome,str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,status,failures,timed_out)
+        return ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,started,finished,exit_code,str(out.relative_to(root)),str(err.relative_to(root)),session_id,outcome,str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,status,failures,timed_out,prepared.policy_snapshot)

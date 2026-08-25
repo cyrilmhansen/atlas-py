@@ -118,6 +118,9 @@ def _append_usage_event(runtime_root, record):
         "metrics": record.get("run"),
         "status": record["status"],
     }
+    for key in ("policy_config_sha256", "profile", "session_mode", "reused_from_execution_id", "reuse_depth", "cold_policy", "freshness_verification"):
+        if key in record:
+            event[key] = record[key]
     # This journal is append-only but intentionally non-authoritative; a
     # per-record hash makes later ingestion/debugging deterministic.
     if previous:
@@ -129,7 +132,7 @@ def _append_usage_event(runtime_root, record):
         os.fsync(stream.fileno())
 
 
-def collect_usage(spec, result, report_dir: Path, requested_model=None, requested_reasoning=None):
+def collect_usage(spec, result, report_dir: Path, requested_model=None, requested_reasoning=None, policy_snapshot=None):
     """Write usage.json and append a passive observation; never raises on parse errors."""
     stdout = report_dir / "stdout.log"
     try:
@@ -152,8 +155,8 @@ def collect_usage(spec, result, report_dir: Path, requested_model=None, requeste
         "codex_version": getattr(result, "version", None),
         "requested_model": requested_model if isinstance(requested_model,str) else None,
         "requested_reasoning": requested_reasoning if isinstance(requested_reasoning,str) else None,
-        "observed_model": metadata.get("observed_model"),
-        "reasoning_effort": metadata.get("reasoning_effort") if isinstance(metadata.get("reasoning_effort"),str) else None,
+        "observed_model": metadata.get("observed_model") or getattr(result, "observed_model", None),
+        "reasoning_effort": metadata.get("reasoning_effort") if isinstance(metadata.get("reasoning_effort"),str) else getattr(result, "observed_reasoning", None),
         "run": run,
         "context_window": metadata.get("context_window"),
         "context_used": metadata.get("context_used"),
@@ -166,6 +169,12 @@ def collect_usage(spec, result, report_dir: Path, requested_model=None, requeste
         "parser_malformed_lines": malformed,
         "captured_at": _now(),
     }
+    if policy_snapshot:
+        for key in ("action", "checkpoint", "policy_config_sha256", "profile", "requested_model", "requested_reasoning_effort", "session_mode", "cold_policy", "freshness_verification"):
+            if key in policy_snapshot:
+                record[key if key != "requested_reasoning_effort" else "requested_reasoning"] = policy_snapshot[key]
+        for key in ("reused_from_execution_id", "reuse_depth"):
+            if key in policy_snapshot: record[key] = policy_snapshot[key]
     if not record["sources"]:
         record["sources"] = ["unavailable"]
     report_dir.mkdir(parents=True, exist_ok=True)

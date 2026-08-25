@@ -173,3 +173,47 @@ writing a telemetry/report artifact is an execution failure: cleanup interrupts
 the W1 run before reporting the secondary telemetry error. Secrets are
 excluded from both telemetry artifacts. Log permission scanning is line-based
 with bounded reads; it does not load complete stdout/stderr files into memory.
+
+## W2.2.1 — policy resolution and prompt v2
+
+`atlas-agent-policy.toml` is separate from the closed W1 `atlas-agent.toml`.
+It has exactly the four methodological profiles `implementation`,
+`patch_review`, `state_audit`, and `checkpoint`; the profile name is the
+action and no `role` field is introduced. The policy is loaded and validated
+immediately before `RUN_STARTED` under the W1 lock. Its SHA-256 is computed
+from deterministic JSON of the validated semantic model, so TOML comments,
+whitespace, and table order do not affect provenance. The configured model is
+`gpt-5.6-sol`, taken from the local Codex configuration at implementation
+time; model names remain configuration rather than schema.
+
+Prompt schema v2 adds required boolean `network_access` and requires an exact
+`reuse_execution_id` for `session_mode = "reuse"`; fresh prompts forbid that
+field. Prompt v1 remains readable without rewriting its archive. A v1 fresh
+prompt resolves network access to false. A v1 reuse prompt is readable but
+cannot be executed because it has no exact reuse target.
+
+The resolved `atlas-agent-policy-snapshot/1` is authoritative in the W1
+execution owner under `atlas-agent-execution-owner/2`. `execution.json` and
+`result.json` copy it, and doctor/spool compare both artifacts with that owner.
+Historical W1 and W2.1 owners remain unchanged: no `policy_snapshot: null` or
+`owner_schema: null` is synthesized.
+
+Reuse is pre-launch only in W2.2.1. Atlas requires an exact successful,
+thread-observed target with compatible action/effective configuration, current
+lineage, generation-gap and hot-hop limits. A tainted or stale lineage is
+rejected. The real `codex exec resume <thread-id>` argv and post-subprocess
+fresh/reuse verification are deferred to W2.2.2; W2.2.1 never silently
+converts reuse into fresh.
+
+`state_audit` is always fresh, read-only, network-disabled, ephemeral, and has
+`cold_policy = "conversational"` with `freshness_verification = "deferred"`.
+This means no resume, no automatic prior
+transcript or Luna/Sol result injection, explicit model/config, and an
+autonomous prompt. It does not claim filesystem isolation, repository
+ignorance, or absence of AGENTS.md. `checkpoint` is manual and fails with
+`CHECKPOINT_MANUAL_REQUIRED` before any subprocess. A project-local
+`.codex/config.toml` is unsupported and fails closed before launch. W2.2.1
+disables web search and Apps/connectors in the snapshot and uses Codex's
+`--ignore-user-config`, `features.apps=false`, and
+`features.web_search_request=false`; actual resume verification remains
+W2.2.2.

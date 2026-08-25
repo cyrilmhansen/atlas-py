@@ -42,6 +42,7 @@ class ExecutionSpec:
     report_dir: Path
     runtime_root: Path | None = None
     checkpoint: str | None = None
+    policy_snapshot: dict | None = None
 
 @dataclass(frozen=True)
 class PreparedExecution:
@@ -50,6 +51,7 @@ class PreparedExecution:
     command: tuple[str, ...]
     version: str
     permission_envelope: dict
+    policy_snapshot: dict | None = None
 
 @dataclass(frozen=True)
 class ExecutionResult:
@@ -69,6 +71,9 @@ class ExecutionResult:
     permission_observation_status: str = "unavailable"
     permission_failures: list | None = None
     timed_out: bool = False
+    policy_snapshot: dict | None = None
+    observed_model: str | None = None
+    observed_reasoning: str | None = None
 
 class Executor(Protocol):
     def prepare_execution(self, spec: ExecutionSpec) -> PreparedExecution: ...
@@ -86,15 +91,20 @@ class FakeExecutor:
     """Deterministic test executor; it never launches a subprocess."""
     def __init__(self, exit_code=0, stdout=b"", stderr=b"", delay=0.0, crash=False,
                  permission_envelope=None, permission_observation_status="unavailable",
-                 permission_failures=None, timed_out=False):
+                 permission_failures=None, timed_out=False, observed_thread_id=None,
+                 observed_model=None, observed_reasoning=None):
         self.exit_code=exit_code; self.stdout=stdout; self.stderr=stderr; self.delay=delay; self.crash=crash; self.launched=0
         self.permission_envelope=permission_envelope or {"sandbox_mode":"read-only","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}
         self.permission_observation_status=permission_observation_status; self.permission_failures=permission_failures; self.timed_out=timed_out
+        self.observed_thread_id=observed_thread_id; self.observed_model=observed_model; self.observed_reasoning=observed_reasoning
     def prepare_execution(self, spec):
         if not spec.prompt_path.exists(): raise ExecutorError("PROMPT_MISSING")
         if spec.prompt_path.read_bytes().__class__ is not bytes: raise ExecutorError("PROMPT_READ_FAILED")
-        validate_permission_envelope(self.permission_envelope)
-        return PreparedExecution(spec, "fake", ("fake-executor",), "fake/1", self.permission_envelope)
+        envelope=self.permission_envelope
+        if spec.policy_snapshot and spec.policy_snapshot.get("executor")=="codex":
+            envelope={"sandbox_mode":spec.policy_snapshot["sandbox_mode"],"approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":spec.policy_snapshot["network_access"]}
+        validate_permission_envelope(envelope)
+        return PreparedExecution(spec, "fake", ("fake-executor",), "fake/1", envelope, spec.policy_snapshot)
     def post_start_prepare(self, prepared):
         return prepared
     def run_execution(self, prepared):
@@ -104,5 +114,5 @@ class FakeExecutor:
         spec=prepared.spec; spec.report_dir.mkdir(parents=True, exist_ok=True)
         out=spec.report_dir/"stdout.log"; err=spec.report_dir/"stderr.log"
         out.write_bytes(self.stdout); err.write_bytes(self.stderr)
-        finished=utc_now(); root=spec.runtime_root or spec.repository_root; result=ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,utc_now(),finished,self.exit_code,str(out.relative_to(root)),str(err.relative_to(root)),None,"timeout" if self.timed_out else ("success" if self.exit_code==0 else "failed"),str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,self.permission_observation_status,self.permission_failures,self.timed_out)
+        finished=utc_now(); root=spec.runtime_root or spec.repository_root; result=ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,utc_now(),finished,self.exit_code,str(out.relative_to(root)),str(err.relative_to(root)),self.observed_thread_id,"timeout" if self.timed_out else ("success" if self.exit_code==0 else "failed"),str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,self.permission_observation_status,self.permission_failures,self.timed_out,prepared.policy_snapshot,self.observed_model,self.observed_reasoning)
         _write_json(spec.report_dir/"result.json",{**result.__dict__,"generation":spec.generation,"prompt_sha256":spec.prompt_sha256,"action":spec.action}); return result

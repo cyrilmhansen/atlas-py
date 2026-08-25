@@ -68,7 +68,9 @@ def validate_spool(root,canonical_state):
                 owner={"execution_id":execution.get("execution_id"),"generation":rec.get("generation"),"prompt_sha256":rec.get("prompt_sha256"),"action":rec.get("action")}
                 if envelope is not None:
                     owner["permission_envelope"]=envelope
-                elif execution.get("executor") in {"fake","codex"}:
+                if execution.get("owner_schema") is not None:
+                    owner.update({"owner_schema":execution.get("owner_schema"),"policy_snapshot":execution.get("policy_snapshot")})
+                elif envelope is None and execution.get("executor") in {"fake","codex"}:
                     errors.append(f"missing canonical permission envelope g{g}")
                 if isinstance(execution_data,dict):
                     for key,value in owner.items():
@@ -78,6 +80,8 @@ def validate_spool(root,canonical_state):
                 try: result_data=json.loads(result_file.read_text(encoding="utf-8"))
                 except (OSError,UnicodeError,json.JSONDecodeError): result_data=None
                 if result_data is not None and rec["status"]!="RUNNING":
+                    if not isinstance(result_data,dict): errors.append(f"result artifact invalid g{g}"); result_data=None
+                if isinstance(result_data,dict) and rec["status"]!="RUNNING":
                     for key,value in owner.items():
                         if result_data.get(key)!=value: errors.append(f"result owner mismatch g{g}: {key}")
                     exit_code=result_data.get("exit_code"); outcome=result_data.get("outcome")

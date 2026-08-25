@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from .model import SCHEMA
+from .policy import validate_snapshot, PolicyError
 class JournalError(RuntimeError): pass
 ZERO="0"*64
 EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","RECOVERY_PERFORMED"}
@@ -28,12 +29,16 @@ def _witness(value, line):
     if type(value["unexpected_untracked"]) is not list or any(type(x) is not str or not re.fullmatch(r"[0-9a-f]+",x) for x in value["unexpected_untracked"]): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
     if "permission_envelope" in value:
         envelope=value["permission_envelope"]
         if type(envelope) is not dict or set(envelope)!={"sandbox_mode","approval_policy","approvals_reviewer","strict_config","ignore_rules","network_access"}: raise JournalError(f"permission envelope invalid at line {line}")
         if envelope["sandbox_mode"] not in {"read-only","workspace-write","danger-full-access"} or envelope["approval_policy"]!="never" or envelope["approvals_reviewer"]!="user" or envelope["strict_config"] is not True or envelope["ignore_rules"] is not True or type(envelope["network_access"]) is not bool: raise JournalError(f"permission envelope invalid at line {line}")
+    if "owner_schema" in value or "policy_snapshot" in value:
+        if value.get("owner_schema")!="atlas-agent-execution-owner/2" or "policy_snapshot" not in value: raise JournalError(f"execution owner schema invalid at line {line}")
+        try: validate_snapshot(value["policy_snapshot"])
+        except PolicyError as error: raise JournalError(f"policy snapshot invalid at line {line}") from error
 class Journal:
     def __init__(self,path:Path): self.path=path
     def read(self):
@@ -57,7 +62,7 @@ class Journal:
     def _validate_payload(event,p,n):
         required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"RECOVERY_PERFORMED":set()}[event]
         if not required<=set(p): raise JournalError(f"payload for {event} incomplete at line {n}")
-        allowed={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution"},"RECOVERY_PERFORMED":{"repaired"}}[event]
+        allowed={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","executor_result"},"RECOVERY_PERFORMED":{"repaired"}}[event]
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
         if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
@@ -66,7 +71,12 @@ class Journal:
         if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str)): raise JournalError(f"initialization payload invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
+        if event=="PROMPT_ACCEPTED":
+            if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2"}: raise JournalError(f"prompt schema invalid at line {n}")
+            if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
+            if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
+        if "executor_result" in p and type(p["executor_result"]) is not dict: raise JournalError(f"executor result invalid at line {n}")
         if event in {"PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p["source"]) is not str or type(p["destination"]) is not str): raise JournalError(f"transition paths invalid at line {n}")
         if "witness" in p: _witness(p["witness"],n)
         if "execution" in p: _execution(p["execution"],n)
