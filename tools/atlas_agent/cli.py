@@ -4,7 +4,7 @@ from .spool import validate_spool
 from .repository import witness
 from .codex_executor import CodexExecutor
 def main(argv=None):
-    p=argparse.ArgumentParser(prog="atlas-agent"); p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","start-run","complete-run","interrupt-run","executor-info","execute","dispatch"]); p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p=argparse.ArgumentParser(prog="atlas-agent"); p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","start-run","complete-run","interrupt-run","checkpoint","executor-info","execute","dispatch"]); p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
@@ -13,6 +13,10 @@ def main(argv=None):
         elif a.command=="recover": w.recover()
         elif a.command=="start-run": w.start_run(a.generation)
         elif a.command=="interrupt-run": w.interrupt_run(a.generation,a.reason)
+        elif a.command=="checkpoint":
+            if a.generation is None: raise WorkflowError("generation is required")
+            if a.message is None: raise WorkflowError("--message is required")
+            w.checkpoint(a.generation,a.message)
         elif a.command=="executor-info": print(json.dumps(CodexExecutor().info(),sort_keys=True,indent=2))
         elif a.command=="execute": w.execute(a.generation,CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
         elif a.command=="dispatch":

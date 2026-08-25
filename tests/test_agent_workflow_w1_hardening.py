@@ -4,6 +4,7 @@ import pytest
 from tools.atlas_agent.workflow import Workflow,WorkflowError,replay_journal
 from tools.atlas_agent.journal import canonical,_hash_event
 from tools.atlas_agent.prompt import parse_prompt,PromptError
+from tools.atlas_agent.repository import witness
 
 def sh(p,*a): return subprocess.check_output(["git",*a],cwd=p,text=True).strip()
 @pytest.fixture
@@ -25,10 +26,20 @@ def test_result_generation_hash_action_mismatch(repo):
     for key,val in [("generation",2),("prompt_sha256","0"*64),("action","patch_review")]:
         r={"generation":1,"prompt_sha256":digest(raw),"action":"implementation"}; r[key]=val
         with pytest.raises(WorkflowError): w.complete_run(1,r)
-def test_implementation_unexpected_untracked_interrupts(repo):
-    p,w=repo; raw=running(w); (p/"unexpected.txt").write_text("x")
-    with pytest.raises(WorkflowError): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
-    assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"
+def test_implementation_can_complete_with_new_file_and_binds_content(repo):
+    p,w=repo; raw=running(w); (p/"new-source.py").write_text("VALUE = 1\n")
+    w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    state=w._state(); completed=state["generations"]["1"]
+    assert completed["status"]=="COMPLETED"
+    entry=state["latest_repository_witness"]["unexpected_untracked"][0]
+    assert bytes.fromhex(entry["path"]).decode()=="new-source.py"
+    assert entry["content_sha256"]==hashlib.sha256(b"file\0VALUE = 1\n").hexdigest()
+def test_patch_review_detects_witnessed_new_file_content_change(repo):
+    p,w=repo; raw=running(w); new=p/"new-source.py"; new.write_text("reviewed\n")
+    w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    review=prompt(w,2,parent=1,action="patch_review"); w.ingest(); w.start_run(2); new.write_text("changed\n")
+    with pytest.raises(WorkflowError): w.complete_run(2,{"generation":2,"prompt_sha256":digest(review),"action":"patch_review"})
+    assert w._state()["generations"]["2"]["status"]=="INTERRUPTED"
 def test_start_witness_guard(repo):
     p,w=repo; prompt(w); w.ingest(); (p/"a").write_text("changed")
     with pytest.raises(WorkflowError): w.start_run(1)
@@ -143,3 +154,68 @@ def test_lock_blocks_and_recovers_after_kill(repo):
     proc2=subprocess.Popen([sys.executable,"-c",code,str(w.base/"lock")],cwd=p,env=env); time.sleep(.1); proc2.kill(); proc2.wait(); started=time.monotonic()
     with lock(w.base/"lock"): pass
     assert time.monotonic()-started<.4
+
+def checkpoint_ready(repo):
+    p,w=repo; raw=running(w); (p/"a").write_text("reviewed tracked\n"); (p/"reviewed-new.txt").write_text("reviewed new\n")
+    w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    checkpoint_prompt=prompt(w,2,parent=1,action="checkpoint"); w.ingest()
+    assert w._state()["generations"]["2"]["status"]=="ACCEPTED"
+    return p,w,checkpoint_prompt
+
+def test_checkpoint_hooks_cannot_alter_committed_tree(repo):
+    p,w,_=checkpoint_ready(repo); corpus=p/"corpus_miner"; corpus.mkdir(); (corpus/"excluded.txt").write_text("excluded\n")
+    hook=p/".git/hooks/pre-commit"; hook.write_text("#!/bin/sh\nprintf 'hooked\\n' > a\nprintf 'injected\\n' > hook-injected.txt\ngit add a hook-injected.txt corpus_miner/excluded.txt\n")
+    hook.chmod(0o755); parent=sh(p,"rev-parse","HEAD")
+    before=witness(p,w.allowed)
+    with pytest.raises(WorkflowError,match="CHECKPOINT_REPOSITORY_HOOKS_PRESENT"): w.checkpoint(2,"reviewed checkpoint")
+    assert sh(p,"rev-parse","HEAD")==parent
+    assert witness(p,w.allowed)==before
+    assert not (p/"hook-injected.txt").exists()
+    assert (corpus/"excluded.txt").read_text()=="excluded\n"
+    assert sh(p,"ls-files","--","corpus_miner/excluded.txt")==""
+
+def test_checkpoint_recovery_finalizes_exact_commit_after_head_advance(repo):
+    p,w,_=checkpoint_ready(repo); parent=sh(p,"rev-parse","HEAD")
+    def crash(point,data):
+        if point=="committed": raise RuntimeError("crash after commit")
+    with pytest.raises(RuntimeError,match="crash after commit"): w.checkpoint(2,"recoverable checkpoint",hook=crash)
+    commit=sh(p,"rev-parse","HEAD"); assert commit!=parent
+    assert w._state()["generations"]["2"]["status"]=="ACCEPTED"
+    recovered=Workflow(p).recover()
+    assert recovered["generations"]["2"]["status"]=="COMPLETED"
+    assert recovered["generations"]["2"]["result"]["commit_sha"]==commit
+    assert sh(p,"rev-parse",f"{commit}^")==parent
+    assert sh(p,"show",f"{commit}:a")=="reviewed tracked"
+    assert sh(p,"show",f"{commit}:reviewed-new.txt")=="reviewed new"
+    assert sh(p,"diff-tree","--no-commit-id","--name-only","-r",commit).splitlines()==["a","reviewed-new.txt"]
+    assert not recovered.get("outstanding_checkpoints")
+
+def test_checkpoint_recovery_aborts_when_commit_did_not_happen(repo):
+    p,w,_=checkpoint_ready(repo); parent=sh(p,"rev-parse","HEAD")
+    def crash(point,data):
+        if point=="intent": raise RuntimeError("crash before commit")
+    with pytest.raises(RuntimeError,match="crash before commit"): w.checkpoint(2,"not advanced",hook=crash)
+    assert sh(p,"rev-parse","HEAD")==parent
+    recovered=Workflow(p).recover()
+    assert recovered["generations"]["2"]["status"]=="ACCEPTED"
+    assert not recovered.get("outstanding_checkpoints")
+    assert subprocess.check_output(["git","diff","--cached","--name-only"],cwd=p,text=True)==""
+
+def test_checkpoint_recovery_rejects_unexpected_head(repo):
+    p,w,_=checkpoint_ready(repo)
+    def crash(point,data):
+        if point=="committed": raise RuntimeError("crash after commit")
+    with pytest.raises(RuntimeError): w.checkpoint(2,"recoverable checkpoint",hook=crash)
+    sh(p,"commit","--allow-empty","--no-verify","-qm","unexpected")
+    with pytest.raises(WorkflowError,match="CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH"): Workflow(p).recover()
+
+def test_checkpoint_reset_failure_is_distinct(repo,monkeypatch):
+    p,w,_=checkpoint_ready(repo)
+    import tools.atlas_agent.repository as repository
+    real_run=repository._run
+    def failed_commit_and_reset(root,*args,**kwargs):
+        if args and args[0]=="commit-tree": raise repository.RepositoryError("commit failed")
+        if args and args[0]=="reset": raise repository.RepositoryError("reset failed")
+        return real_run(root,*args,**kwargs)
+    monkeypatch.setattr(repository,"_run",failed_commit_and_reset)
+    with pytest.raises(WorkflowError,match="CHECKPOINT_ROLLBACK_FAILED: reset failed"): w.checkpoint(2,"will fail")

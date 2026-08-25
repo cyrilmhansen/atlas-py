@@ -5,7 +5,7 @@ from pathlib import Path
 from .model import Prompt
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError
-from .repository import find_root,runtime_path,witness
+from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_commit,find_root,runtime_path,witness
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
 from .codex_executor import CodexExecutor
@@ -18,6 +18,17 @@ def replay_journal(events):
     for e in events:
         p=e["payload"]; state["last_seq"]=e["seq"]
         if e["event"]=="WORKFLOW_INITIALIZED": state["initialized"]=True; state["latest_repository_witness"]=p["witness"]; state["repository_witnesses"].append(p["witness"])
+        elif e["event"]=="CHECKPOINT_INTENT":
+            g=str(p["generation"]); rec=state["generations"].get(g)
+            outstanding=state.setdefault("outstanding_checkpoints",{})
+            if not rec or rec["status"]!="ACCEPTED" or rec["action"]!="checkpoint" or rec["prompt_sha256"]!=p["prompt_sha256"] or g in outstanding: raise WorkflowError("JOURNAL_CHECKPOINT_INTENT")
+            if p["parent_head"]!=rec["witness"]["head"] or p["witness"]!=rec["witness"]: raise WorkflowError("JOURNAL_CHECKPOINT_INTENT_MISMATCH")
+            outstanding[g]=p
+        elif e["event"]=="CHECKPOINT_ABORTED":
+            g=str(p["generation"]); intent=state.get("outstanding_checkpoints",{}).get(g); rec=state["generations"].get(g)
+            if not intent or not rec or rec["status"]!="ACCEPTED" or p["prompt_sha256"]!=intent["prompt_sha256"] or p["commit_sha"]!=intent["commit_sha"]: raise WorkflowError("JOURNAL_CHECKPOINT_ABORT")
+            state["outstanding_checkpoints"].pop(g)
+            if not state["outstanding_checkpoints"]: state.pop("outstanding_checkpoints")
         elif e["event"]=="TRANSITION_PREPARED":
             tx=p["transaction_id"]
             if tx in state["outstanding_transactions"] or tx in state["committed_transactions"]: raise WorkflowError("JOURNAL_DUPLICATE_TRANSACTION")
@@ -47,7 +58,13 @@ def replay_journal(events):
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="RUNNING" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
                 status="COMPLETED" if e["event"]=="RUN_COMPLETED" else "INTERRUPTED"; rec["status"]=status; state["lifecycle"][g]=status
-                if e["event"]=="RUN_COMPLETED": rec["result"]=p["result"]; state["results"][g]=p["result"]
+                if e["event"]=="RUN_COMPLETED":
+                    intent=state.get("outstanding_checkpoints",{}).get(g)
+                    if rec["action"]=="checkpoint" and (not intent or p["result"].get("commit_sha")!=intent["commit_sha"] or p["witness"]["head"]!=intent["commit_sha"]): raise WorkflowError("JOURNAL_CHECKPOINT_COMPLETION_MISMATCH")
+                    if intent:
+                        state["outstanding_checkpoints"].pop(g)
+                        if not state["outstanding_checkpoints"]: state.pop("outstanding_checkpoints")
+                    rec["result"]=p["result"]; state["results"][g]=p["result"]
                 if "executor_result" in p: rec["execution_result"]=p["executor_result"]
                 if p.get("witness"): state["latest_repository_witness"]=p["witness"]
                 continue
@@ -55,7 +72,8 @@ def replay_journal(events):
 def projection_equal(a,b): return a==b
 def witness_matches_policy(current, expected, action, running=False):
     if running and action=="implementation":
-        return all(current.get(k)==expected.get(k) for k in ("head","index_semantic_sha256","unexpected_untracked"))
+        stable=all(current.get(k)==expected.get(k) for k in ("head","index_semantic_sha256"))
+        return stable and all(x in current.get("unexpected_untracked",[]) for x in expected.get("unexpected_untracked",[]))
     return current==expected
 class Workflow:
     def __init__(self,start="."):
@@ -83,7 +101,7 @@ class Workflow:
             if p.exists(): p.unlink()
     def _replayed(self):
         events=self.journal.read(); s=replay_journal(events)
-        if s["outstanding_transactions"]: raise WorkflowError("INCOMPLETE_TRANSACTION: run recover")
+        if s["outstanding_transactions"] or s.get("outstanding_checkpoints"): raise WorkflowError("INCOMPLETE_TRANSACTION: run recover")
         return events,s
     def _preflight(self,require_state=True):
         events,s=self._replayed()
@@ -260,6 +278,37 @@ class Workflow:
             if x.get("execution") is not None: payload["execution"]=x["execution"]
             if executor_result is not None: payload["executor_result"]=executor_result
             move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload); s=replay_journal(self.journal.read()); self._save(s); return s
+    def _finish_checkpoint(self,generation,x,intent,now):
+        src=self._find(self.base/("accepted" if x["status"]=="ACCEPTED" else "running/checkpoint"),generation,x["prompt_sha256"])
+        if x["status"]=="ACCEPTED":
+            running=self.base/"running"/x["action"]/src.name
+            move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"]})
+            src=running
+        result={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"committed","classification":"manual_checkpoint","commit_sha":intent["commit_sha"]}
+        move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",{"generation":generation,"action":x["action"],"result":result,"witness":now})
+
+    def checkpoint(self,generation,message,hook=None):
+        """Commit and durably complete one accepted manual checkpoint."""
+        with lock(self.base/"lock"):
+            s,x=self._record(generation)
+            if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+            if x["action"]!="checkpoint": raise WorkflowError("GENERATION_IS_NOT_CHECKPOINT")
+            if type(message) is not str or not message.strip(): raise WorkflowError("CHECKPOINT_COMMIT_MESSAGE_REQUIRED")
+            if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+            try: intent=prepare_checkpoint(self.root,self.allowed,x["witness"],message)
+            except RepositoryError as error: raise WorkflowError(str(error)) from error
+            payload={"generation":generation,"prompt_sha256":x["prompt_sha256"],**intent}
+            try: self.journal.append("CHECKPOINT_INTENT",**payload)
+            except Exception as original:
+                try: rollback_checkpoint(self.root,self.allowed,x["witness"],original)
+                except RepositoryError as error: raise WorkflowError(str(error)) from error
+                raise WorkflowError(f"CHECKPOINT_INTENT_PERSISTENCE_FAILED: {original}") from original
+            if hook: hook("intent",payload)
+            try: now=advance_checkpoint(self.root,self.allowed,intent)
+            except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REQUIRED: {error}") from error
+            if hook: hook("committed",payload)
+            self._finish_checkpoint(generation,x,intent,now)
+            s=replay_journal(self.journal.read()); self._save(s); return s
     def execute(self,generation,executor=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
         with lock(self.base/"lock"):
@@ -396,12 +445,15 @@ class Workflow:
         with lock(self.base/"lock"):
             events=self.journal.read()
             s=replay_journal(events)
-            if s["outstanding_transactions"]:
-                first_prepare=min(p["_seq"] if "_seq" in p else next(e["seq"] for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==tx) for tx,p in s["outstanding_transactions"].items())
+            unresolved=[]
+            unresolved.extend(next(e["seq"] for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==tx) for tx in s["outstanding_transactions"])
+            unresolved.extend(next(e["seq"] for e in events if e["event"]=="CHECKPOINT_INTENT" and str(e["payload"]["generation"])==g and e["payload"]["commit_sha"]==p["commit_sha"]) for g,p in s.get("outstanding_checkpoints",{}).items())
+            if unresolved:
+                first_prepare=min(unresolved)
                 prior=replay_journal([e for e in events if e["seq"]<first_prepare])
             else: prior=copy.deepcopy(s)
             if not self._state_file().exists() or self._state()!=prior: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
-            if not s["outstanding_transactions"]:
+            if not unresolved:
                 validate_spool(self.base,s)
                 return s
             for tx,p in list(s["outstanding_transactions"].items()):
@@ -413,4 +465,22 @@ class Workflow:
                 if not se and not de: raise WorkflowError("RECOVERY_MISSING_BOTH")
                 if se: os.replace(src,dst); fsync_dir(src.parent); fsync_dir(dst.parent)
                 terminal=dict(p); terminal.pop("logical_event",None); self.journal.append(p["logical_event"],**terminal)
+            s=replay_journal(self.journal.read())
+            for g,intent in list(s.get("outstanding_checkpoints",{}).items()):
+                x=s["generations"].get(g)
+                head=witness(self.root,self.allowed)["head"]
+                if head==intent["parent_head"]:
+                    if not x or x["status"]!="ACCEPTED": raise WorkflowError("CHECKPOINT_RECOVERY_STATE_MISMATCH")
+                    try: rollback_checkpoint(self.root,self.allowed,intent["witness"],WorkflowError("CHECKPOINT_COMMIT_DID_NOT_HAPPEN"))
+                    except RepositoryError as error: raise WorkflowError(str(error)) from error
+                    self.journal.append("CHECKPOINT_ABORTED",generation=x["generation"],prompt_sha256=x["prompt_sha256"],commit_sha=intent["commit_sha"],reason="commit_did_not_happen")
+                    continue
+                if head!=intent["commit_sha"]: raise WorkflowError("CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH")
+                try:
+                    verify_checkpoint_commit(self.root,intent)
+                    now=witness(self.root,self.allowed); empty=hashlib.sha256(b"").hexdigest()
+                    if now["head"]!=intent["commit_sha"] or now["index_semantic_sha256"]!=empty or now["tracked_worktree_sha256"]!=empty or now["tracked_worktree_content_sha256"]!=empty or now["unexpected_untracked"]: raise RepositoryError("CHECKPOINT_POST_COMMIT_REPOSITORY_MISMATCH")
+                except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH: {error}") from error
+                if not x or x["status"] not in {"ACCEPTED","RUNNING"}: raise WorkflowError("CHECKPOINT_RECOVERY_STATE_MISMATCH")
+                self._finish_checkpoint(x["generation"],x,intent,now)
             s=replay_journal(self.journal.read()); validate_spool(self.base,s); self._save(s); return s

@@ -42,18 +42,31 @@ entries are normalized relative Git paths, normally ending `/`; `corpus_miner/`
 is allowed in this repository while `corpus_miner2/`, `foo/corpus_miner/`,
 absolute paths, and traversal are not. The repository witness is byte-oriented
 and content-sensitive: HEAD, semantic index state (including intent-to-add),
-actual tracked worktree patch bytes, and unexpected untracked paths are
-distinct. An implementation may change the
-tracked worktree, but not HEAD, index, or unexpected untracked files.
-`patch_review` and `state_audit` are read-only policies. `checkpoint` performs
-no automatic add/commit/push. Classification remains opaque and results must
-match generation, prompt hash, and action.
+actual tracked worktree patch bytes, and the paths and content of unexpected
+untracked files are distinct. An implementation may change the tracked
+worktree and add unexpected untracked files, but not HEAD, index, or any
+unexpected untracked file that existed when it started. Completed witnesses
+bind each new path and its content. Configured allowed-untracked paths remain
+excluded from the witness.
+`patch_review` and `state_audit` are read-only policies. An accepted manual
+`checkpoint` is completed explicitly with `atlas-agent checkpoint GENERATION
+--message MESSAGE`. It commits ordinary tracked-file modifications and new
+patch files after verifying the accepted witness and running `git diff
+--check`; allowed untracked content is never staged. Atlas creates the exact
+reviewed tree and commit object without running repository hooks; active commit
+hooks make the operation fail closed. Atlas then durably records an intent
+binding the parent, reviewed witness, tree, and commit before
+atomically advancing HEAD. Recovery aborts an intent whose commit did not
+happen, finalizes only the recorded commit, and rejects any other HEAD or tree.
+It does not push.
+Classification remains opaque and results must match generation, prompt hash,
+and action.
 
 `doctor` also compares the current repository with the action-specific policy:
 an implementation may have tracked worktree changes while its HEAD, index, and
-unexpected-untracked witness remain fixed; the read-only actions require the
-full start witness. Outside a run, the current witness must equal the latest
-canonical boundary.
+pre-existing unexpected-untracked entries remain fixed, and it may add new
+entries; the read-only actions require the full start witness. Outside a run,
+the current witness must equal the latest canonical boundary.
 
 Runtime is `git rev-parse --git-path atlas-agent`, which also works for linked
 worktrees. Users should use that command (or a CLI path display), never copy to
@@ -70,6 +83,7 @@ atlas-agent dispatch
 atlas-agent status
 python -m tools.atlas_agent start-run 1
 python -m tools.atlas_agent complete-run 1 --result '{"generation":1,"prompt_sha256":"…","action":"implementation","outcome":"done","classification":"manual"}'
+atlas-agent checkpoint 2 --message "Complete reviewed checkpoint"
 python -m tools.atlas_agent doctor
 ```
 
