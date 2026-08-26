@@ -8,7 +8,7 @@ import pytest
 
 from tools.atlas_agent.cli import DispatchPresenter, main
 from tools.atlas_agent.codex_executor import CodexExecutor
-from tools.atlas_agent.executor import ExecutionSpec, FakeExecutor
+from tools.atlas_agent.executor import ExecutorError, ExecutionSpec, FakeExecutor
 from tools.atlas_agent.workflow import WorkflowError
 
 from test_agent_checkpoint_boundary import accepted_dirty_checkpoint, git as checkpoint_git, prompt as checkpoint_prompt
@@ -74,6 +74,47 @@ def test_report_selects_final_agent_message_and_explicit_generation(tmp_path):
     _,workflow=make_repo(tmp_path); accepted(workflow)
     workflow.execute(1,CodexFake(stdout=jsonl(agent("progress"),agent("final report")),observed_thread_id="thread-1"))
     assert workflow.report(1)=="final report"
+
+
+def oversized_event(text="x"):
+    return json.dumps({"type":"future.event","payload":text}).encode()
+
+
+def test_report_skips_oversized_unrelated_events_until_a_valid_message(tmp_path):
+    path=tmp_path/"stdout.log"
+    path.write_bytes(oversized_event("x"*400)+b"\n"+jsonl(agent("final report")))
+    assert CodexExecutor.latest_agent_report(path,max_line_bytes=128)=="final report"
+
+
+def test_report_fails_closed_after_oversized_event_following_message(tmp_path):
+    path=tmp_path/"stdout.log"
+    path.write_bytes(jsonl(agent("older"))+oversized_event("x"*400)+b"\n")
+    with pytest.raises(ExecutorError,match="EXECUTOR_OUTPUT_MALFORMED: oversized JSONL record"):
+        CodexExecutor.latest_agent_report(path,max_line_bytes=128)
+
+
+@pytest.mark.parametrize("records",[
+    [oversized_event("x"*400)],
+    [oversized_event("x"*400),oversized_event("y"*400)],
+])
+def test_report_does_not_fabricate_report_from_oversized_records(tmp_path,records):
+    path=tmp_path/"stdout.log"
+    path.write_bytes(b"\n".join(records)+b"\n")
+    with pytest.raises(ExecutorError,match="EXECUTOR_OUTPUT_MALFORMED: oversized JSONL record"):
+        CodexExecutor.latest_agent_report(path,max_line_bytes=128)
+
+
+def test_report_later_message_reestablishes_latest_after_multiple_oversized_events(tmp_path):
+    path=tmp_path/"stdout.log"
+    path.write_bytes(oversized_event("x"*400)+b"\n"+oversized_event("y"*400)+b"\n"+jsonl(agent("final report")))
+    assert CodexExecutor.latest_agent_report(path,max_line_bytes=128)=="final report"
+
+
+def test_report_rejects_malformed_bounded_json_after_oversized_event(tmp_path):
+    path=tmp_path/"stdout.log"
+    path.write_bytes(oversized_event("x"*400)+b"\nnot-json\n"+jsonl(agent("final report")))
+    with pytest.raises(ExecutorError,match="EXECUTOR_OUTPUT_MALFORMED"):
+        CodexExecutor.latest_agent_report(path,max_line_bytes=128)
 
 
 def test_report_without_generation_selects_most_recent_available(tmp_path):

@@ -109,16 +109,26 @@ class CodexExecutor:
         except OSError as error: raise ExecutorError(f"EXECUTOR_OUTPUT_UNREADABLE: {error}") from error
         if size>max_file_bytes: raise ExecutorError("EXECUTOR_OUTPUT_TOO_LARGE")
         latest=None
+        ambiguous=False
         try:
             for line,oversized in iter_bounded_jsonl(path,max_line_bytes=max_line_bytes):
-                if oversized: raise ExecutorError("EXECUTOR_OUTPUT_MALFORMED: oversized JSONL record")
+                if oversized:
+                    # The record has deliberately not been retained, so it
+                    # may be a later agent message.  Keep scanning for a
+                    # completed message that proves it was not the report.
+                    ambiguous=True
+                    continue
                 try: event=json.loads(line)
                 except (UnicodeDecodeError,json.JSONDecodeError) as error:
                     raise ExecutorError(f"EXECUTOR_OUTPUT_MALFORMED: {error}") from error
                 if not isinstance(event,dict): raise ExecutorError("EXECUTOR_OUTPUT_MALFORMED: JSONL record is not an object")
                 message=cls._agent_message(event)
-                if message is not None: latest=message
+                if message is not None:
+                    latest=message
+                    ambiguous=False
         except OSError as error: raise ExecutorError(f"EXECUTOR_OUTPUT_UNREADABLE: {error}") from error
+        if ambiguous:
+            raise ExecutorError("EXECUTOR_OUTPUT_MALFORMED: oversized JSONL record")
         if latest is None: raise ExecutorError("EXECUTION_REPORT_MISSING")
         return latest
     def _progress(self,kind,elapsed,text=None):
