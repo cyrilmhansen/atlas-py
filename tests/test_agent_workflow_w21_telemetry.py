@@ -161,8 +161,13 @@ def test_telemetry_write_failure_interrupts_lifecycle(tmp_path, monkeypatch):
     def fail(*args,**kwargs): raise OSError("disk telemetry write failed")
     monkeypatch.setattr(workflow,"collect_usage",fail)
     with __import__("pytest").raises(Exception,match="TELEMETRY_WRITE_FAILURE"):
-        w.execute(1,FakeExecutor())
+        w.execute(1,FakeExecutor(observed_thread_id="telemetry-thread"))
     assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"
+    interrupted=next(event for event in reversed(w.journal.read()) if event["event"]=="RUN_INTERRUPTED")
+    result=interrupted["payload"]["executor_result"]
+    assert result["session_id"]=="telemetry-thread"
+    assert result["execution_id"]==interrupted["payload"]["execution"]["execution_id"]
+    assert result["started_at"] and result["finished_at"]
     w._preflight()
 
 def test_usage_history_preserves_execution_action_checkpoint_model_and_threads(tmp_path):

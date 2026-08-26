@@ -1,5 +1,5 @@
 from __future__ import annotations
-import copy, hashlib, json, os, re, tempfile, uuid, tomllib
+import hashlib, json, os, re, tempfile, uuid, tomllib
 from dataclasses import replace
 from pathlib import Path
 from .model import Prompt
@@ -9,9 +9,12 @@ from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,ro
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
 from .codex_executor import CodexExecutor
-from .telemetry import collect_usage
+from .telemetry import USAGE_SCHEMA,collect_usage,load_presentation_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 class WorkflowError(RuntimeError): pass
+class _RunTerminalError(WorkflowError):
+    """A meaningful failure that already durably ended the run."""
+
 SESSION_VALIDATION_ERRORS=frozenset({"FRESHNESS_UNVERIFIED","FRESHNESS_VIOLATION","REUSE_THREAD_UNVERIFIED","REUSE_THREAD_MISMATCH","OBSERVED_MODEL_MISMATCH","OBSERVED_REASONING_MISMATCH","REUSE_SESSION_UNAVAILABLE"})
 def replay_journal(events):
     state={"initialized":False,"last_seq":0,"generations":{},"parentage":{},"prompt_hashes":{},"lifecycle":{},"checkpoint_action":{},"repository_witnesses":[],"latest_repository_witness":None,"outstanding_transactions":{},"committed_transactions":[],"results":{},"reports":{}}
@@ -99,6 +102,83 @@ class Workflow:
             os.replace(p,self._state_file()); fsync_dir(self.base)
         finally:
             if p.exists(): p.unlink()
+    def _publish_execution_artifact(self,path,value):
+        """Atomically publish mandatory execution-owner metadata.
+
+        Stage outside reports so spool validation cannot mistake the private
+        file for a canonical report artifact.
+        """
+        fd,tmp=tempfile.mkstemp(prefix="execution-artifact-",dir=self.base); os.close(fd); staged=Path(tmp)
+        try:
+            with staged.open("w",encoding="utf-8") as f:
+                json.dump(value,f,sort_keys=True,indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
+            os.replace(staged,path); fsync_dir(path.parent)
+        finally:
+            if staged.exists(): staged.unlink()
+    def _execution_artifact(self,transaction):
+        return {**transaction["execution"],"generation":transaction["generation"],"prompt_sha256":transaction["prompt_sha256"],"action":transaction["action"]}
+    def _publish_missing_execution_file(self,path,data):
+        """Publish or verify an exact journal-derived recovery artifact."""
+        def accept_existing():
+            try:
+                current=path.read_bytes()
+            except OSError as error:
+                raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT") from error
+            if current!=data:
+                raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT")
+            # A prior recovery may have crashed after publication but before
+            # making the directory entry durable.  Retrying must close that
+            # durability gap even though the bytes are already canonical.
+            fsync_dir(path.parent)
+        if path.exists() or path.is_symlink():
+            accept_existing()
+            return
+        fd,tmp=tempfile.mkstemp(prefix="recovery-artifact-",dir=self.base); staged=Path(tmp)
+        try:
+            with os.fdopen(fd,"wb") as stream:
+                stream.write(data); stream.flush(); os.fsync(stream.fileno())
+            try:
+                # Linking a fully synced private inode publishes atomically
+                # without ever replacing an artifact that raced into place.
+                os.link(staged,path)
+            except FileExistsError:
+                accept_existing()
+                return
+            fsync_dir(path.parent)
+        finally:
+            if staged.exists(): staged.unlink()
+    def _prepare_execution_publication(self,transaction,artifact=None):
+        """Publish an execution owner only after its transaction is durable."""
+        execution=transaction["execution"]
+        report_rel=Path(execution.get("report_dir",""))
+        if report_rel.is_absolute() or ".." in report_rel.parts or not str(report_rel).startswith("reports/executions/"):
+            raise WorkflowError("BAD_EXECUTION_METADATA")
+        report_dir=self.base/report_rel
+        if report_dir.is_symlink() or report_dir.parent.is_symlink():
+            raise WorkflowError("EXECUTION_REPORT_COLLISION")
+        parent_created=not report_dir.parent.exists()
+        report_dir.parent.mkdir(parents=True,exist_ok=True)
+        if parent_created: fsync_dir(report_dir.parent.parent)
+        if report_dir.exists():
+            if not report_dir.is_dir(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+        else:
+            report_dir.mkdir(parents=False,exist_ok=False)
+            fsync_dir(report_dir.parent)
+        path=report_dir/"execution.json"
+        expected=self._execution_artifact(transaction)
+        children=list(report_dir.iterdir())
+        if path.exists():
+            if path.is_symlink() or any(child.name!="execution.json" for child in children):
+                raise WorkflowError("RECOVERY_EXECUTION_ARTIFACT_CONFLICT")
+            try: current=json.loads(path.read_text(encoding="utf-8"))
+            except (OSError,UnicodeError,json.JSONDecodeError) as error:
+                raise WorkflowError("RECOVERY_EXECUTION_ARTIFACT_CONFLICT") from error
+            if not isinstance(current,dict) or any(current.get(key)!=value for key,value in expected.items()):
+                raise WorkflowError("RECOVERY_EXECUTION_ARTIFACT_CONFLICT")
+            fsync_dir(report_dir); fsync_dir(report_dir.parent)
+            return
+        if children: raise WorkflowError("RECOVERY_EXECUTION_ARTIFACT_CONFLICT")
+        self._publish_execution_artifact(path,artifact or expected)
     def _replayed(self):
         events=self.journal.read(); s=replay_journal(events)
         if s["outstanding_transactions"] or s.get("outstanding_checkpoints"): raise WorkflowError("INCOMPLETE_TRANSACTION: run recover")
@@ -178,6 +258,13 @@ class Workflow:
     def _execution_result(record):
         if isinstance(record.get("result"),dict): return record["result"].get("executor_result",{})
         return record.get("execution_result",{})
+    @staticmethod
+    def _observe(observer,event):
+        if observer is None: return
+        try: observer(event)
+        except Exception:
+            # Human presentation is never lifecycle authority.
+            pass
     def _reuse_snapshot(self, state, record, snapshot):
         target_id=record.get("reuse_execution_id")
         if not target_id: raise WorkflowError("REUSE_TARGET_MISSING")
@@ -266,10 +353,66 @@ class Workflow:
             if violation:
                 payload={"generation":generation,"action":x["action"],"reason":"REPOSITORY_POLICY_VIOLATION"};
                 if x.get("execution") is not None: payload["execution"]=x["execution"]
-                move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); raise WorkflowError("REPOSITORY_POLICY_VIOLATION")
+                if isinstance(r.get("executor_result"),dict): payload["executor_result"]=r["executor_result"]
+                move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload,hook)
+                self._project_interruption("REPOSITORY_POLICY_VIOLATION")
+                raise _RunTerminalError("REPOSITORY_POLICY_VIOLATION")
             payload={"generation":generation,"action":x["action"],"result":r,"witness":now};
             if x.get("execution") is not None: payload["execution"]=x["execution"]
             move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); return s
+    def _project_interruption(self,reason):
+        """Refresh the cache after a durable terminal journal transition."""
+        try:
+            state=replay_journal(self.journal.read())
+            self._save(state)
+            return state
+        except Exception as error:
+            # The journal transition is already canonical.  Projection failure
+            # must never send execute() back through interruption control flow.
+            raise _RunTerminalError(reason) from error
+    def _recover_interruption_artifacts(self,state):
+        """Fill only absences witnessed by a canonical interruption."""
+        interruptions={event["payload"]["generation"]:event["payload"] for event in self.journal.read() if event["event"]=="RUN_INTERRUPTED"}
+        for record in state["generations"].values():
+            execution=record.get("execution")
+            if record.get("status")!="INTERRUPTED" or not isinstance(execution,dict):
+                continue
+            payload=interruptions.get(record["generation"])
+            if payload is None:
+                raise WorkflowError("JOURNAL_INTERRUPTION_MISSING")
+            fallback=payload.get("fallback_artifacts")
+            if fallback is None:
+                continue
+            report_dir=Path(execution.get("report_dir",""))
+            if report_dir.is_absolute() or ".." in report_dir.parts or not str(report_dir).startswith("reports/executions/"):
+                raise WorkflowError("BAD_EXECUTION_METADATA")
+            directory=self.base/report_dir
+            owner={"execution_id":execution.get("execution_id"),"executor":execution.get("executor"),"generation":record["generation"],"prompt_sha256":record["prompt_sha256"],"action":record["action"]}
+            if execution.get("permission_envelope") is not None: owner["permission_envelope"]=execution["permission_envelope"]
+            if execution.get("owner_schema") is not None: owner.update({"owner_schema":execution.get("owner_schema"),"policy_snapshot":execution.get("policy_snapshot")})
+            result={**owner,"outcome":"exception","error":payload.get("reason"),"permission_observation_status":"unavailable","permission_failures":None,"telemetry_status":"failed","telemetry_error":"unavailable after durable interruption"}
+            executor_result=payload.get("executor_result")
+            if isinstance(executor_result,dict): result={**executor_result,**result}
+            snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
+            usage={"schema":USAGE_SCHEMA,"execution_id":execution.get("execution_id"),"generation":record["generation"],"prompt_sha256":record["prompt_sha256"],"action":record["action"],"checkpoint":record.get("checkpoint"),"thread_id":executor_result.get("session_id") if isinstance(executor_result,dict) else None,"codex_version":executor_result.get("version") if isinstance(executor_result,dict) else None,"requested_model":snapshot.get("requested_model"),"requested_reasoning":snapshot.get("requested_reasoning_effort"),"observed_model":executor_result.get("observed_model") if isinstance(executor_result,dict) else None,"reasoning_effort":executor_result.get("observed_reasoning") if isinstance(executor_result,dict) else None,"run":None,"context_window":None,"context_used":None,"context_remaining":None,"quota_before":None,"quota_after":None,"quota_status":"unavailable","sources":["unavailable"],"status":"unavailable","parser_malformed_lines":0,"captured_at":((executor_result or {}).get("finished_at") if isinstance(executor_result,dict) else None) or execution.get("started_at") or "unavailable"}
+            for key in ("policy_config_sha256","profile","session_mode","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"):
+                if key in snapshot: usage[key]=snapshot[key]
+            files={"stdout.log":b"","stderr.log":b"","result.json":(json.dumps(result,sort_keys=True,indent=2)+"\n").encode(),"usage.json":(json.dumps(usage,sort_keys=True,indent=2)+"\n").encode()}
+            for name in fallback: self._publish_missing_execution_file(directory/name,files[name])
+    def _missing_interruption_artifacts(self,record):
+        execution=record.get("execution")
+        if not isinstance(execution,dict): return []
+        report_dir=self.base/execution["report_dir"]
+        missing=[name for name in ("stdout.log","stderr.log") if not (report_dir/name).is_file()]
+        result_path=report_dir/"result.json"
+        if not result_path.is_file():
+            missing.append("result.json")
+        else:
+            try: result=json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError,UnicodeError,json.JSONDecodeError): result=None
+            if isinstance(result,dict) and result.get("telemetry_status")!="failed" and not (report_dir/"usage.json").is_file():
+                missing.append("usage.json")
+        return missing
     def interrupt_run(self,generation,reason,executor_result=None):
         with lock(self.base/"lock"):
             s,x=self._record(generation)
@@ -277,7 +420,10 @@ class Workflow:
             src=self._find(self.base/"running"/x["action"],generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"reason":reason};
             if x.get("execution") is not None: payload["execution"]=x["execution"]
             if executor_result is not None: payload["executor_result"]=executor_result
-            move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload); s=replay_journal(self.journal.read()); self._save(s); return s
+            fallback=self._missing_interruption_artifacts(x)
+            if fallback: payload["fallback_artifacts"]=fallback
+            move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload)
+            return self._project_interruption(reason)
     def _finish_checkpoint(self,generation,x,intent,now):
         src=self._find(self.base/("accepted" if x["status"]=="ACCEPTED" else "running/checkpoint"),generation,x["prompt_sha256"])
         if x["status"]=="ACCEPTED":
@@ -309,7 +455,7 @@ class Workflow:
             if hook: hook("committed",payload)
             self._finish_checkpoint(generation,x,intent,now)
             s=replay_journal(self.journal.read()); self._save(s); return s
-    def execute(self,generation,executor=None):
+    def execute(self,generation,executor=None,observer=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
         with lock(self.base/"lock"):
             s,x=self._record(generation)
@@ -346,18 +492,22 @@ class Workflow:
                 metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
             if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
             if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+            execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-            move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"],"execution":metadata})
+            start_payload={"generation":generation,"action":x["action"],"execution":metadata}
+            def publish_owner(stage,transaction):
+                if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)
+            move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",start_payload,publish_owner)
             s=replay_journal(self.journal.read()); self._save(s)
         running= self.base/"running"/x["action"]/accepted.name
         started=True; telemetry_failed=False
         try:
-            report_dir.parent.mkdir(parents=True,exist_ok=True)
-            report_dir.mkdir(parents=False,exist_ok=False)
-            _write_json(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
             prepared=getattr(executor,"post_start_prepare",lambda value: value)(prepared)
-            _write_json(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
+            self._publish_execution_artifact(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
             prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=running))
+            launch={"kind":"dispatch_started","generation":generation,"action":x["action"],"session_mode":x.get("session_mode"),"execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+            if snapshot: launch["policy_snapshot"]=snapshot
+            self._observe(observer,launch)
             result=executor.run_execution(prepared)
             result_payload={**result.__dict__,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"]}
             if snapshot:
@@ -368,7 +518,7 @@ class Workflow:
             except OSError as error:
                 telemetry_failed=True
                 _write_json(report_dir/"result.json",{**result_payload,"telemetry_status":"failed","telemetry_error":str(error)})
-                self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE")
+                self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE",result.__dict__)
                 started=False
                 raise WorkflowError(f"TELEMETRY_WRITE_FAILURE: {error}") from error
             if result.timed_out:
@@ -393,6 +543,7 @@ class Workflow:
             envelope.update(observed_metadata)
             return self.complete_run(generation,envelope)
         except Exception as error:
+            if isinstance(error,_RunTerminalError): raise
             if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT" or str(error) in SESSION_VALIDATION_ERRORS): raise
             stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
             if started:
@@ -412,7 +563,66 @@ class Workflow:
                 except OSError: pass
             if snapshot and snapshot.get("session_mode")=="reuse": raise WorkflowError("REUSE_SESSION_UNAVAILABLE") from error
             raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
-    def dispatch(self, executor=None):
+    def _interruption_reason(self,generation):
+        for event in reversed(self.journal.read()):
+            if event["event"]=="RUN_INTERRUPTED" and event["payload"].get("generation")==generation:
+                return event["payload"].get("reason")
+        return None
+    def _report_path(self,record):
+        execution=record.get("execution") or {}
+        report_dir=Path(execution.get("report_dir",""))
+        if report_dir.is_absolute() or ".." in report_dir.parts or not str(report_dir).startswith("reports/executions/"):
+            raise WorkflowError("BAD_EXECUTION_METADATA")
+        return self.base/report_dir/"stdout.log"
+    def _extract_report(self,record):
+        if record.get("status") not in {"COMPLETED","INTERRUPTED"}:
+            raise WorkflowError("EXECUTION_NOT_TERMINAL")
+        execution=record.get("execution") or {}
+        if execution.get("executor")!="codex": raise WorkflowError("EXECUTION_REPORT_UNSUPPORTED_EXECUTOR")
+        try: return CodexExecutor.latest_agent_report(self._report_path(record))
+        except ExecutorError as error: raise WorkflowError(str(error)) from error
+    def report(self,generation=None):
+        """Return a bounded executor-specific final human report."""
+        _,state=self._preflight()
+        if generation is not None:
+            record=state["generations"].get(str(generation))
+            if record is None: raise WorkflowError("UNKNOWN_GENERATION")
+            return self._extract_report(record)
+        failures=[]
+        for record in sorted(state["generations"].values(),key=lambda value:value["generation"],reverse=True):
+            if record.get("status") not in {"COMPLETED","INTERRUPTED"} or not record.get("execution"): continue
+            try: return self._extract_report(record)
+            except WorkflowError as error: failures.append(str(error))
+        if failures and any(value.startswith("EXECUTOR_OUTPUT_MALFORMED") for value in failures):
+            raise WorkflowError(next(value for value in failures if value.startswith("EXECUTOR_OUTPUT_MALFORMED")))
+        raise WorkflowError("NO_EXECUTION_REPORT")
+    def _report_available(self,record):
+        try: self._extract_report(record); return True
+        except WorkflowError: return False
+    def history(self):
+        _,state=self._preflight(); rows=[]
+        for record in sorted(state["generations"].values(),key=lambda value:value["generation"]):
+            execution=record.get("execution") or {}; result=self._execution_result(record)
+            row={"generation":record["generation"],"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"report_available":self._report_available(record) if execution else False}
+            if isinstance(result,dict):
+                if result.get("started_at"): row["started_at"]=result["started_at"]
+                if result.get("finished_at"): row["finished_at"]=result["finished_at"]
+            commit=(record.get("result") or {}).get("commit_sha")
+            if isinstance(commit,str) and commit: row["commit_sha"]=commit
+            rows.append(row)
+        return rows
+    def _dispatch_summary(self,generation,state):
+        record=state["generations"][str(generation)]; result=record.get("result") or {}; executor_result=result.get("executor_result") or record.get("execution_result") or {}; execution=record.get("execution") or {}
+        summary={"kind":"dispatch_finished","generation":generation,"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"thread_id":executor_result.get("session_id"),"interruption_reason":self._interruption_reason(generation) if record["status"]=="INTERRUPTED" else None,"report_available":self._report_available(record) if execution else False}
+        for key in ("started_at","finished_at"):
+            if executor_result.get(key): summary[key]=executor_result[key]
+        report_dir=execution.get("report_dir")
+        if report_dir:
+            usage_path=self.base/report_dir/"usage.json"
+            usage=load_presentation_usage(usage_path,record)
+            if usage is not None: summary["tokens"]=usage
+        return summary
+    def dispatch(self, executor=None, observer=None):
         """Execute exactly one already accepted generation.
 
         Selection is deliberately limited to the first accepted generation.
@@ -424,23 +634,23 @@ class Workflow:
             accepted = [record for record in state["generations"].values()
                         if record["status"] == "ACCEPTED"]
             if not accepted:
+                running = [record for record in state["generations"].values()
+                           if record["status"] == "RUNNING"]
+                if running:
+                    generation = min(running, key=lambda value: value["generation"])["generation"]
+                    raise WorkflowError(f"GENERATION_{generation}: generation is not accepted")
                 raise WorkflowError("NO_DISPATCHABLE_GENERATION")
             record = min(accepted, key=lambda value: value["generation"])
             generation = record["generation"]
         try:
-            state = self.execute(generation, executor)
+            state = self.execute(generation, executor, observer=observer)
         except WorkflowError as error:
+            try:
+                failed=self._state()
+                if failed["generations"][str(generation)]["status"]=="INTERRUPTED": self._observe(observer,self._dispatch_summary(generation,failed))
+            except (WorkflowError,KeyError): pass
             raise WorkflowError(f"GENERATION_{generation}: {error}") from error
-        record = state["generations"][str(generation)]
-        result = record.get("result") or {}
-        executor_result = result.get("executor_result") or record.get("execution_result") or {}
-        return {
-            "generation": generation,
-            "action": record["action"],
-            "status": record["status"],
-            "execution_id": (record.get("execution") or {}).get("execution_id"),
-            "thread_id": executor_result.get("session_id"),
-        }
+        summary=self._dispatch_summary(generation,state); self._observe(observer,summary); summary.pop("kind",None); return summary
     def recover(self):
         with lock(self.base/"lock"):
             events=self.journal.read()
@@ -448,14 +658,24 @@ class Workflow:
             unresolved=[]
             unresolved.extend(next(e["seq"] for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==tx) for tx in s["outstanding_transactions"])
             unresolved.extend(next(e["seq"] for e in events if e["event"]=="CHECKPOINT_INTENT" and str(e["payload"]["generation"])==g and e["payload"]["commit_sha"]==p["commit_sha"]) for g,p in s.get("outstanding_checkpoints",{}).items())
-            if unresolved:
-                first_prepare=min(unresolved)
-                prior=replay_journal([e for e in events if e["seq"]<first_prepare])
-            else: prior=copy.deepcopy(s)
-            if not self._state_file().exists() or self._state()!=prior: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
             if not unresolved:
+                if not self._state_file().exists(): raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
+                current=self._state()
+                if current!=s:
+                    last=events[-1] if events else None
+                    recoverable={"RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}
+                    if not last or last["event"] not in recoverable: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
+                    transaction_id=last["payload"]["transaction_id"]
+                    prepared=next((e for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==transaction_id),None)
+                    if prepared is None or current!=replay_journal([e for e in events if e["seq"]<prepared["seq"]]):
+                        raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
+                self._recover_interruption_artifacts(s)
                 validate_spool(self.base,s)
+                if current!=s: self._save(s)
                 return s
+            first_prepare=min(unresolved)
+            prior=replay_journal([e for e in events if e["seq"]<first_prepare])
+            if not self._state_file().exists() or self._state()!=prior: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
             for tx,p in list(s["outstanding_transactions"].items()):
                 src=self.base/p["source"]; dst=self.base/p["destination"]
                 se=src.exists(); de=dst.exists()
@@ -463,6 +683,8 @@ class Workflow:
                 if de and sha(dst)!=p["prompt_sha256"]: raise WorkflowError("RECOVERY_DESTINATION_HASH_MISMATCH")
                 if se and de: raise WorkflowError("RECOVERY_AMBIGUOUS")
                 if not se and not de: raise WorkflowError("RECOVERY_MISSING_BOTH")
+                if p["logical_event"]=="RUN_STARTED" and "execution" in p:
+                    self._prepare_execution_publication(p)
                 if se: os.replace(src,dst); fsync_dir(src.parent); fsync_dir(dst.parent)
                 terminal=dict(p); terminal.pop("logical_event",None); self.journal.append(p["logical_event"],**terminal)
             s=replay_journal(self.journal.read())
@@ -483,4 +705,4 @@ class Workflow:
                 except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH: {error}") from error
                 if not x or x["status"] not in {"ACCEPTED","RUNNING"}: raise WorkflowError("CHECKPOINT_RECOVERY_STATE_MISMATCH")
                 self._finish_checkpoint(x["generation"],x,intent,now)
-            s=replay_journal(self.journal.read()); validate_spool(self.base,s); self._save(s); return s
+            s=replay_journal(self.journal.read()); self._recover_interruption_artifacts(s); validate_spool(self.base,s); self._save(s); return s

@@ -1,10 +1,87 @@
-import argparse,json,sys
+import argparse
+import json
+import sys
+from datetime import datetime
+
 from .workflow import Workflow,WorkflowError,replay_journal,witness_matches_policy
 from .spool import validate_spool
 from .repository import witness
 from .codex_executor import CodexExecutor
+
+
+def _duration(started,finished):
+    if not started or not finished: return None
+    try:
+        start=datetime.fromisoformat(started.replace("Z","+00:00")); end=datetime.fromisoformat(finished.replace("Z","+00:00"))
+        return max(0,(end-start).total_seconds())
+    except (TypeError,ValueError): return None
+
+
+def _elapsed(seconds):
+    seconds=max(0,int(seconds))
+    minutes,remainder=divmod(seconds,60); hours,minutes=divmod(minutes,60)
+    if hours: return f"{hours}h {minutes:02d}m {remainder:02d}s"
+    if minutes: return f"{minutes}m {remainder:02d}s"
+    return f"{remainder}s"
+
+
+class DispatchPresenter:
+    def event(self,event):
+        if event["kind"]=="dispatch_started": self._started(event)
+        elif event["kind"]=="dispatch_finished": self._finished(event)
+
+    def _started(self,event):
+        snapshot=event.get("policy_snapshot") or {}; envelope=event.get("permission_envelope") or {}
+        print("Atlas dispatch")
+        print(f"g{event['generation']} · {event['action']} · {event.get('session_mode') or snapshot.get('session_mode') or 'session unavailable'}")
+        if snapshot.get("profile"): print(f"profile {snapshot['profile']}")
+        model=snapshot.get("requested_model"); reasoning=snapshot.get("requested_reasoning_effort")
+        if model or reasoning:
+            values=[]
+            if model: values.append(f"model {model}")
+            if reasoning: values.append(f"reasoning {reasoning}")
+            print(" · ".join(values))
+        sandbox=envelope.get("sandbox_mode"); network=envelope.get("network_access")
+        values=[]
+        if sandbox: values.append(f"sandbox {sandbox}")
+        if type(network) is bool: values.append(f"network {'enabled' if network else 'disabled'}")
+        if values: print(" · ".join(values))
+        if snapshot.get("session_mode")=="reuse":
+            values=[]
+            if snapshot.get("reused_from_execution_id"): values.append(f"execution {snapshot['reused_from_execution_id']}")
+            if snapshot.get("requested_thread_id"): values.append(f"thread {snapshot['requested_thread_id']}")
+            if values: print("reuse " + " · ".join(values))
+        print("starting...")
+
+    def progress(self,event):
+        elapsed=_elapsed(event.get("elapsed_seconds",0))
+        if event.get("kind")=="heartbeat": print(f"[{elapsed}] still running...")
+        elif event.get("kind")=="agent_message":
+            message=" ".join((event.get("message") or "").split())
+            if len(message)>500: message=message[:497]+"..."
+            print(f"[{elapsed}] {message}")
+
+    def _finished(self,event):
+        print("Atlas dispatch result")
+        print(f"g{event['generation']} · {event['action']} · {event['status']}")
+        duration=_duration(event.get("started_at"),event.get("finished_at"))
+        if duration is not None: print(f"elapsed {_elapsed(duration)}")
+        if event.get("execution_id"): print(f"execution {event['execution_id']}")
+        if event.get("thread_id"): print(f"thread {event['thread_id']}")
+        tokens=event.get("tokens")
+        if isinstance(tokens,dict) and not isinstance(tokens.get("observations"),list):
+            fields=[]
+            for key,label in (("input_tokens","input"),("cached_input_tokens","cached"),("output_tokens","output"),("reasoning_output_tokens","reasoning"),("total_tokens","total")):
+                if type(tokens.get(key)) is int: fields.append(f"{label} {tokens[key]}")
+            if fields: print("tokens " + " · ".join(fields))
+        if event.get("interruption_reason"): print(f"interruption {event['interruption_reason']}")
+        print(f"report {'available' if event.get('report_available') else 'unavailable'}")
+
+
 def main(argv=None):
-    p=argparse.ArgumentParser(prog="atlas-agent"); p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","start-run","complete-run","interrupt-run","checkpoint","executor-info","execute","dispatch"]); p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p=argparse.ArgumentParser(prog="atlas-agent")
+    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","checkpoint","executor-info","execute","dispatch"])
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
@@ -16,13 +93,19 @@ def main(argv=None):
         elif a.command=="checkpoint":
             if a.generation is None: raise WorkflowError("generation is required")
             if a.message is None: raise WorkflowError("--message is required")
-            w.checkpoint(a.generation,a.message)
+            state=w.checkpoint(a.generation,a.message); record=state["generations"][str(a.generation)]; commit=record["result"]["commit_sha"]
+            current=witness(w.root,w.allowed)
+            print(f"g{a.generation} · {record['status']}")
+            print(f"commit {commit[:12]} · {a.message}")
+            print("repository witness " + ("MATCH" if current==state["latest_repository_witness"] else "MISMATCH"))
+            print("push not performed")
+        elif a.command=="report": print(w.report(a.generation))
         elif a.command=="executor-info": print(json.dumps(CodexExecutor().info(),sort_keys=True,indent=2))
         elif a.command=="execute": w.execute(a.generation,CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
         elif a.command=="dispatch":
-            result=w.dispatch(CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
-            thread=f" thread_id={result['thread_id']}" if result["thread_id"] else ""
-            print(f"generation={result['generation']} action={result['action']} execution_id={result['execution_id']} status={result['status']}{thread}")
+            presenter=DispatchPresenter()
+            executor=CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,progress_callback=presenter.progress)
+            w.dispatch(executor,observer=presenter.event)
         elif a.command=="complete-run":
             if not a.result: raise WorkflowError("--result JSON is required")
             w.complete_run(a.generation,json.loads(a.result))
@@ -45,7 +128,13 @@ def main(argv=None):
             for g,x in sorted(state["generations"].items(),key=lambda z:int(z[0])): print(f"generation {g}  {x['checkpoint']}  {x['action']}  status {x['status']}")
             print("repository witness:","MATCH" if state["latest_repository_witness"]==witness(w.root,w.allowed) else "MISMATCH")
         else:
-            for e in w.journal.read():
-                if e["event"] in ("RUN_COMPLETED","RUN_INTERRUPTED"): print(f"g{e['payload']['generation']} {e['payload']['action']} {e['event'].removeprefix('RUN_')}")
+            for row in w.history():
+                fields=[f"g{row['generation']}",row["action"],row["status"]]
+                duration=_duration(row.get("started_at"),row.get("finished_at"))
+                if duration is not None: fields.append(_elapsed(duration))
+                if row.get("execution_id"): fields.append("exec "+row["execution_id"][:12])
+                fields.append("report "+("yes" if row["report_available"] else "no"))
+                if row.get("commit_sha"): fields.append("commit "+row["commit_sha"][:12])
+                print(" · ".join(fields))
     except (WorkflowError,ValueError,OSError,RuntimeError) as e: print(f"error: {e}",file=sys.stderr); return 1
     return 0

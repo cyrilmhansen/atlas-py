@@ -10,12 +10,117 @@ from .jsonl import DEFAULT_MAX_JSONL_LINE_BYTES, iter_bounded_jsonl
 
 USAGE_SCHEMA = "atlas-agent-codex-usage/1"
 USAGE_EVENT_SCHEMA = "atlas-agent-codex-usage-event/1"
+PRESENTATION_USAGE_MAX_BYTES = 1024 * 1024
+TOKEN_METRICS = frozenset({"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens"})
+MAX_TELEMETRY_NUMBER = (1 << 63) - 1
 def _now():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _number(value):
     return value if type(value) is int and value >= 0 else None
+
+
+def _presentation_number(value, optional=True):
+    return (value is None and optional) or (type(value) is int and 0 <= value <= MAX_TELEMETRY_NUMBER)
+
+
+def _presentation_metrics(value):
+    if type(value) is not dict or set(value) != TOKEN_METRICS:
+        return False
+    return all(_presentation_number(metric) for metric in value.values()) and any(type(metric) is int for metric in value.values())
+
+
+def _presentation_run(value):
+    if _presentation_metrics(value):
+        return True
+    if type(value) is not dict or set(value) != {"observations", "consistency"} or value["consistency"] != "disagree":
+        return False
+    observations=value["observations"]
+    if type(observations) is not list or not 2 <= len(observations) <= 32:
+        return False
+    for observation in observations:
+        if type(observation) is not dict or set(observation) != {"source", "thread_id", "metrics"}:
+            return False
+        if observation["source"] != "exec-jsonl" or (observation["thread_id"] is not None and type(observation["thread_id"]) is not str):
+            return False
+        if not _presentation_metrics(observation["metrics"]):
+            return False
+    return True
+
+
+def _presentation_contract(record):
+    """Accept only cross-field states the collector itself can emit."""
+    status=record.get("status")
+    sources=record.get("sources")
+    run=record.get("run")
+    malformed=record.get("parser_malformed_lines")
+    if status=="unavailable":
+        return sources==["unavailable"] and run is None
+    if sources!=["exec-jsonl"] or not _presentation_run(run):
+        return False
+    disagreement=isinstance(run,dict) and set(run)=={"observations","consistency"}
+    if status=="complete":
+        return not disagreement and malformed==0
+    if status=="partial":
+        if disagreement:
+            metrics=[observation["metrics"] for observation in run["observations"]]
+            return any(item!=metrics[0] for item in metrics[1:])
+        return malformed > 0
+    return False
+
+
+def load_presentation_usage(path: Path, generation_record, max_bytes=PRESENTATION_USAGE_MAX_BYTES):
+    """Return trusted display metrics, or ``None`` for any untrusted input."""
+    try:
+        with Path(path).open("rb") as stream:
+            raw=stream.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            return None
+        record=json.loads(raw.decode("utf-8"))
+    except (OSError,UnicodeError,json.JSONDecodeError,RecursionError,MemoryError,ValueError):
+        return None
+    if type(record) is not dict:
+        return None
+    required={"schema","execution_id","generation","prompt_sha256","action","checkpoint","thread_id","codex_version","requested_model","requested_reasoning","observed_model","reasoning_effort","run","context_window","context_used","context_remaining","quota_before","quota_after","quota_status","sources","status","parser_malformed_lines","captured_at"}
+    optional={"policy_config_sha256","profile","session_mode","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"}
+    if not required.issubset(record) or not set(record).issubset(required | optional):
+        return None
+    execution=generation_record.get("execution")
+    if type(execution) is not dict:
+        return None
+    expected={
+        "schema":USAGE_SCHEMA,
+        "execution_id":execution.get("execution_id"),
+        "generation":generation_record.get("generation"),
+        "prompt_sha256":generation_record.get("prompt_sha256"),
+        "action":generation_record.get("action"),
+        "checkpoint":generation_record.get("checkpoint"),
+    }
+    if any(record.get(key) != value for key,value in expected.items()):
+        return None
+    snapshot=execution.get("policy_snapshot")
+    if isinstance(snapshot,dict):
+        identity={"policy_config_sha256":"policy_config_sha256","profile":"profile","session_mode":"session_mode","reused_from_execution_id":"reused_from_execution_id","reuse_depth":"reuse_depth"}
+        if any(record.get(field) != snapshot.get(source) for field,source in identity.items() if source in snapshot):
+            return None
+    if not all(_presentation_number(record.get(key)) for key in ("context_window","context_used","context_remaining")):
+        return None
+    if not _presentation_number(record.get("parser_malformed_lines"),optional=False):
+        return None
+    sources=record.get("sources")
+    if type(sources) is not list or not sources or len(sources) > 8 or any(source not in {"exec-jsonl","unavailable"} for source in sources) or len(set(sources)) != len(sources):
+        return None
+    if not _presentation_contract(record):
+        return None
+    if record.get("quota_before") is not None or record.get("quota_after") is not None or record.get("quota_status") != "unavailable":
+        return None
+    for key in ("thread_id","codex_version","requested_model","requested_reasoning","observed_model","reasoning_effort"):
+        if record.get(key) is not None and type(record[key]) is not str:
+            return None
+    if type(record.get("captured_at")) is not str or not record["captured_at"]:
+        return None
+    return record.get("run") if record["status"] != "unavailable" else None
 
 
 def _usage_from_event(event):

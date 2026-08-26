@@ -19,6 +19,138 @@ def test_fake_nonzero_interrupts(repo):
     with pytest.raises(WorkflowError,match="EXECUTOR_EXIT"): w.execute(1,fake)
     assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"; assert fake.launched==1
 
+def test_durable_interruption_survives_projection_save_failure(repo, monkeypatch):
+    p,w=repo; accepted(w); original_save=w._save; original_interrupt=w.interrupt_run; calls=[]
+    def fail_terminal_projection(state):
+        if state["generations"]["1"]["status"]=="INTERRUPTED":
+            raise OSError("simulated projection failure")
+        return original_save(state)
+    def counted_interrupt(*args,**kwargs):
+        calls.append((args,kwargs)); return original_interrupt(*args,**kwargs)
+    monkeypatch.setattr(w,"_save",fail_terminal_projection)
+    monkeypatch.setattr(w,"interrupt_run",counted_interrupt)
+    with pytest.raises(WorkflowError,match=r"^EXECUTOR_EXIT_7$"):
+        w.execute(1,FakeExecutor(exit_code=7,observed_thread_id="terminal-thread"))
+    assert len(calls)==1
+    assert [event["event"] for event in w.journal.read()].count("RUN_INTERRUPTED")==1
+    assert w._state()["generations"]["1"]["status"]=="RUNNING"
+    monkeypatch.setattr(w,"_save",original_save)
+    recovered=w.recover()
+    assert recovered["generations"]["1"]["status"]=="INTERRUPTED"
+    assert recovered["generations"]["1"]["execution_result"]["session_id"]=="terminal-thread"
+    assert w._state()==recovered
+
+def test_recovery_reconstructs_missing_artifacts_after_durable_executor_exception(repo, monkeypatch):
+    p,w=repo; accepted(w); original_save=w._save; original_interrupt=w.interrupt_run; calls=[]
+    def fail_terminal_projection(state):
+        if state["generations"]["1"]["status"]=="INTERRUPTED":
+            raise OSError("simulated projection failure")
+        return original_save(state)
+    def counted_interrupt(*args,**kwargs):
+        calls.append((args,kwargs)); return original_interrupt(*args,**kwargs)
+    monkeypatch.setattr(w,"_save",fail_terminal_projection)
+    monkeypatch.setattr(w,"interrupt_run",counted_interrupt)
+    with pytest.raises(WorkflowError,match=r"^EXECUTOR_FAILURE: fake executor crash$"):
+        w.execute(1,FakeExecutor(crash=True))
+    interrupted=[event for event in w.journal.read() if event["event"]=="RUN_INTERRUPTED"]
+    assert len(calls)==1 and len(interrupted)==1
+    assert interrupted[0]["payload"]["reason"]=="EXECUTOR_FAILURE: fake executor crash"
+    assert interrupted[0]["payload"]["fallback_artifacts"]==["stdout.log","stderr.log","result.json"]
+    report=w.base/interrupted[0]["payload"]["execution"]["report_dir"]
+    assert {path.name for path in report.iterdir()}=={"execution.json"}
+    monkeypatch.setattr(w,"_save",original_save)
+    recovered=w.recover()
+    assert recovered["generations"]["1"]["status"]=="INTERRUPTED"
+    assert (report/"stdout.log").read_bytes()==b"" and (report/"stderr.log").read_bytes()==b""
+    result=json.loads((report/"result.json").read_text())
+    assert result["error"]==interrupted[0]["payload"]["reason"]
+    assert result["execution_id"]==interrupted[0]["payload"]["execution"]["execution_id"]
+    w._preflight()
+
+def test_recovery_does_not_replace_mismatched_interruption_artifact(repo, monkeypatch):
+    p,w=repo; accepted(w); original_save=w._save
+    def fail_terminal_projection(state):
+        if state["generations"]["1"]["status"]=="INTERRUPTED": raise OSError("projection failed")
+        return original_save(state)
+    monkeypatch.setattr(w,"_save",fail_terminal_projection)
+    with pytest.raises(WorkflowError,match="fake executor crash"):
+        w.execute(1,FakeExecutor(crash=True))
+    event=next(event for event in reversed(w.journal.read()) if event["event"]=="RUN_INTERRUPTED")
+    report=w.base/event["payload"]["execution"]["report_dir"]
+    (report/"result.json").write_text(json.dumps({"execution_id":"foreign"})+"\n")
+    monkeypatch.setattr(w,"_save",original_save)
+    with pytest.raises(WorkflowError,match="RECOVERY_FALLBACK_ARTIFACT_CONFLICT"):
+        w.recover()
+    assert json.loads((report/"result.json").read_text())["execution_id"]=="foreign"
+
+def _crashed_missing_fallback(repo,monkeypatch):
+    p,w=repo; accepted(w); original_save=w._save
+    def fail_terminal_projection(state):
+        if state["generations"]["1"]["status"]=="INTERRUPTED": raise OSError("projection failed")
+        return original_save(state)
+    monkeypatch.setattr(w,"_save",fail_terminal_projection)
+    with pytest.raises(WorkflowError,match="fake executor crash"):
+        w.execute(1,FakeExecutor(crash=True))
+    event=next(event for event in reversed(w.journal.read()) if event["event"]=="RUN_INTERRUPTED")
+    monkeypatch.setattr(w,"_save",original_save)
+    return w,event,w.base/event["payload"]["execution"]["report_dir"]
+
+def test_recovery_accepts_exact_existing_fallback_and_resyncs_directory(repo,monkeypatch):
+    w,event,report=_crashed_missing_fallback(repo,monkeypatch)
+    w.recover()
+    expected={name:(report/name).read_bytes() for name in event["payload"]["fallback_artifacts"]}
+    from tools.atlas_agent import workflow as workflow_module
+    original_sync=workflow_module.fsync_dir; synced=[]
+    monkeypatch.setattr(workflow_module,"fsync_dir",lambda path: synced.append(path) or original_sync(path))
+    recovered=w.recover()
+    assert recovered["generations"]["1"]["status"]=="INTERRUPTED"
+    assert all((report/name).read_bytes()==data for name,data in expected.items())
+    assert synced.count(report)==len(expected)
+
+def test_repeated_fallback_recovery_after_each_publication_is_idempotent(repo,monkeypatch):
+    w,event,report=_crashed_missing_fallback(repo,monkeypatch)
+    original=w._publish_missing_execution_file; publications=[]
+    def publish_then_crash(path,data):
+        was_missing=not path.exists(); original(path,data)
+        if was_missing:
+            publications.append(path.name)
+            raise OSError("crash after fallback publication")
+    monkeypatch.setattr(w,"_publish_missing_execution_file",publish_then_crash)
+    for _ in event["payload"]["fallback_artifacts"]:
+        with pytest.raises(OSError,match="crash after fallback publication"): w.recover()
+    assert publications==event["payload"]["fallback_artifacts"]
+    monkeypatch.setattr(w,"_publish_missing_execution_file",original)
+    w.recover(); before={name:(report/name).read_bytes() for name in event["payload"]["fallback_artifacts"]}
+    w.recover()
+    assert {name:(report/name).read_bytes() for name in before}==before
+
+@pytest.mark.parametrize("content",[b"{partial",b"foreign bytes\n"])
+def test_recovery_rejects_corrupt_existing_fallback_bytes(repo,monkeypatch,content):
+    w,event,report=_crashed_missing_fallback(repo,monkeypatch)
+    path=report/"result.json"; path.write_bytes(content)
+    with pytest.raises(WorkflowError,match="RECOVERY_FALLBACK_ARTIFACT_CONFLICT"):
+        w.recover()
+    assert path.read_bytes()==content
+
+def test_recovery_rejects_owner_correct_fallback_with_foreign_reason(repo,monkeypatch):
+    w,event,report=_crashed_missing_fallback(repo,monkeypatch)
+    w.recover(); path=report/"result.json"; foreign=json.loads(path.read_text())
+    foreign["error"]="foreign reason with canonical owner"
+    path.write_text(json.dumps(foreign,sort_keys=True,indent=2)+"\n")
+    before=path.read_bytes()
+    with pytest.raises(WorkflowError,match="RECOVERY_FALLBACK_ARTIFACT_CONFLICT"):
+        w.recover()
+    assert path.read_bytes()==before
+
+def test_recovery_does_not_reconstruct_unexplained_later_artifact_loss(repo):
+    p,w=repo; accepted(w)
+    with pytest.raises(WorkflowError,match="EXECUTOR_EXIT_7"): w.execute(1,FakeExecutor(exit_code=7))
+    event=next(event for event in reversed(w.journal.read()) if event["event"]=="RUN_INTERRUPTED")
+    assert "fallback_artifacts" not in event["payload"]
+    report=w.base/event["payload"]["execution"]["report_dir"]
+    (report/"stdout.log").unlink()
+    with pytest.raises(RuntimeError,match="MISSING_EXECUTION_ARTIFACT"): w.recover()
+
 def test_fake_timeout_is_explicit_and_interrupts(repo):
     p,w=repo; accepted(w); fake=FakeExecutor(timed_out=True,exit_code=-2)
     with pytest.raises(WorkflowError,match="EXECUTOR_TIMEOUT"): w.execute(1,fake)
@@ -50,6 +182,22 @@ def test_restart_after_launcher_crash_is_visible(repo):
 def test_codex_executor_configuration_is_explicit():
     from tools.atlas_agent.codex_executor import CodexExecutor
     info=CodexExecutor().info(); assert info["executor"]=="codex"; assert "exec" in info["capabilities"] or not info["available"]
+
+def test_codex_heartbeats_continue_after_stdout_eof(tmp_path):
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec,PreparedExecution
+    executable=tmp_path/"close-stdout"
+    executable.write_text("#!/bin/sh\nexec 1>&-\nsleep 0.08\n")
+    executable.chmod(0o755)
+    prompt_path=tmp_path/"prompt"; prompt_path.write_text("prompt")
+    report_dir=tmp_path/"report"; events=[]
+    envelope={"sandbox_mode":"read-only","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}
+    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,tmp_path,"eof-heartbeat",report_dir,tmp_path)
+    prepared=PreparedExecution(spec,"codex",(str(executable),),"codex/test",envelope)
+    result=CodexExecutor(executable=str(executable),timeout_seconds=.3,heartbeat_seconds=.02,progress_callback=events.append).run_execution(prepared)
+    assert result.exit_code==0 and result.timed_out is False
+    assert any(event["kind"]=="heartbeat" for event in events)
+    assert (report_dir/"stdout.log").read_bytes()==b""
 
 def test_fake_result_has_permission_contract(repo):
     p,w=repo; accepted(w); w.execute(1,FakeExecutor()); execution=w._state()["generations"]["1"]["execution"]
