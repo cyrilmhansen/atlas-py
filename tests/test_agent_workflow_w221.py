@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tools.atlas_agent.executor import FakeExecutor
-from tools.atlas_agent.policy import PolicyError, load_policy, policy_config_sha256, resolve_policy
+from tools.atlas_agent.policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 from tools.atlas_agent.prompt import PromptError, parse_prompt
 from tools.atlas_agent.workflow import Workflow, WorkflowError
 
@@ -49,6 +49,36 @@ def test_policy_valid_closed_and_hash_semantics(tmp_path):
     path.write_text(equivalent.replace('network_default = false','network_default = true',1)); assert policy_config_sha256(load_policy(path))!=first
 
 
+def test_policy_model_split_and_implementation_lifecycle_are_exact():
+    policy=load_policy(ROOT/"atlas-agent-policy.toml")
+    implementation=policy["profiles"]["implementation"]
+    assert (implementation["model"],implementation["reasoning_effort"])==("gpt-5.6-luna","medium")
+    assert implementation["allowed_session_modes"]==["fresh","reuse"]
+    assert implementation["sandbox"]=="workspace-write"
+    assert (implementation["network_default"],implementation["network_override"])==(False,"explicit")
+    for name in ("patch_review","state_audit"):
+        profile=policy["profiles"][name]
+        assert (profile["model"],profile["reasoning_effort"])==("gpt-5.6-sol","high")
+    assert policy["profiles"]["state_audit"]["allowed_session_modes"]==["fresh"]
+    assert policy["profiles"]["checkpoint"]=={"executor":"manual","allowed_session_modes":["fresh"]}
+
+    def resolved(action,session="fresh",network=False):
+        target='reuse_execution_id = "historical-execution"\n' if session=="reuse" else ""
+        raw=f'+++\nschema = "atlas-agent-prompt/2"\ngeneration = 1\nparent = "genesis"\ncheckpoint = "policy"\naction = "{action}"\nexpected_head = "{"a"*40}"\nsession_mode = "{session}"\nnetwork_access = {str(network).lower()}\n{target}+++\n'.encode()
+        return resolve_policy(policy,parse_prompt(raw))
+
+    fresh=resolved("implementation")
+    reuse=resolved("implementation","reuse")
+    enabled=resolved("implementation",network=True)
+    assert (fresh["requested_model"],fresh["requested_reasoning_effort"])==("gpt-5.6-luna","medium")
+    assert (fresh["session_mode"],reuse["session_mode"])==("fresh","reuse")
+    assert fresh["sandbox_mode"]=="workspace-write"
+    assert fresh["network_access"] is False and enabled["network_access"] is True
+    for action in ("patch_review","state_audit"):
+        snapshot=resolved(action)
+        assert (snapshot["requested_model"],snapshot["requested_reasoning_effort"])==("gpt-5.6-sol","high")
+
+
 @pytest.mark.parametrize("mutation", [
     lambda d: d.update(schema="wrong"),
     lambda d: d["profiles"].pop("checkpoint"),
@@ -71,14 +101,14 @@ def test_prompt_v2_rules_and_v1_compatibility():
 
 
 def test_v2_snapshot_owner_and_telemetry_enrichment(tmp_path):
-    repo,w=make_repo(tmp_path); accepted(w); fake=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-sol",observed_reasoning="medium"); w.execute(1,fake)
+    repo,w=make_repo(tmp_path); accepted(w); fake=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-luna",observed_reasoning="medium"); w.execute(1,fake)
     rec=w._state()["generations"]["1"]; owner=rec["execution"]; report=w.base/owner["report_dir"]
     assert owner["owner_schema"]=="atlas-agent-execution-owner/2" and owner["policy_snapshot"]["profile"]=="implementation"
     assert owner["policy_snapshot"]["network_access"] is False
     for name in ("execution.json","result.json"):
         assert json.loads((report/name).read_text())["policy_snapshot"]==owner["policy_snapshot"]
     usage=json.loads((report/"usage.json").read_text()); assert usage["policy_config_sha256"]==owner["policy_snapshot"]["policy_config_sha256"]
-    assert usage["observed_model"]=="gpt-5.6-sol" and usage["requested_reasoning"]=="medium"
+    assert usage["observed_model"]=="gpt-5.6-luna" and usage["requested_reasoning"]=="medium"
     history=json.loads((w.base/"usage"/"events.jsonl").read_text()); assert history["policy_config_sha256"]==usage["policy_config_sha256"] and history["profile"]=="implementation" and history["session_mode"]=="fresh"
 
 
@@ -87,6 +117,7 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
     from tools.atlas_agent.executor import ExecutionSpec
     root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("p")
     snapshot={"schema":"atlas-agent-policy-snapshot/1","policy_schema":"atlas-agent-policy/1","policy_config_sha256":"a"*64,"action":"implementation","checkpoint":"x","profile":"implementation","executor":"codex","requested_model":"gpt-5.6-sol","requested_reasoning_effort":"medium","session_mode":"fresh","sandbox_mode":"workspace-write","network_access_requested":False,"network_access":False,"web_search":"disabled","apps_enabled":False,"session_storage":"persist","max_hot_reuse_hops":3,"max_reuse_generation_gap":2}
+    assert validate_snapshot(snapshot)==snapshot  # Historical snapshots retain their stored model.
     ex=CodexExecutor(executable="/bin/true",model="gpt-5.6-sol",sandbox="workspace-write",network_access=False); prepared=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,snapshot))
     assert "--ignore-user-config" in prepared.command and "--strict-config" in prepared.command and "--ignore-rules" in prepared.command
     assert "features.apps=false" in prepared.command and 'web_search="disabled"' in prepared.command
@@ -116,8 +147,8 @@ def test_state_audit_is_cold_fresh_and_reuse_forbidden(tmp_path):
 
 
 def test_reuse_exact_target_compatibility_lineage_and_limits(tmp_path):
-    repo,w=make_repo(tmp_path); accepted(w); first=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-sol",observed_reasoning="medium"); w.execute(1,first); eid=w._state()["generations"]["1"]["execution"]["execution_id"]
-    accepted(w,generation=2,session="reuse",target=eid); second=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-sol",observed_reasoning="medium"); w.execute(2,second)
+    repo,w=make_repo(tmp_path); accepted(w); first=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-luna",observed_reasoning="medium"); w.execute(1,first); eid=w._state()["generations"]["1"]["execution"]["execution_id"]
+    accepted(w,generation=2,session="reuse",target=eid); second=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-luna",observed_reasoning="medium"); w.execute(2,second)
     snap=w._state()["generations"]["2"]["execution"]["policy_snapshot"]; assert snap["reused_from_execution_id"]==eid and snap["reuse_depth"]==1
     accepted(w,generation=3,session="reuse",target=eid)
     with pytest.raises(WorkflowError,match="REUSE_TARGET_STALE"): w.execute(3,FakeExecutor(observed_thread_id="thread-A"))

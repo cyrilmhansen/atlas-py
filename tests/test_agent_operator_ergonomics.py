@@ -36,12 +36,25 @@ def test_fresh_dispatch_summary_and_unavailable_telemetry_is_omitted(tmp_path,ca
     output=capsys.readouterr().out
     assert "Atlas dispatch\ng1 · implementation · fresh" in output
     assert "profile implementation" in output
-    assert "model gpt-5.6-sol · reasoning medium" in output
+    assert "model gpt-5.6-luna · reasoning medium" in output
     assert "sandbox workspace-write · network disabled" in output
     assert "Atlas dispatch result\ng1 · implementation · COMPLETED" in output
     assert "tokens " not in output
     assert "report available" in output
     assert result["status"]=="COMPLETED"
+
+
+def test_dispatch_presentation_uses_model_from_resolved_policy_snapshot(capsys):
+    DispatchPresenter().event({
+        "kind":"dispatch_started",
+        "generation":7,
+        "action":"implementation",
+        "session_mode":"fresh",
+        "policy_snapshot":{"profile":"implementation","requested_model":"policy-selected-model","requested_reasoning_effort":"medium"},
+        "permission_envelope":{"sandbox_mode":"workspace-write","network_access":False},
+    })
+    output=capsys.readouterr().out
+    assert "model policy-selected-model · reasoning medium" in output
 
 
 def test_reuse_dispatch_summary_names_requested_execution_and_thread(tmp_path,capsys):

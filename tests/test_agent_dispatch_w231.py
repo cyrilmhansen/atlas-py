@@ -156,7 +156,7 @@ def test_dispatch_runs_one_accepted_generation(tmp_path):
 def _completed_usage(workflow):
     accepted(workflow)
     stdout=(json.dumps({"type":"turn.completed","usage":{"input_tokens":12,"cached_input_tokens":3,"output_tokens":4,"reasoning_output_tokens":2,"total_tokens":16}})+"\n").encode()
-    workflow.execute(1,FakeExecutor(stdout=stdout,observed_thread_id="usage-thread",observed_model="gpt-5.6-sol",observed_reasoning="medium"))
+    workflow.execute(1,FakeExecutor(stdout=stdout,observed_thread_id="usage-thread",observed_model="gpt-5.6-luna",observed_reasoning="medium"))
     state=workflow._state(); record=state["generations"]["1"]
     path=workflow.base/record["execution"]["report_dir"]/"usage.json"
     return state,record,path
@@ -188,7 +188,7 @@ def test_dispatch_summary_omits_untrusted_usage(tmp_path,mutation):
 
 
 def test_dispatch_summary_omits_unavailable_usage(tmp_path):
-    _,workflow=make_repo(tmp_path); accepted(workflow); workflow.execute(1,FakeExecutor(observed_thread_id="usage-thread",observed_model="gpt-5.6-sol",observed_reasoning="medium"))
+    _,workflow=make_repo(tmp_path); accepted(workflow); workflow.execute(1,FakeExecutor(observed_thread_id="usage-thread",observed_model="gpt-5.6-luna",observed_reasoning="medium"))
     state=workflow._state()
     assert "tokens" not in workflow._dispatch_summary(1,state)
 
@@ -383,11 +383,11 @@ def _capture_execute(workflow,generation,executor,errors):
 def test_dispatch_uses_existing_fresh_reuse_policy(tmp_path):
     _, workflow = make_repo(tmp_path)
     accepted(workflow)
-    first = FakeExecutor(observed_thread_id="policy-thread", observed_model="gpt-5.6-sol", observed_reasoning="medium")
+    first = FakeExecutor(observed_thread_id="policy-thread", observed_model="gpt-5.6-luna", observed_reasoning="medium")
     workflow.dispatch(first)
     target = workflow._state()["generations"]["1"]["execution"]["execution_id"]
     accepted(workflow, generation=2, session="reuse", target=target)
-    second = FakeExecutor(observed_thread_id="policy-thread", observed_model="gpt-5.6-sol", observed_reasoning="medium")
+    second = FakeExecutor(observed_thread_id="policy-thread", observed_model="gpt-5.6-luna", observed_reasoning="medium")
 
     workflow.dispatch(second)
 

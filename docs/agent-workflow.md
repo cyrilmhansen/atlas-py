@@ -212,9 +212,11 @@ It has exactly the four methodological profiles `implementation`,
 action and no `role` field is introduced. The policy is loaded and validated
 immediately before `RUN_STARTED` under the W1 lock. Its SHA-256 is computed
 from deterministic JSON of the validated semantic model, so TOML comments,
-whitespace, and table order do not affect provenance. The configured model is
-`gpt-5.6-sol`, taken from the local Codex configuration at implementation
-time; model names remain configuration rather than schema.
+whitespace, and table order do not affect provenance. The configured
+implementation model is `gpt-5.6-luna` with medium reasoning. Independent
+`patch_review` and `state_audit` runs use `gpt-5.6-sol` with high reasoning,
+while `checkpoint` remains manual. Model names remain configuration rather
+than schema.
 
 Prompt schema v2 adds required boolean `network_access` and requires an exact
 `reuse_execution_id` for `session_mode = "reuse"`; fresh prompts forbid that

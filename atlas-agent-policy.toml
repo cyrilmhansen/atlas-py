@@ -6,7 +6,7 @@ max_reuse_generation_gap = 2
 
 [profiles.implementation]
 executor = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-5.6-luna"
 reasoning_effort = "medium"
 sandbox = "workspace-write"
 network_default = false
