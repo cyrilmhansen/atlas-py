@@ -32,15 +32,18 @@ def _staged_untracked(root,names):
         if stage_number!=b"0": raise RepositoryError("CHECKPOINT_STAGED_CONTENT_MISMATCH")
         result.append(_untracked_record(root,name,_run(root,"cat-file","blob",oid.decode("ascii")),mode==b"120000"))
     return sorted(result,key=lambda x:x["path"])
-def witness(root:Path,allowed:list[str])->dict:
+def witness(root:Path,allowed:list[str],ownership=None)->dict:
     head=_run(root,"rev-parse","HEAD").strip().decode("ascii")
     branch=_run(root,"symbolic-ref","--quiet","--short","HEAD").strip().decode("utf-8","replace") if _ok(root,"symbolic-ref","--quiet","--short","HEAD") else None
-    records=[x for x in _run(root,"status","--porcelain=v2","--untracked-files=all","-z").split(b"\0") if x]
+    records=[x for x in _run(root,"status","--porcelain=v2","--untracked-files=all","--ignored","-z").split(b"\0") if x]
     index=[]; work=[]; unexpected=[]
     for rec in records:
-        if rec.startswith(b"? "):
+        if rec.startswith((b"? ", b"! ")):
             name=rec[2:]; text=name.decode("utf-8","surrogateescape")
-            if not _allowed(text,allowed): unexpected.append(_untracked_record(root,name))
+            owned=(ownership or {}).get("patch_owned_untracked",[])
+            protected=[x["path"] for x in (ownership or {}).get("protected_untracked",[])]
+            if name.hex() in set(owned)|set(protected): unexpected.append(_untracked_record(root,name))
+            elif rec.startswith(b"? ") and not _allowed(text,allowed): unexpected.append(_untracked_record(root,name))
         elif rec[:2] in (b"1 ",b"2 ",b"u "):
             parts=rec.split(b" ",3); xy=parts[1]; sub=parts[2] if len(parts)>2 else b""
             # Intent-to-add is reported as a worktree-side add with an N
@@ -51,6 +54,13 @@ def witness(root:Path,allowed:list[str])->dict:
     # This is deliberately a Git byte stream. It contains the actual patch
     # bytes, not merely the porcelain status category.
     content=_run(root,"--no-pager","diff","--no-ext-diff","--no-textconv","--no-color","--binary","--")
+    known={x["path"] for x in unexpected}
+    for encoded in set((ownership or {}).get("patch_owned_untracked",[])) | {x["path"] for x in (ownership or {}).get("protected_untracked",[])}:
+        if encoded in known: continue
+        name=bytes.fromhex(encoded); path=root/os.fsdecode(name)
+        if _ok(root,"--literal-pathspecs","ls-files","--error-unmatch","--",name): continue
+        if path.exists() or path.is_symlink(): unexpected.append(_untracked_record(root,name))
+    unexpected.sort(key=lambda x:x["path"])
     return {"head":head,"branch":branch,"index_semantic_sha256":digest(index),"tracked_worktree_sha256":digest(work),"tracked_worktree_content_sha256":hashlib.sha256(content).hexdigest(),"unexpected_untracked":sorted(unexpected,key=lambda x:x["path"])}
 def same_witness(a,b): return a==b
 
@@ -59,7 +69,7 @@ def _rollback_checkpoint(root,allowed,expected,original):
         if git(root,"rev-parse","HEAD")!=expected["head"]:
             raise RepositoryError("CHECKPOINT_ROLLBACK_HEAD_MISMATCH")
         _run(root,"reset","--mixed",expected["head"],"--")
-        if witness(root,allowed)!=expected:
+        if witness(root,allowed,{"protected_untracked":expected.get("unexpected_untracked",[])})!=expected:
             raise RepositoryError("CHECKPOINT_ROLLBACK_WITNESS_MISMATCH")
     except RepositoryError as error:
         raise RepositoryError(f"CHECKPOINT_ROLLBACK_FAILED: {error}") from original
@@ -88,20 +98,24 @@ def _active_commit_hooks(root):
     names=("pre-commit","prepare-commit-msg","commit-msg","post-commit","post-rewrite")
     return [name for name in names if (hooks/name).is_file() and os.access(hooks/name,os.X_OK)]
 
-def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str)->dict:
+def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str,owned_paths=None,protected_paths=None)->dict:
     """Stage and create the exact reviewed commit object without changing HEAD."""
     if type(message) is not str or not message.strip() or "\0" in message:
         raise RepositoryError("CHECKPOINT_COMMIT_MESSAGE_REQUIRED")
-    if witness(root,allowed)!=expected:
+    if witness(root,allowed,{"protected_untracked":[{"path":x} for x in (protected_paths or [])],"patch_owned_untracked":owned_paths or []})!=expected:
         raise RepositoryError("REPOSITORY_WITNESS_MISMATCH")
     if _active_commit_hooks(root):
         raise RepositoryError("CHECKPOINT_REPOSITORY_HOOKS_PRESENT")
 
-    records=[x for x in _run(root,"status","--porcelain=v2","--untracked-files=all","-z").split(b"\0") if x]
+    owned_paths=set(owned_paths) if owned_paths is not None else {x["path"] for x in expected["unexpected_untracked"]}
+    protected_paths=set(protected_paths or [])
+    owned_names={bytes.fromhex(path) for path in owned_paths}
+    records=[x for x in _run(root,"status","--porcelain=v2","--untracked-files=all","--ignored","-z").split(b"\0") if x]
     tracked_paths=[]; new_paths=[]
     for rec in records:
-        if rec.startswith(b"? "):
-            if not _allowed(rec[2:].decode("utf-8","surrogateescape"),allowed): new_paths.append(rec[2:])
+        if rec.startswith((b"? ",b"! ")):
+            name=rec[2:]
+            if not _allowed(name.decode("utf-8","surrogateescape"),allowed) and name in owned_names: new_paths.append(name)
             continue
         if not rec.startswith(b"1 "):
             raise RepositoryError("CHECKPOINT_UNHANDLED_REPOSITORY_CONTENT")
@@ -120,7 +134,7 @@ def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str)->d
 
     staged=False
     try:
-        _run(root,"--literal-pathspecs","add","--",*paths)
+        _run(root,"--literal-pathspecs","add","-f","--",*paths)
         staged=True
         cached=_run(root,"--no-pager","--literal-pathspecs","diff","--cached","--no-ext-diff","--no-textconv","--no-color","--binary","--",*tracked_paths) if tracked_paths else b""
         if hashlib.sha256(cached).hexdigest()!=expected["tracked_worktree_content_sha256"]:
@@ -128,8 +142,10 @@ def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str)->d
         after_stage=[x for x in _run(root,"status","--porcelain=v2","--untracked-files=all","-z").split(b"\0") if x]
         staged_tracked=[]; staged_new=[]
         for rec in after_stage:
-            if rec.startswith(b"? "):
+            if rec.startswith((b"? ",b"! ")):
                 if not _allowed(rec[2:].decode("utf-8","surrogateescape"),allowed):
+                    if rec[2:].hex() in protected_paths: continue
+                    if rec[2:] in new_paths: raise RepositoryError("CHECKPOINT_STAGED_CONTENT_MISMATCH")
                     raise RepositoryError("CHECKPOINT_UNEXPECTED_UNTRACKED")
                 continue
             parts=rec.split(b" ",8) if rec.startswith(b"1 ") else []
@@ -140,7 +156,8 @@ def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str)->d
             else: raise RepositoryError("CHECKPOINT_UNHANDLED_REPOSITORY_CONTENT")
         if sorted(staged_tracked)!=sorted(tracked_paths) or sorted(staged_new)!=sorted(new_paths):
             raise RepositoryError("CHECKPOINT_STAGED_CONTENT_MISMATCH")
-        if _staged_untracked(root,staged_new)!=expected["unexpected_untracked"]:
+        expected_new=[x for x in expected["unexpected_untracked"] if x["path"] in owned_paths]
+        if _staged_untracked(root,staged_new)!=expected_new:
             raise RepositoryError("CHECKPOINT_STAGED_CONTENT_MISMATCH")
         try:
             _run(root,"--no-pager","diff","--cached","--check","--")
@@ -155,7 +172,7 @@ def prepare_checkpoint(root:Path,allowed:list[str],expected:dict,message:str)->d
         if staged: _rollback_checkpoint(root,allowed,expected,original)
         raise
 
-def advance_checkpoint(root:Path,allowed:list[str],intent:dict)->dict:
+def advance_checkpoint(root:Path,allowed:list[str],intent:dict,ownership=None)->dict:
     """Advance HEAD to an already recorded exact commit, without invoking hooks."""
     verify_checkpoint_commit(root,intent)
     if git(root,"rev-parse","HEAD")!=intent["parent_head"]:
@@ -163,9 +180,18 @@ def advance_checkpoint(root:Path,allowed:list[str],intent:dict)->dict:
     _run(root,"update-ref","HEAD",intent["commit_sha"],intent["parent_head"])
     if git(root,"rev-parse","HEAD")!=intent["commit_sha"]:
         raise RepositoryError("CHECKPOINT_HEAD_MISMATCH")
+    return verify_checkpoint_boundary(root,allowed,intent,ownership)
+
+def verify_checkpoint_boundary(root:Path,allowed:list[str],intent:dict,ownership=None)->dict:
+    """Verify the repository state after an exact checkpoint commit."""
     verify_checkpoint_commit(root,intent)
-    result=witness(root,allowed); empty=hashlib.sha256(b"").hexdigest()
-    if result["head"]!=intent["commit_sha"] or result["index_semantic_sha256"]!=empty or result["tracked_worktree_sha256"]!=empty or result["tracked_worktree_content_sha256"]!=empty or result["unexpected_untracked"]:
+    ownership=ownership or {}
+    expected_protected=ownership.get("protected_untracked",[])
+    result=witness(root,allowed,ownership); empty=hashlib.sha256(b"").hexdigest()
+    if (result["head"]!=intent["commit_sha"] or result["index_semantic_sha256"]!=empty or
+        result["tracked_worktree_sha256"]!=empty or
+        result["tracked_worktree_content_sha256"]!=empty or
+        result["unexpected_untracked"] != expected_protected):
         raise RepositoryError("CHECKPOINT_POST_COMMIT_REPOSITORY_MISMATCH")
     return result
 

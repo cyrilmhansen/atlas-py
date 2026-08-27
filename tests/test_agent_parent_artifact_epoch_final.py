@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 
 import pytest
 
@@ -102,8 +103,67 @@ def test_epoch_2_missing_schema_and_execution_bundle_cannot_downgrade_to_legacy(
     _rehash(w.journal.path, rows[:started + 1])
     # PRODUCT_RED before the fix: the absent schema is incorrectly accepted as
     # explicit legacy evidence, despite the epoch-2 root.
-    with pytest.raises(JournalError, match="epoch-2 execution provenance"):
+    with pytest.raises(JournalError, match="prompt schema archive mismatch"):
         Journal(w.journal.path).read()
+
+
+def test_epoch_2_start_witness_is_required_on_prepared_and_started_events(tmp_path):
+    _, w = make_repo(tmp_path)
+    _run(w)
+    rows = _rows(w.journal.path)
+    started = next(i for i, row in enumerate(rows) if row["event"] == "RUN_STARTED")
+    for row in rows[:started + 1]:
+        if row["event"] in {"TRANSITION_PREPARED", "RUN_STARTED"}:
+            row["payload"].pop("witness", None)
+    _rehash(w.journal.path, rows[:started + 1])
+    with pytest.raises(JournalError, match="epoch-2 start witness"):
+        Journal(w.journal.path).read()
+
+
+def test_archived_v2_prompt_cannot_be_downgraded_by_root_or_journal(tmp_path):
+    _, w = make_repo(tmp_path)
+    _run(w)
+    rows = _rows(w.journal.path)
+    rows[0]["payload"].pop("validation_epoch", None)
+    for row in rows:
+        if row["event"] == "PROMPT_ACCEPTED":
+            row["payload"]["prompt_schema"] = "atlas-agent-prompt/1"
+        if row["event"] in {"TRANSITION_PREPARED", "RUN_STARTED"}:
+            row["payload"].pop("witness", None)
+    _rehash(w.journal.path, rows)
+    with pytest.raises(JournalError, match="prompt schema archive mismatch"):
+        Journal(w.journal.path).read()
+    with pytest.raises(Exception):
+        w.rebuild()
+    with pytest.raises(Exception):
+        w._preflight()
+
+
+def test_downgraded_root_cannot_hide_missing_v2_start_witness(tmp_path):
+    _, w = make_repo(tmp_path)
+    _run(w)
+    rows = _rows(w.journal.path)
+    rows[0]["payload"]["validation_epoch"] = 1
+    for row in rows:
+        if row["event"] == "RUN_STARTED":
+            row["payload"].pop("witness", None)
+        if row["event"] == "TRANSITION_PREPARED" and row["payload"].get("logical_event") == "RUN_STARTED":
+            row["payload"].pop("witness", None)
+    _rehash(w.journal.path, rows)
+    with pytest.raises(JournalError, match="start witness"):
+        Journal(w.journal.path).read()
+
+
+def test_epoch_2_archived_v1_prompt_accepts_valid_noncanonical_toml(tmp_path):
+    _, w = make_repo(tmp_path)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=w.root, text=True).strip()
+    raw = (f"+++\nschema = 'atlas-agent-prompt/1' # valid TOML\n"
+           f"generation = 1\nparent = 'genesis'\ncheckpoint = 'legacy'\n"
+           f"action = 'implementation'\nexpected_head = '{head}'\n"
+           "session_mode = 'fresh'\n+++\nlegacy\n").encode()
+    (w.base / "inbox" / "legacy.txt").write_bytes(raw)
+    w.ingest()
+    assert w._state()["generations"]["1"]["prompt_schema"] == "atlas-agent-prompt/1"
 
 
 def test_initialization_is_single_durable_root_event(tmp_path):
@@ -175,7 +235,7 @@ def test_genuine_legacy_initialization_remains_readable_and_rebuildable(tmp_path
     assert state.get("validation_epoch", 1) == 1
 
 
-def test_genuine_legacy_execution_lifecycle_rebuilds(tmp_path):
+def test_removed_root_marker_does_not_downgrade_v2_execution_lifecycle(tmp_path):
     _, w = make_repo(tmp_path)
     _run(w)
     rows = _rows(w.journal.path)
@@ -193,11 +253,8 @@ def test_genuine_legacy_execution_lifecycle_rebuilds(tmp_path):
                     for key in modern:
                         container.pop(key, None)
     _rehash(w.journal.path, rows)
-    for path in (w.base / "reports" / "contexts").glob("*.txt"):
-        path.unlink()
-    w._state_file().unlink()
-    state = w.rebuild()
-    assert state["generations"]["1"]["status"] == "COMPLETED"
+    with pytest.raises(JournalError):
+        Journal(w.journal.path).read()
 
 
 def test_post_start_keyboard_interrupt_durably_interrupts_generation(tmp_path, monkeypatch):

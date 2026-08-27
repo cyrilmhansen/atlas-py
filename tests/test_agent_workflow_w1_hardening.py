@@ -5,12 +5,13 @@ from tools.atlas_agent.workflow import Workflow,WorkflowError,replay_journal
 from tools.atlas_agent.journal import canonical,_hash_event
 from tools.atlas_agent.prompt import parse_prompt,PromptError
 from tools.atlas_agent.repository import witness
+from tools.atlas_agent.executor import FakeExecutor
 
 def sh(p,*a): return subprocess.check_output(["git",*a],cwd=p,text=True).strip()
 @pytest.fixture
 def repo(tmp_path):
     p=tmp_path/"r"; p.mkdir(); sh(p,"init","-q"); sh(p,"config","user.email","t@e"); sh(p,"config","user.name","t")
-    (p/"a").write_text("a"); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n'); sh(p,"add","."); sh(p,"commit","-qm","g"); w=Workflow(p); w.init(); return p,w
+    (p/"a").write_text("a"); (p/".gitignore").write_text(""); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n'); sh(p,"add","."); sh(p,"commit","-qm","g"); w=Workflow(p); w.init(); return p,w
 def prompt(w,g=1,parent="genesis",action="implementation",body="body"):
     parent_line=f'parent = "{parent}"' if parent=="genesis" else f"parent = {parent}"
     raw=f'''+++\nschema = "atlas-agent-prompt/1"\ngeneration = {g}\n{parent_line}\ncheckpoint = "W1"\naction = "{action}"\nexpected_head = "{sh(w.root,"rev-parse","HEAD")}"\nsession_mode = "fresh"\n+++\n{body}\n'''.encode(); (w.base/"inbox"/f"user-{g}-{body}").write_bytes(raw); return raw
@@ -190,6 +191,37 @@ def test_checkpoint_recovery_finalizes_exact_commit_after_head_advance(repo):
     assert sh(p,"diff-tree","--no-commit-id","--name-only","-r",commit).splitlines()==["a","reviewed-new.txt"]
     assert not recovered.get("outstanding_checkpoints")
 
+def test_checkpoint_rechecks_boundary_after_post_commit_callback(repo):
+    p,w,_=checkpoint_ready(repo)
+    def mutate(point,data):
+        if point=="committed": (p/"a").write_text("mutated after boundary\n")
+    with pytest.raises(WorkflowError,match="CHECKPOINT_RECOVERY_REQUIRED"):
+        w.checkpoint(2,"must recheck boundary",hook=mutate)
+    assert w._state()["generations"]["2"]["status"]=="ACCEPTED"
+
+
+def test_checkpoint_rechecks_recreated_patch_owned_tombstone_after_ignore_commit(repo):
+    p,w=repo
+    raw=running(w)
+    owned=p/"owned.txt"
+    owned.write_text("owned\n")
+    w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    assert b"owned.txt".hex() in w._state()["patch_owned_untracked"]
+    raw2=prompt(w,g=2,parent=1); w.ingest(); w.start_run(2)
+    (p/".gitignore").write_text("owned.txt\n")
+    owned.unlink()
+    w.complete_run(2,{"generation":2,"prompt_sha256":digest(raw2),"action":"implementation"})
+    prompt(w,g=3,parent=2,action="checkpoint"); w.ingest()
+
+    def recreate_after_head(point,data):
+        if point=="committed": owned.write_text("recreated\n")
+
+    with pytest.raises(WorkflowError,match="CHECKPOINT_RECOVERY_REQUIRED"):
+        w.checkpoint(3,"ignore owned tombstone",hook=recreate_after_head)
+    assert w._state()["generations"]["3"]["status"]=="ACCEPTED"
+    assert w._state()["patch_owned_untracked"] == [b"owned.txt".hex()]
+
+
 def test_checkpoint_recovery_aborts_when_commit_did_not_happen(repo):
     p,w,_=checkpoint_ready(repo); parent=sh(p,"rev-parse","HEAD")
     def crash(point,data):
@@ -200,6 +232,32 @@ def test_checkpoint_recovery_aborts_when_commit_did_not_happen(repo):
     assert recovered["generations"]["2"]["status"]=="ACCEPTED"
     assert not recovered.get("outstanding_checkpoints")
     assert subprocess.check_output(["git","diff","--cached","--name-only"],cwd=p,text=True)==""
+
+@pytest.mark.parametrize("kind", ["patch-owned", "protected"])
+def test_prepare_execution_preserves_durable_ownership_when_path_becomes_ignored(tmp_path,kind):
+    p=tmp_path/"repo"; p.mkdir(); sh(p,"init","-q"); sh(p,"config","user.email","t@e"); sh(p,"config","user.name","t")
+    (p/"a").write_text("a"); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n')
+    sh(p,"add","."); sh(p,"commit","-qm","g")
+    if kind=="protected": (p/"protected.txt").write_text("protected\n")
+    w=Workflow(p); w.init()
+    raw=prompt(w); w.ingest(); w.start_run(1)
+    if kind=="patch-owned": (p/"owned.txt").write_text("owned\n")
+    w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    path_name="owned.txt" if kind=="patch-owned" else "protected.txt"
+    state=w._state()
+    if kind=="patch-owned":
+        assert path_name.encode().hex() in state["patch_owned_untracked"]
+    else:
+        assert any(x["path"]==path_name.encode().hex() for x in state["protected_untracked"])
+    exclude=tmp_path/"global-excludes"; sh(p,"config","core.excludesFile",str(exclude))
+    raw2=prompt(w,g=2,parent=1); w.ingest()
+    class PrepareIgnores(FakeExecutor):
+        def prepare_execution(self,spec):
+            exclude.write_text(path_name+"\n")
+            assert subprocess.run(["git","check-ignore","--quiet","--",path_name],cwd=p).returncode==0
+            return super().prepare_execution(spec)
+    w.execute(2,PrepareIgnores())
+    assert w._state()["generations"]["2"]["status"]=="COMPLETED"
 
 def test_checkpoint_recovery_rejects_unexpected_head(repo):
     p,w,_=checkpoint_ready(repo)

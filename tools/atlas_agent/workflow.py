@@ -5,7 +5,7 @@ from pathlib import Path
 from .model import Prompt
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier
-from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_commit,find_root,runtime_path,witness
+from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
 from .codex_executor import CodexExecutor
@@ -30,6 +30,9 @@ def replay_journal(events):
             state["initialized"]=True
             if p.get("validation_epoch",1) >= 2: state["validation_epoch"]=p["validation_epoch"]
             state["latest_repository_witness"]=p["witness"]; state["repository_witnesses"].append(p["witness"])
+            initial=p["witness"].get("unexpected_untracked",[])
+            if initial or p.get("validation_epoch",1) >= 2: state["protected_untracked"]=initial
+            if p.get("validation_epoch",1) >= 2: state["patch_owned_untracked"]=[]
         elif e["event"]=="CHECKPOINT_INTENT":
             g=str(p["generation"]); rec=state["generations"].get(g)
             outstanding=state.setdefault("outstanding_checkpoints",{})
@@ -63,7 +66,13 @@ def replay_journal(events):
             if e["event"]=="RUN_STARTED":
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
+                if (rec.get("prompt_schema") == "atlas-agent-prompt/2" and rec["action"] != "checkpoint"
+                        and "witness" not in p and "witness" in prepared):
+                    raise WorkflowError("RUN_STARTED witness required")
+                if "witness" in p and p["witness"] != rec["witness"]:
+                    raise WorkflowError("JOURNAL_START_WITNESS_MISMATCH")
                 rec["status"]="RUNNING"
+                if "witness" in p: rec["start_witness"]=p["witness"]
                 if "execution" in p: rec["execution"]=p["execution"]
                 state["lifecycle"][g]="RUNNING"; continue
             if e["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
@@ -77,6 +86,21 @@ def replay_journal(events):
                         state["outstanding_checkpoints"].pop(g)
                         if not state["outstanding_checkpoints"]: state.pop("outstanding_checkpoints")
                     rec["result"]=p["result"]; state["results"][g]=p["result"]
+                    if rec["action"] == "checkpoint":
+                        if "patch_owned_untracked" in state: state["patch_owned_untracked"]=[]
+                    elif rec["action"] == "implementation":
+                        existing=set(state.get("patch_owned_untracked",[]))
+                        protected={x["path"] for x in state.get("protected_untracked",[])}
+                        start={x["path"] for x in rec.get("start_witness",rec["witness"]).get("unexpected_untracked",[])}
+                        terminal={x["path"] for x in p["witness"].get("unexpected_untracked",[])}
+                        derived=terminal-start-protected-existing
+                        if rec.get("prompt_schema") == "atlas-agent-prompt/2" and "acquired_untracked" not in p:
+                            raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
+                        acquired=set(p.get("acquired_untracked", sorted(derived)))
+                        if acquired != derived or acquired & protected or acquired & existing:
+                            raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
+                        if existing or acquired or "patch_owned_untracked" in state:
+                            state["patch_owned_untracked"]=sorted(existing | acquired)
                 elif "result" in p:
                     rec["result"]=p["result"]; state["results"][g]=p["result"]
                 if "executor_result" in p: rec["execution_result"]=p["executor_result"]
@@ -84,10 +108,16 @@ def replay_journal(events):
                 continue
     return state
 def projection_equal(a,b): return a==b
-def witness_matches_policy(current, expected, action, running=False):
+def witness_matches_policy(current, expected, action, running=False, ownership=None):
     if running and action=="implementation":
         stable=all(current.get(k)==expected.get(k) for k in ("head","index_semantic_sha256"))
-        return stable and all(x in current.get("unexpected_untracked",[]) for x in expected.get("unexpected_untracked",[]))
+        ownership=ownership or {}
+        protected={x["path"]:x for x in ownership.get("protected_untracked",[])}
+        current_records={x["path"]:x for x in current.get("unexpected_untracked",[])}
+        if any(current_records.get(path)!=record for path,record in protected.items()): return False
+        owned=set(ownership.get("patch_owned_untracked",[]))
+        required=set(x["path"] for x in expected.get("unexpected_untracked",[]))-owned-set(protected)
+        return stable and required <= set(current_records)
     return current==expected
 class Workflow:
     def __init__(self,start="."):
@@ -319,7 +349,7 @@ class Workflow:
             fsync_dir(p.parent)
     def ingest(self):
         with lock(self.base/"lock"):
-            _,state=self._preflight(); current=witness(self.root,self.allowed); expected=state["latest_repository_witness"]
+            _,state=self._preflight(); ownership={"protected_untracked":state.get("protected_untracked",[]),"patch_owned_untracked":state.get("patch_owned_untracked",[])}; current=witness(self.root,self.allowed,ownership); expected=state["latest_repository_witness"]
             files=sorted(p for p in (self.base/"inbox").iterdir() if p.is_file())
             parsed=[]
             for source in files:
@@ -499,7 +529,8 @@ class Workflow:
         with lock(self.base/"lock"):
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
-            if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+            ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             if execution is not None:
                 execution_id=execution.get("execution_id")
                 report_dir=Path(execution.get("report_dir",""))
@@ -508,7 +539,7 @@ class Workflow:
                 if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()):
                     raise WorkflowError("EXECUTION_ID_COLLISION")
                 if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
-            src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"]}
+            src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
             if execution is not None:
                 # Preserve the public launcher path while giving an epoch-2
                 # durable start the same provenance shape as execute().
@@ -554,7 +585,9 @@ class Workflow:
                 if not isinstance(executor_result,dict) or executor_result.get("execution_id")!=owner.get("execution_id"):
                     raise WorkflowError("RESULT_EXECUTION_MISMATCH")
             self._validate_terminal_transition("RUN_COMPLETED", {"generation":generation,"execution":owner,"result":r}, s)
-            before=x["witness"]; now=witness(self.root,self.allowed); violation=not witness_matches_policy(now,before,x["action"],running=True)
+            ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+            before=x["witness"]; now=witness(self.root,self.allowed,ownership)
+            violation=not witness_matches_policy(now,before,x["action"],running=True,ownership=ownership)
             src=self._find(self.base/"running"/x["action"],generation,x["prompt_sha256"])
             if violation:
                 payload={"generation":generation,"action":x["action"],"reason":"REPOSITORY_POLICY_VIOLATION"};
@@ -565,7 +598,12 @@ class Workflow:
                 move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload,hook)
                 self._project_interruption("REPOSITORY_POLICY_VIOLATION")
                 raise _RunTerminalError("REPOSITORY_POLICY_VIOLATION")
-            payload={"generation":generation,"action":x["action"],"result":r,"witness":now};
+            owned=set(ownership["patch_owned_untracked"])
+            protected={z["path"] for z in ownership["protected_untracked"]}
+            start={z["path"] for z in before.get("unexpected_untracked",[])}
+            terminal={z["path"] for z in now.get("unexpected_untracked",[])}
+            acquired=sorted(terminal-start-protected-owned) if x["action"]=="implementation" else []
+            payload={"generation":generation,"action":x["action"],"result":r,"witness":now,"acquired_untracked":acquired};
             if x.get("execution") is not None: payload["execution"]=x["execution"]
             move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",payload,hook); s=replay_journal(self.journal.read()); self._save(s); return s
     def _project_interruption(self,reason):
@@ -691,7 +729,7 @@ class Workflow:
         src=self._find(self.base/("accepted" if x["status"]=="ACCEPTED" else "running/checkpoint"),generation,x["prompt_sha256"])
         if x["status"]=="ACCEPTED":
             running=self.base/"running"/x["action"]/src.name
-            move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"]})
+            move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"],"witness":x["witness"]})
             src=running
         result={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"committed","classification":"manual_checkpoint","commit_sha":intent["commit_sha"]}
         move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",{"generation":generation,"action":x["action"],"result":result,"witness":now})
@@ -703,8 +741,9 @@ class Workflow:
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
             if x["action"]!="checkpoint": raise WorkflowError("GENERATION_IS_NOT_CHECKPOINT")
             if type(message) is not str or not message.strip(): raise WorkflowError("CHECKPOINT_COMMIT_MESSAGE_REQUIRED")
-            if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
-            try: intent=prepare_checkpoint(self.root,self.allowed,x["witness"],message)
+            ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+            try: intent=prepare_checkpoint(self.root,self.allowed,x["witness"],message,s.get("patch_owned_untracked",[]),[z["path"] for z in s.get("protected_untracked",[])])
             except RepositoryError as error: raise WorkflowError(str(error)) from error
             payload={"generation":generation,"prompt_sha256":x["prompt_sha256"],**intent}
             try: self.journal.append("CHECKPOINT_INTENT",**payload)
@@ -713,9 +752,13 @@ class Workflow:
                 except RepositoryError as error: raise WorkflowError(str(error)) from error
                 raise WorkflowError(f"CHECKPOINT_INTENT_PERSISTENCE_FAILED: {original}") from original
             if hook: hook("intent",payload)
-            try: now=advance_checkpoint(self.root,self.allowed,intent)
+            try: now=advance_checkpoint(self.root,self.allowed,intent,ownership)
             except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REQUIRED: {error}") from error
             if hook: hook("committed",payload)
+            try:
+                now=verify_checkpoint_boundary(self.root,self.allowed,intent,ownership)
+            except RepositoryError as error:
+                raise WorkflowError(f"CHECKPOINT_RECOVERY_REQUIRED: {error}") from error
             self._finish_checkpoint(generation,x,intent,now)
             s=replay_journal(self.journal.read()); self._save(s); return s
     def execute(self,generation,executor=None,observer=None):
@@ -742,7 +785,8 @@ class Workflow:
             executor=executor or CodexExecutor()
             if snapshot and isinstance(executor,CodexExecutor):
                 executor.model=snapshot["requested_model"]; executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
-            if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+            ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
             context, context_info = self._parent_context(s, generation)
             context_sha256=hashlib.sha256(context).hexdigest()
@@ -756,7 +800,7 @@ class Workflow:
                 try: current_policy_hash=policy_config_sha256(load_policy(self.root/"atlas-agent-policy.toml"))
                 except PolicyError as error: raise WorkflowError(str(error)) from error
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
-            if witness(self.root,self.allowed)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
             metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
             if snapshot:
@@ -765,7 +809,7 @@ class Workflow:
             if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-            start_payload={"generation":generation,"action":x["action"],"execution":metadata,"context_supplement":context.decode("utf-8")}
+            start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context.decode("utf-8")}
             self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
             def publish_owner(stage,transaction):
                 if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)
@@ -1055,9 +1099,8 @@ class Workflow:
                     continue
                 if head!=intent["commit_sha"]: raise WorkflowError("CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH")
                 try:
-                    verify_checkpoint_commit(self.root,intent)
-                    now=witness(self.root,self.allowed); empty=hashlib.sha256(b"").hexdigest()
-                    if now["head"]!=intent["commit_sha"] or now["index_semantic_sha256"]!=empty or now["tracked_worktree_sha256"]!=empty or now["tracked_worktree_content_sha256"]!=empty or now["unexpected_untracked"]: raise RepositoryError("CHECKPOINT_POST_COMMIT_REPOSITORY_MISMATCH")
+                    ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+                    now=verify_checkpoint_boundary(self.root,self.allowed,intent,ownership)
                 except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH: {error}") from error
                 if not x or x["status"] not in {"ACCEPTED","RUNNING"}: raise WorkflowError("CHECKPOINT_RECOVERY_STATE_MISMATCH")
                 self._finish_checkpoint(x["generation"],x,intent,now)

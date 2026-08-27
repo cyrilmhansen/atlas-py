@@ -96,6 +96,7 @@ def test_unpublishable_context_does_not_strand_authoritative_recovery(tmp_path):
                      source="accepted/" + next(p.name for p in (w.base / "accepted").iterdir()),
                      destination="running/implementation/g000001-" + prompt_sha + ".txt",
                      prompt_sha256=prompt_sha, generation=1, action="implementation",
+                     witness=w._state()["generations"]["1"]["witness"],
                      execution=owner, context_supplement=supplement)
     state = w.recover()
     assert state["generations"]["1"]["status"] == "RUNNING"

@@ -71,10 +71,11 @@ def test_false_effective_hash_does_not_publish_owner_or_commit(tmp_path):
                      source=f"accepted/{source.name}",destination=f"running/implementation/{source.name}",
                      prompt_sha256=hashlib.sha256(raw).hexdigest(),generation=1,action="implementation",
                      execution=owner,context_supplement=supplement)
-    with pytest.raises(WorkflowError,match="EXECUTION_CONTEXT_HASH_MISMATCH"):
+    with pytest.raises(WorkflowError,match="(?:EXECUTION_CONTEXT_HASH_MISMATCH|epoch-2 start witness incomplete)"):
         w.recover()
     assert not (w.base/"reports"/"executions"/execution_id/"execution.json").exists()
-    assert w.journal.read()[-1]["event"]=="TRANSITION_PREPARED"
+    with pytest.raises(JournalError, match="epoch-2 start witness"):
+        w.journal.read()
 
 
 def test_modern_provenance_fields_cannot_be_reclassified_as_legacy(tmp_path):

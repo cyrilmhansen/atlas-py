@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib, json, os, re, time
 from datetime import datetime
 from pathlib import Path
+from .prompt import parse_prompt, PromptError
 from typing import Any
 from .model import SCHEMA
 from .policy import validate_snapshot, PolicyError
@@ -137,6 +138,20 @@ def _validate_parent_context(form, generation, generations, line):
 
 class Journal:
     def __init__(self,path:Path): self.path=path
+
+    def _archived_prompt_schema(self, prompt_sha256, line):
+        """Return schema evidence from the hash-bound immutable prompt archive."""
+        archive=self.path.parent / "prompts" / f"{prompt_sha256}.txt"
+        try:
+            raw=archive.read_bytes()
+        except OSError as error:
+            raise JournalError(f"prompt archive unavailable at line {line}") from error
+        if hashlib.sha256(raw).hexdigest()!=prompt_sha256:
+            raise JournalError(f"prompt archive hash mismatch at line {line}")
+        try:
+            return parse_prompt(raw).prompt_schema
+        except PromptError as error:
+            raise JournalError(f"prompt archive invalid at line {line}") from error
     def read(self):
         if not self.path.exists(): return []
         out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False
@@ -158,6 +173,13 @@ class Journal:
                     if type(epoch) is not int or epoch not in {1, 2}: raise JournalError(f"validation epoch invalid at line {n}")
                     validation_epoch = epoch
                     initialized=True
+                if raw["event"] == "PROMPT_ACCEPTED":
+                    archived_schema=self._archived_prompt_schema(raw["payload"]["prompt_sha256"],n)
+                    journal_schema=raw["payload"].get("prompt_schema")
+                    if journal_schema is not None and journal_schema != archived_schema:
+                        raise JournalError(f"prompt schema archive mismatch at line {n}")
+                    if archived_schema == "atlas-agent-prompt/2" and journal_schema != archived_schema:
+                        raise JournalError(f"prompt schema archive mismatch at line {n}")
                 self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
                 p=raw["payload"]
                 if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
@@ -187,9 +209,9 @@ class Journal:
             "PROMPT_RECEIVED":{"prompt_sha256","source"},
             "PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},
             "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},
-            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts"},
-            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution"},
-            "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution"},
+            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts","acquired_untracked"},
+            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness"},
+            "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution","acquired_untracked"},
             "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts"},
             "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
             "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
@@ -201,6 +223,13 @@ class Journal:
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
         if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}: raise JournalError(f"logical event invalid at line {n}")
         if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED"}: _witness(p["witness"],n)
+        if event == "RUN_STARTED" and "witness" in p: _witness(p["witness"],n)
+        if event == "RUN_COMPLETED" and "acquired_untracked" in p:
+            acquired=p["acquired_untracked"]
+            if (type(acquired) is not list or acquired != sorted(acquired) or
+                len(acquired) != len(set(acquired)) or
+                any(type(path) is not str or not re.fullmatch(r"(?:[0-9a-f]{2})+", path) for path in acquired)):
+                raise JournalError(f"acquired ownership invalid at line {n}")
         if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str) or type(p.get("validation_epoch",1)) is not int or p.get("validation_epoch",1) not in {1,2}): raise JournalError(f"initialization payload invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
@@ -214,7 +243,12 @@ class Journal:
         # The prompt schema is durable transaction provenance.  It must remain
         # authoritative even if an attacker removes every v2 field from the
         # execution/result copies.
-        v2=validation_epoch >= 2
+        # A hash-bound archived v2 prompt is durable modern evidence.  The
+        # mutable root epoch may preserve legacy compatibility, but cannot
+        # weaken the semantics proven by that prompt archive.
+        explicit_legacy = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/1"
+        archived_v2 = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/2"
+        v2=archived_v2 or (validation_epoch >= 2 and not explicit_legacy)
         if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2 and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
             raise JournalError(f"execution handoff digest mismatch at line {n}")
         if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and v2 and started_execution is not None:
@@ -255,14 +289,19 @@ class Journal:
         # Epoch 2 must not infer legacy compatibility from missing provenance.
         # Only a durable v1 schema marker is positive evidence of a legacy
         # execution lifecycle; absent fields are corruption.
-        explicit_legacy = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/1"
-        if validation_epoch >= 2 and lifecycle_start and started is not None and p.get("action") != "checkpoint" and not explicit_legacy:
+        checkpoint_start = p.get("action") == "checkpoint"
+        start_transaction = (event == "RUN_STARTED" or
+                             (event == "TRANSITION_PREPARED" and p.get("logical_event") == "RUN_STARTED"))
+        if v2 and lifecycle_start and started is not None and p.get("action") != "checkpoint":
             if "execution" not in p:
                 raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
             execution = p.get("execution")
             if not isinstance(execution, dict) or not epoch2_execution <= set(execution):
                 raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
-        if validation_epoch >= 2 and event in {"RUN_COMPLETED", "RUN_INTERRUPTED"} and "execution" in p:
+        if (v2 and start_transaction and started is not None and
+            not checkpoint_start and "witness" not in p):
+            raise JournalError(f"epoch-2 start witness incomplete at line {n}")
+        if v2 and event in {"RUN_COMPLETED", "RUN_INTERRUPTED"} and "execution" in p:
             execution=p.get("execution")
             if not isinstance(execution,dict) or not epoch2_execution <= set(execution):
                 raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
