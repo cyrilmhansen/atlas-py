@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, queue, re, shutil, signal, subprocess, threading, time
+import hashlib, json, os, re, select, shutil, signal, subprocess, threading, time
 from dataclasses import replace
 from pathlib import Path
 from .executor import ExecutorError, ExecutionResult, ExecutionSpec, PreparedExecution, utc_now, validate_permission_envelope
@@ -33,6 +33,11 @@ class CodexExecutor:
     def prepare_execution(self,spec):
         self._validate_policy()
         if not self.executable: raise ExecutorError("CODEX_NOT_FOUND")
+        if spec.input_mode not in {"legacy", "bytes-v1"}: raise ExecutorError("INVALID_EXECUTION_INPUT_MODE")
+        if spec.input_mode == "bytes-v1" and (not isinstance(spec.prompt_bytes, bytes) or not isinstance(spec.expected_input_sha256, str)):
+            raise ExecutorError("EXECUTION_INPUT_MISSING")
+        if spec.input_mode == "bytes-v1" and hashlib.sha256(spec.prompt_bytes).hexdigest() != spec.expected_input_sha256:
+            raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
         if not spec.prompt_path.is_file(): raise ExecutorError("PROMPT_MISSING")
         snapshot=spec.policy_snapshot
         if snapshot:
@@ -143,35 +148,86 @@ class CodexExecutor:
         return True
     def _terminate_and_reap(self,proc):
         """Bounded shutdown shared by timeout and stream-failure paths."""
-        if proc.poll() is None:
-            try: proc.send_signal(signal.SIGINT)
-            except ProcessLookupError: pass
-        try: return proc.wait(timeout=self.SHUTDOWN_GRACE_SECONDS)
-        except subprocess.TimeoutExpired: pass
-        if proc.poll() is None:
-            try: proc.kill()
-            except ProcessLookupError: pass
-        try: return proc.wait(timeout=self.SHUTDOWN_KILL_SECONDS)
+        try: os.killpg(proc.pid, signal.SIGINT)
+        except (ProcessLookupError, PermissionError): pass
+        try: exit_code=proc.wait(timeout=self.SHUTDOWN_GRACE_SECONDS)
+        except subprocess.TimeoutExpired: exit_code=None
+        try: os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError): pass
+        try:
+            final=proc.wait(timeout=self.SHUTDOWN_KILL_SECONDS)
+            return final if exit_code is None else exit_code
         except subprocess.TimeoutExpired as error:
             raise ExecutorError("CODEX_PROCESS_UNREAPED") from error
+
+    @staticmethod
+    def _close_stdin(prompt, state):
+        try: prompt.close()
+        except Exception as error: state["close_error"] = error
     def run_execution(self,prepared):
         spec=prepared.spec; spec.report_dir.mkdir(parents=True,exist_ok=True)
         out=spec.report_dir/"stdout.log"; err=spec.report_dir/"stderr.log"; started=utc_now()
         try:
-            with spec.prompt_path.open("rb") as prompt, out.open("wb") as stdout, err.open("wb") as stderr:
-                try: proc=subprocess.Popen(list(prepared.command),cwd=spec.repository_root,stdin=prompt,stdout=subprocess.PIPE,stderr=stderr)
-                except OSError as error: raise ExecutorError(f"CODEX_LAUNCH_FAILED: {error}") from error
+            with out.open("wb") as stdout, err.open("wb") as stderr:
+                prompt_bytes=spec.prompt_bytes
+                if spec.input_mode == "bytes-v1" and (not isinstance(prompt_bytes, bytes) or not isinstance(spec.expected_input_sha256, str)):
+                    raise ExecutorError("EXECUTION_INPUT_MISSING")
+                if prompt_bytes is None:
+                    try: prompt_bytes=spec.prompt_path.read_bytes()
+                    except OSError as error: raise ExecutorError("EXECUTION_INPUT_MISSING") from error
+                # prepare_execution validates the original request, but the
+                # run boundary is the final trust boundary before handoff.
+                # Recheck the exact bytes that the writer will send so a
+                # mutated PreparedExecution cannot launch an unverified child.
+                if spec.input_mode == "bytes-v1" and hashlib.sha256(prompt_bytes).hexdigest() != spec.expected_input_sha256:
+                    raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
                 begun=time.monotonic(); deadline=begun+self.timeout_seconds
-                chunks=queue.Queue(maxsize=32)
-                def read_stdout():
-                    try:
-                        while True:
-                            chunk=os.read(proc.stdout.fileno(),8192)
-                            if not chunk: break
-                            chunks.put(("data",chunk))
-                    except Exception as error: chunks.put(("error",error))
-                    finally: chunks.put(("eof",None))
-                reader=threading.Thread(target=read_stdout,daemon=True); reader.start()
+                # Keep the ownership guard adjacent to Popen: once it returns,
+                # the new session belongs to Atlas even if setup is interrupted
+                # before any stream has been configured.
+                try:
+                    proc=subprocess.Popen(list(prepared.command),cwd=spec.repository_root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=stderr,start_new_session=True)
+                except OSError as error:
+                    raise ExecutorError(f"CODEX_LAUNCH_FAILED: {error}") from error
+                try:
+                    # This is the first instruction after a successful Popen;
+                    # every subsequent setup operation is covered by the
+                    # ownership cleanup handler.
+                    prompt=None; stdin_fd=None; writer=None
+                    prompt=proc.stdin
+                    stdin_fd=prompt.fileno(); os.set_blocking(stdin_fd,False)
+                    writer_done=threading.Event(); writer_state={"error":None,"close_error":None,"hash":hashlib.sha256(),"written":0}
+                    def write_stdin():
+                        try:
+                            offset=0
+                            while offset<len(prompt_bytes):
+                                try: count=os.write(stdin_fd,prompt_bytes[offset:])
+                                except BlockingIOError: time.sleep(0.005); continue
+                                if count<=0: raise OSError("stdin write returned no progress")
+                                writer_state["hash"].update(prompt_bytes[offset:offset+count]); writer_state["written"]+=count; offset+=count
+                        except Exception as error:
+                            writer_state["error"]=error
+                        finally:
+                            # The parent owns this stream too. Closing it after
+                            # the last write is what delivers EOF to the child.
+                            self._close_stdin(prompt, writer_state)
+                            writer_done.set()
+                    writer=threading.Thread(target=write_stdin,daemon=True); writer.start()
+                    stdout_fd=proc.stdout.fileno(); os.set_blocking(stdout_fd,False)
+                except BaseException as error:
+                    # Popen transfers process-group ownership immediately;
+                    # setup failures must use the same bounded cleanup path.
+                    try: self._terminate_and_reap(proc)
+                    except Exception as shutdown_error: error.add_note(f"bounded executor shutdown also failed: {shutdown_error}")
+                    if stdin_fd is not None and (writer is None or not writer_done.is_set()):
+                        try: os.close(stdin_fd)
+                        except OSError: pass
+                    if writer is not None:
+                        writer.join(timeout=self.SHUTDOWN_GRACE_SECONDS+self.SHUTDOWN_KILL_SECONDS)
+                    if proc.stdout is not None:
+                        try: proc.stdout.close()
+                        except OSError: pass
+                    raise
                 last_useful=begun
                 line=bytearray(); oversized=False; timed_out=False; shutdown_attempted=False; stdout_eof=False
                 try:
@@ -188,37 +244,53 @@ class CodexExecutor:
                                 if now>=heartbeat_due:
                                     self._progress("heartbeat",now-begun); last_useful=now
                                 continue
-                        try: kind,value=chunks.get(timeout=wait_for)
-                        except queue.Empty:
-                            now=time.monotonic()
-                            if now>=heartbeat_due:
-                                self._progress("heartbeat",now-begun); last_useful=now
-                            continue
-                        if kind=="error": raise ExecutorError(f"CODEX_STDOUT_READ_FAILED: {value}") from value
-                        if kind=="eof":
-                            if line and not oversized: self._consume_progress_line(bytes(line),time.monotonic()-begun)
-                            stdout_eof=True
-                            if proc.poll() is not None: exit_code=proc.returncode; break
-                            continue
-                        stdout.write(value); stdout.flush()
-                        for byte in value:
-                            if byte==10:
-                                if not oversized and self._consume_progress_line(bytes(line),time.monotonic()-begun): last_useful=time.monotonic()
-                                line.clear(); oversized=False
-                            elif not oversized:
-                                if len(line)<DEFAULT_MAX_JSONL_LINE_BYTES: line.append(byte)
-                                else: oversized=True
-                except Exception as error:
+                        if writer_state["error"] is not None:
+                            raise ExecutorError(f"CODEX_INPUT_WRITE_FAILED: {writer_state['error']}") from writer_state["error"]
+                        if writer_state["close_error"] is not None:
+                            raise ExecutorError(f"CODEX_INPUT_CLOSE_FAILED: {writer_state['close_error']}") from writer_state["close_error"]
+                        readable=select.select([] if stdout_eof else [stdout_fd],[],[],wait_for)[0]
+                        if readable:
+                            try: value=os.read(stdout_fd,8192)
+                            except OSError as error: raise ExecutorError(f"CODEX_STDOUT_READ_FAILED: {error}") from error
+                            if not value:
+                                if line and not oversized: self._consume_progress_line(bytes(line),time.monotonic()-begun)
+                                stdout_eof=True
+                            else:
+                                stdout.write(value); stdout.flush()
+                                for byte in value:
+                                    if byte==10:
+                                        if not oversized and self._consume_progress_line(bytes(line),time.monotonic()-begun): last_useful=time.monotonic()
+                                        line.clear(); oversized=False
+                                    elif not oversized:
+                                        if len(line)<DEFAULT_MAX_JSONL_LINE_BYTES: line.append(byte)
+                                        else: oversized=True
+                        if proc.poll() is not None and stdout_eof and writer_done.is_set(): exit_code=proc.returncode; break
+                        now=time.monotonic()
+                        if now>=heartbeat_due:
+                            self._progress("heartbeat",now-begun); last_useful=now
+                except BaseException as error:
                     if not shutdown_attempted:
+                        shutdown_attempted=True
                         try: self._terminate_and_reap(proc)
                         except Exception as shutdown_error: error.add_note(f"bounded executor shutdown also failed: {shutdown_error}")
                     if isinstance(error,ExecutorError): raise
+                    if isinstance(error,KeyboardInterrupt): raise
                     raise ExecutorError(f"CODEX_STREAM_FAILED: {error}") from error
                 finally:
+                    if not writer_done.is_set():
+                        try: os.close(stdin_fd)
+                        except OSError: pass
+                    writer.join(timeout=self.SHUTDOWN_GRACE_SECONDS+self.SHUTDOWN_KILL_SECONDS)
+                    if writer.is_alive(): raise ExecutorError("CODEX_INPUT_WRITER_UNREAPED")
+                    if not shutdown_attempted:
+                        shutdown_attempted=True; exit_code=self._terminate_and_reap(proc)
                     if proc.stdout is not None:
                         try: proc.stdout.close()
                         except OSError: pass
-                    reader.join(timeout=1)
+                if writer_state["error"] is not None:
+                    raise ExecutorError(f"CODEX_INPUT_WRITE_FAILED: {writer_state['error']}") from writer_state["error"]
+                if writer_state["close_error"] is not None:
+                    raise ExecutorError(f"CODEX_INPUT_CLOSE_FAILED: {writer_state['close_error']}") from writer_state["close_error"]
         except ExecutorError: raise
         except OSError as error: raise ExecutorError(f"CODEX_STREAM_FAILED: {error}") from error
         session_id=None
@@ -229,4 +301,7 @@ class CodexExecutor:
         try: status, failures=self._permission_observations(out,err)
         except OSError: status, failures="partial",None
         finished=utc_now(); outcome="timeout" if timed_out else ("success" if exit_code==0 else "failed"); root=spec.runtime_root or spec.repository_root
-        return ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,started,finished,exit_code,str(out.relative_to(root)),str(err.relative_to(root)),session_id,outcome,str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,status,failures,timed_out,prepared.policy_snapshot)
+        supplied_hash=writer_state["hash"].hexdigest()
+        if writer_state["written"] != len(prompt_bytes): raise ExecutorError("EXECUTION_INPUT_HANDOFF_INCOMPLETE")
+        if spec.input_mode == "bytes-v1" and supplied_hash != spec.expected_input_sha256: raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
+        return ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,started,finished,exit_code,str(out.relative_to(root)),str(err.relative_to(root)),session_id,outcome,str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,status,failures,timed_out,prepared.policy_snapshot,None,None,supplied_hash)

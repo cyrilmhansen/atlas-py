@@ -164,7 +164,7 @@ printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"
     prompt=tmp_path/"prompt.txt"; prompt.write_text("work\n")
     events=[]
     executor=CodexExecutor(executable=str(executable),timeout_seconds=2,heartbeat_seconds=0.01,progress_callback=events.append)
-    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path)
+    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path,input_mode="legacy")
     prepared=executor.post_start_prepare(executor.prepare_execution(spec))
 
     result=executor.run_execution(prepared)
@@ -175,13 +175,29 @@ printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"
     assert CodexExecutor.latest_agent_report(tmp_path/"report"/"stdout.log")=="live update"
 
 
+def test_codex_closes_stdin_after_input_handoff(tmp_path):
+    body='''import json, sys
+if "--version" in sys.argv:
+    print("codex-cli test")
+    raise SystemExit(0)
+sys.stdin.buffer.read()
+print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"received"}}), flush=True)
+'''
+    executor,prepared=_prepared_script_executor(tmp_path,body,timeout_seconds=1,heartbeat_seconds=1)
+
+    result=executor.run_execution(prepared)
+
+    assert result.outcome=="success"
+    assert (tmp_path/"report"/"stdout.log").read_bytes()==jsonl(agent("received"))
+
+
 def _prepared_script_executor(tmp_path, body, **kwargs):
     executable=tmp_path/"fake-codex"
     executable.write_text(f"#!{sys.executable}\n" + body)
     executable.chmod(0o755)
     prompt=tmp_path/"prompt.txt"; prompt.write_text("work\n")
     executor=CodexExecutor(executable=str(executable),**kwargs)
-    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path)
+    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path,input_mode="legacy")
     return executor,executor.post_start_prepare(executor.prepare_execution(spec))
 
 

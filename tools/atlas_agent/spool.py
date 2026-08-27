@@ -58,6 +58,14 @@ def validate_spool(root,canonical_state):
                 # journal's runtime-relative reports/... path before comparing.
                 execution_rel=report_dir.relative_to("reports")
                 for name in ("execution.json","stdout.log","stderr.log","result.json","usage.json"): expected_execution_files.add(str(execution_rel/name))
+                for field in ("context_path", "effective_prompt_path"):
+                    value=execution.get(field)
+                    if value is not None:
+                        path=Path(value)
+                        if path.is_absolute() or ".." in path.parts or not str(path).startswith("reports/"):
+                            errors.append(f"invalid execution context path g{g}")
+                        else:
+                            relative=str(path.relative_to("reports")); expected_execution_files.add(relative)
                 required_execution_files.add(str(execution_rel/"execution.json"))
                 if rec["status"]!="RUNNING": required_execution_files.update(str(execution_rel/name) for name in ("stdout.log","stderr.log","result.json","usage.json"))
                 execution_file=base/"reports"/execution_rel/"execution.json"
@@ -77,6 +85,11 @@ def validate_spool(root,canonical_state):
                         if execution_data.get(key)!=value: errors.append(f"execution owner mismatch g{g}: {key}")
                     if execution_data.get("executor")!=execution.get("executor"): errors.append(f"execution metadata mismatch g{g}")
                     if envelope is not None and execution_data.get("permission_envelope")!=envelope: errors.append(f"execution permission envelope mismatch g{g}")
+                    for field in ("context_path", "effective_prompt_path", "context_sha256", "effective_prompt_sha256", "prompt_input"):
+                        if field in execution and execution_data.get(field)!=execution.get(field): errors.append(f"execution context mismatch g{g}: {field}")
+                # Context supplement/effective input are provenance artifacts,
+                # never lifecycle authority.  Their paths are checked above,
+                # but absence or corruption must not invalidate the spool.
                 try: result_data=json.loads(result_file.read_text(encoding="utf-8"))
                 except (OSError,UnicodeError,json.JSONDecodeError): result_data=None
                 if result_data is not None and rec["status"]!="RUNNING":

@@ -6,7 +6,7 @@ run a process, and return bounded metadata whose large streams live on disk.
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json, os, signal, subprocess, time, uuid
+import hashlib, json, os, signal, subprocess, time, uuid
 from pathlib import Path
 from typing import Protocol
 
@@ -43,6 +43,9 @@ class ExecutionSpec:
     runtime_root: Path | None = None
     checkpoint: str | None = None
     policy_snapshot: dict | None = None
+    prompt_bytes: bytes | None = None
+    input_mode: str | None = None
+    expected_input_sha256: str | None = None
 
 @dataclass(frozen=True)
 class PreparedExecution:
@@ -74,6 +77,7 @@ class ExecutionResult:
     policy_snapshot: dict | None = None
     observed_model: str | None = None
     observed_reasoning: str | None = None
+    execution_input_sha256: str | None = None
 
 class Executor(Protocol):
     def prepare_execution(self, spec: ExecutionSpec) -> PreparedExecution: ...
@@ -114,5 +118,6 @@ class FakeExecutor:
         spec=prepared.spec; spec.report_dir.mkdir(parents=True, exist_ok=True)
         out=spec.report_dir/"stdout.log"; err=spec.report_dir/"stderr.log"
         out.write_bytes(self.stdout); err.write_bytes(self.stderr)
-        finished=utc_now(); root=spec.runtime_root or spec.repository_root; result=ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,utc_now(),finished,self.exit_code,str(out.relative_to(root)),str(err.relative_to(root)),self.observed_thread_id,"timeout" if self.timed_out else ("success" if self.exit_code==0 else "failed"),str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,self.permission_observation_status,self.permission_failures,self.timed_out,prepared.policy_snapshot,self.observed_model,self.observed_reasoning)
+        supplied=spec.prompt_bytes if spec.prompt_bytes is not None else spec.prompt_path.read_bytes()
+        finished=utc_now(); root=spec.runtime_root or spec.repository_root; result=ExecutionResult(str(spec.execution_id),prepared.executor,list(prepared.command),prepared.version,utc_now(),finished,self.exit_code,str(out.relative_to(root)),str(err.relative_to(root)),self.observed_thread_id,"timeout" if self.timed_out else ("success" if self.exit_code==0 else "failed"),str((spec.report_dir/"result.json").relative_to(root)),prepared.permission_envelope,self.permission_observation_status,self.permission_failures,self.timed_out,prepared.policy_snapshot,self.observed_model,self.observed_reasoning,hashlib.sha256(supplied).hexdigest())
         _write_json(spec.report_dir/"result.json",{**result.__dict__,"generation":spec.generation,"prompt_sha256":spec.prompt_sha256,"action":spec.action}); return result

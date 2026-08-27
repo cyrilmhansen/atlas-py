@@ -118,12 +118,12 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
     root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("p")
     snapshot={"schema":"atlas-agent-policy-snapshot/1","policy_schema":"atlas-agent-policy/1","policy_config_sha256":"a"*64,"action":"implementation","checkpoint":"x","profile":"implementation","executor":"codex","requested_model":"gpt-5.6-sol","requested_reasoning_effort":"medium","session_mode":"fresh","sandbox_mode":"workspace-write","network_access_requested":False,"network_access":False,"web_search":"disabled","apps_enabled":False,"session_storage":"persist","max_hot_reuse_hops":3,"max_reuse_generation_gap":2}
     assert validate_snapshot(snapshot)==snapshot  # Historical snapshots retain their stored model.
-    ex=CodexExecutor(executable="/bin/true",model="gpt-5.6-sol",sandbox="workspace-write",network_access=False); prepared=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,snapshot))
+    ex=CodexExecutor(executable="/bin/true",model="gpt-5.6-sol",sandbox="workspace-write",network_access=False); prepared=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,snapshot,input_mode="legacy"))
     assert "--ignore-user-config" in prepared.command and "--strict-config" in prepared.command and "--ignore-rules" in prepared.command
     assert "features.apps=false" in prepared.command and 'web_search="disabled"' in prepared.command
     assert 'model_reasoning_effort="medium"' in prepared.command
     reuse=dict(snapshot,session_mode="reuse",reused_from_execution_id="e0",requested_thread_id="thread",reuse_depth=1)
-    resumed=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,reuse))
+    resumed=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,reuse,input_mode="legacy"))
     assert resumed.command[1:3]==("exec","resume") and "thread" in resumed.command
 
 

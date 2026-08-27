@@ -110,11 +110,9 @@ def main(argv=None):
             if not a.result: raise WorkflowError("--result JSON is required")
             w.complete_run(a.generation,json.loads(a.result))
         elif a.command=="doctor":
-            events=w.journal.read(); state=replay_journal(events)
+            events,state=w._preflight(require_state=True)
             if not state["initialized"]: raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
             if state["outstanding_transactions"]: raise WorkflowError("INCOMPLETE_TRANSACTION: run recover")
-            if not w._state_file().exists() or w._state()!=state: raise WorkflowError("STATE_PROJECTION_MISMATCH")
-            validate_spool(w.base,state)
             current=__import__("tools.atlas_agent.repository",fromlist=["witness"]).witness(w.root,w.allowed)
             running=[x for x in state["generations"].values() if x["status"]=="RUNNING"]
             if running:
@@ -124,7 +122,11 @@ def main(argv=None):
                 if x["status"] in {"RUNNING","COMPLETED","INTERRUPTED"} and x["action"] not in {"implementation","patch_review","state_audit","checkpoint"}: raise WorkflowError("BAD_ACTION")
             print(f"doctor: OK ({len(events)} events)")
         elif a.command=="status":
-            events=w.journal.read(); state=replay_journal(events); print("Atlas agent workflow\njournal: OK\nstate: "+("MATCH" if w._state_file().exists() and w._state()==state else "MISMATCH"))
+            events=w.journal.read(); state=replay_journal(events)
+            semantic="MATCH"
+            try: w._validate_historical_provenance(events)
+            except WorkflowError: semantic="SEMANTIC_INVALID"
+            print("Atlas agent workflow\njournal: OK\nstate: "+(semantic if semantic!="MATCH" else ("MATCH" if w._state_file().exists() and w._state()==state else "MISMATCH")))
             for g,x in sorted(state["generations"].items(),key=lambda z:int(z[0])): print(f"generation {g}  {x['checkpoint']}  {x['action']}  status {x['status']}")
             print("repository witness:","MATCH" if state["latest_repository_witness"]==witness(w.root,w.allowed) else "MISMATCH")
         else:

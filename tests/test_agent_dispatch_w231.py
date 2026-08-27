@@ -109,11 +109,11 @@ def test_recover_completed_run_started_when_state_save_failed(tmp_path, monkeypa
     monkeypatch.setattr(workflow, "_save", fail_running_save)
     with pytest.raises(OSError, match="state save crash"):
         workflow.execute(1, FakeExecutor())
-    assert workflow.journal.read()[-1]["event"] == "RUN_STARTED"
+    assert workflow.journal.read()[-1]["event"] == "RUN_INTERRUPTED"
 
     monkeypatch.setattr(workflow, "_save", original)
     state = workflow.recover()
-    assert state["generations"]["1"]["status"] == "RUNNING"
+    assert state["generations"]["1"]["status"] == "INTERRUPTED"
     workflow._preflight()
 
 

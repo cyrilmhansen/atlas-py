@@ -10,6 +10,48 @@ class JournalError(RuntimeError): pass
 ZERO="0"*64
 EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED"}
 HEX=re.compile(r"^[0-9a-f]{64}$")
+CONTEXT_PATH=re.compile(r"^reports/contexts/[A-Za-z0-9][A-Za-z0-9._-]*\.txt$")
+SAFE_CONTEXT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+CONTEXT_HEADER="Atlas-generated context supplement\n\nPrevious generation artifacts:\n"
+_CONTEXT_LINE=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+def canonical_context_identifier(value):
+    """Return the representation permitted in a supplement, or omit it."""
+    return value if isinstance(value,str) and _CONTEXT_LINE.fullmatch(value) else None
+def encode_context_supplement(form):
+    """Encode the single canonical parent-context representation."""
+    if form["kind"] == "none": return CONTEXT_HEADER+"- unavailable: no immediate parent artifact\n"
+    lines=[f"- generation: {form['generation']}", f"- action: {form['action']}", f"- status: {form['status']}"]
+    if form["kind"] == "checkpoint":
+        if form.get("commit"): lines.append(f"- commit: {form['commit']}")
+    else:
+        if form.get("execution_id"): lines.append(f"- execution_id: {form['execution_id']}")
+        if form.get("thread_id"): lines.append(f"- thread_id: {form['thread_id']}")
+        available=form["report_available"]
+        lines.append(f"- report: {'available' if available else 'unavailable'}")
+        if available: lines.append(f"- report command: python -m tools.atlas_agent report {form['generation']}")
+    return CONTEXT_HEADER+"\n".join(lines)+"\n"
+def decode_context_supplement(value):
+    if value == encode_context_supplement({"kind":"none"}): return {"kind":"none"}
+    if not isinstance(value,str) or not value.startswith(CONTEXT_HEADER): raise JournalError("context supplement invalid")
+    lines=value[len(CONTEXT_HEADER):].splitlines()
+    if len(lines)<3 or any(not line.startswith("- ") for line in lines): raise JournalError("context supplement invalid")
+    fields={line[2:].split(": ",1)[0]:line[2:].split(": ",1)[1] for line in lines if ": " in line[2:]}
+    if any(k not in {"generation","action","status","commit","execution_id","thread_id","report","report command"} for k in fields): raise JournalError("context supplement invalid")
+    if set(fields)-{"generation","action","status","commit","execution_id","thread_id","report","report command"} or fields.get("generation","") != lines[0][2:].split(": ",1)[1]: raise JournalError("context supplement invalid")
+    try: generation=int(fields["generation"])
+    except (KeyError,ValueError): raise JournalError("context supplement invalid")
+    if generation<=0 or not _CONTEXT_LINE.fullmatch(fields.get("action","")) or not _CONTEXT_LINE.fullmatch(fields.get("status","")): raise JournalError("context supplement invalid")
+    if fields.get("action")=="checkpoint":
+        if set(fields)-{"generation","action","status","commit"} or ("commit" in fields and not re.fullmatch(r"[0-9a-f]{40,64}",fields["commit"])): raise JournalError("context supplement invalid")
+        return {"kind":"checkpoint","generation":generation,"action":"checkpoint","status":fields["status"],"commit":fields.get("commit")}
+    if "commit" in fields or "report" not in fields or fields["report"] not in {"available","unavailable"}: raise JournalError("context supplement invalid")
+    if "report command" in fields and fields["report"]!="available": raise JournalError("context supplement invalid")
+    if "report command" in fields and fields["report command"] != f"python -m tools.atlas_agent report {generation}": raise JournalError("context supplement invalid")
+    for k in ("execution_id","thread_id"):
+        if k in fields and not _CONTEXT_LINE.fullmatch(fields[k]): raise JournalError("context supplement invalid")
+    result={"kind":"execution","generation":generation,"action":fields["action"],"status":fields["status"],"execution_id":fields.get("execution_id"),"thread_id":fields.get("thread_id"),"report_available":fields["report"]=="available"}
+    if encode_context_supplement(result)!=value: raise JournalError("context supplement is not canonical")
+    return result
 def canonical(obj:Any)->str: return json.dumps(obj,sort_keys=True,separators=(",",":"),ensure_ascii=False)
 def _hash_event(e):
     body=dict(e); body.pop("event_sha256",None)
@@ -31,8 +73,28 @@ def _witness(value, line):
     if untracked!=sorted(untracked,key=lambda x:x["path"]) or len({x["path"] for x in untracked})!=len(untracked): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
+    provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
+    present=provenance & set(value)
+    if present and present != provenance: raise JournalError(f"execution provenance incomplete at line {line}")
+    if present:
+        if value["prompt_input"] != "accepted_prompt_plus_atlas_context": raise JournalError(f"execution prompt input invalid at line {line}")
+        for key in ("context_path","effective_prompt_path"):
+            if type(value[key]) is not str or not CONTEXT_PATH.fullmatch(value[key]): raise JournalError(f"execution context path invalid at line {line}")
+        context_name=value["context_path"].removeprefix("reports/contexts/")
+        effective_name=value["effective_prompt_path"].removeprefix("reports/contexts/")
+        if not context_name.endswith(".txt") or context_name[:-4] != value["execution_id"] or effective_name != context_name[:-4]+"-effective.txt": raise JournalError(f"execution context paths invalid at line {line}")
+        if any(type(value[key]) is not str or not HEX.fullmatch(value[key]) for key in ("context_sha256","effective_prompt_sha256")): raise JournalError(f"execution provenance hash invalid at line {line}")
+    modern_fields={"provenance_version","execution_input_sha256","report_provenance"}
+    if modern_fields & set(value):
+        if value.get("provenance_version") != 2 or type(value.get("execution_input_sha256")) is not str or not HEX.fullmatch(value["execution_input_sha256"]):
+            raise JournalError(f"execution provenance version invalid at line {line}")
+        if present != provenance:
+            raise JournalError(f"execution provenance incomplete at line {line}")
+        descriptor=value.get("report_provenance")
+        if not isinstance(descriptor,dict) or descriptor != {"status":"unavailable"}:
+            raise JournalError(f"execution report provenance invalid at line {line}")
     if "permission_envelope" in value:
         envelope=value["permission_envelope"]
         if type(envelope) is not dict or set(envelope)!={"sandbox_mode","approval_policy","approvals_reviewer","strict_config","ignore_rules","network_access"}: raise JournalError(f"permission envelope invalid at line {line}")
@@ -41,11 +103,43 @@ def _execution(value,line):
         if value.get("owner_schema")!="atlas-agent-execution-owner/2" or "policy_snapshot" not in value: raise JournalError(f"execution owner schema invalid at line {line}")
         try: validate_snapshot(value["policy_snapshot"])
         except PolicyError as error: raise JournalError(f"policy snapshot invalid at line {line}") from error
+
+def _validate_parent_context(form, generation, generations, line):
+    """Check durable parent semantics as they existed before this event."""
+    if form["kind"] == "none":
+        if generation != 1: raise JournalError(f"context supplement parent mismatch at line {line}")
+        return
+    parent=generations.get(generation-1)
+    if parent is None: raise JournalError(f"context supplement parent mismatch at line {line}")
+    expected_kind="checkpoint" if parent["action"]=="checkpoint" else "execution"
+    if form["kind"] != expected_kind or form["generation"] != parent["generation"]:
+        raise JournalError(f"context supplement parent semantics invalid at line {line}")
+    if form["action"] != parent["action"] or form["status"] != parent["status"]:
+        raise JournalError(f"context supplement parent semantics invalid at line {line}")
+    if expected_kind == "checkpoint":
+        commit=(parent.get("result") or {}).get("commit_sha")
+        if form.get("commit") != commit:
+            raise JournalError(f"context supplement parent checkpoint invalid at line {line}")
+        return
+    execution=parent.get("execution") or {}
+    result=parent.get("result") or parent.get("execution_result") or {}
+    if isinstance(result,dict) and isinstance(result.get("executor_result"),dict): result=result["executor_result"]
+    if form.get("execution_id") != canonical_context_identifier(execution.get("execution_id")):
+        raise JournalError(f"context supplement parent execution invalid at line {line}")
+    if form.get("thread_id") != canonical_context_identifier(result.get("session_id")):
+        raise JournalError(f"context supplement parent thread invalid at line {line}")
+    if execution.get("provenance_version") == 2:
+        descriptor=(parent.get("result") or {}).get("report_provenance")
+        if not isinstance(descriptor,dict) or descriptor.get("status") not in {"available","unavailable"}:
+            raise JournalError(f"context supplement parent report provenance invalid at line {line}")
+        if form.get("report_available") != (descriptor["status"] == "available"):
+            raise JournalError(f"context supplement parent report claim invalid at line {line}")
+
 class Journal:
     def __init__(self,path:Path): self.path=path
     def read(self):
         if not self.path.exists(): return []
-        out=[]; previous=ZERO
+        out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False
         with self.path.open("r",encoding="utf-8",newline="") as f:
             for n,line in enumerate(f,1):
                 if not line.endswith("\n"): raise JournalError(f"journal line {n} is not newline terminated")
@@ -57,20 +151,57 @@ class Journal:
                 if raw["event"] not in EVENTS or type(raw["payload"]) is not dict: raise JournalError(f"event invalid at line {n}")
                 if raw["previous_event_sha256"]!=previous or not HEX.fullmatch(raw["previous_event_sha256"]): raise JournalError(f"journal chain broken at line {n}")
                 if type(raw["event_sha256"]) is not str or not HEX.fullmatch(raw["event_sha256"]) or _hash_event(raw)!=raw["event_sha256"]: raise JournalError(f"event hash broken at line {n}")
-                self._validate_payload(raw["event"],raw["payload"],n)
+                if raw["event"] == "WORKFLOW_INITIALIZED":
+                    if n != 1 or initialized:
+                        raise JournalError(f"workflow initialization must be the unique root event at line {n}")
+                    epoch = raw["payload"].get("validation_epoch", 1)
+                    if type(epoch) is not int or epoch not in {1, 2}: raise JournalError(f"validation epoch invalid at line {n}")
+                    validation_epoch = epoch
+                    initialized=True
+                self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
+                p=raw["payload"]
+                if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
+                elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}:
+                    prepared=outstanding.pop(p["transaction_id"],None)
+                    if raw["event"]=="PROMPT_ACCEPTED":
+                        generations[p["generation"]]={"generation":p["generation"],"action":p["action"],"status":"ACCEPTED","prompt_schema":p.get("prompt_schema")}
+                    elif raw["event"]=="RUN_STARTED":
+                        rec=generations.get(p["generation"])
+                        if rec: rec.update({"status":"RUNNING","execution":p.get("execution")})
+                    elif raw["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
+                        rec=generations.get(p["generation"])
+                        if rec:
+                            rec["status"]="COMPLETED" if raw["event"]=="RUN_COMPLETED" else "INTERRUPTED"
+                            if "result" in p: rec["result"]=p["result"]
+                            if "executor_result" in p: rec["execution_result"]=p["executor_result"]
                 previous=raw["event_sha256"]; out.append(raw)
+        if out and not initialized:
+            raise JournalError("nonempty journal must have workflow initialization root")
         return out
     @staticmethod
-    def _validate_payload(event,p,n):
+    def _validate_payload(event,p,n,generations=None,validation_epoch=1):
         required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set()}[event]
         if not required<=set(p): raise JournalError(f"payload for {event} incomplete at line {n}")
-        allowed={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","executor_result","fallback_artifacts"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":{"repaired"}}[event]
+        allowed={
+            "WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness","validation_epoch"},
+            "PROMPT_RECEIVED":{"prompt_sha256","source"},
+            "PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},
+            "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},
+            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts"},
+            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution"},
+            "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution"},
+            "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts"},
+            "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
+            "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
+            "RECOVERY_PERFORMED":{"repaired"},
+        }[event]
+        if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement"}
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
         if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
         if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}: raise JournalError(f"logical event invalid at line {n}")
         if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED"}: _witness(p["witness"],n)
-        if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str)): raise JournalError(f"initialization payload invalid at line {n}")
+        if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str) or type(p.get("validation_epoch",1)) is not int or p.get("validation_epoch",1) not in {1,2}): raise JournalError(f"initialization payload invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
         if event=="PROMPT_ACCEPTED":
@@ -78,6 +209,31 @@ class Journal:
             if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
             if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
+        started=(generations or {}).get(p.get("generation")) or (generations or {}).get(str(p.get("generation")))
+        started_execution=started.get("execution") if isinstance(started,dict) else None
+        # The prompt schema is durable transaction provenance.  It must remain
+        # authoritative even if an attacker removes every v2 field from the
+        # execution/result copies.
+        v2=validation_epoch >= 2
+        if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2 and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
+            raise JournalError(f"execution handoff digest mismatch at line {n}")
+        if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and v2 and started_execution is not None:
+            if p.get("execution") != started_execution or not isinstance(p.get("result"),dict):
+                raise JournalError(f"terminal v2 provenance incomplete at line {n}")
+            if started_execution.get("execution_input_sha256") != started_execution.get("effective_prompt_sha256"):
+                raise JournalError(f"execution handoff digest mismatch at line {n}")
+            if event == "RUN_COMPLETED":
+                observed=p.get("result",{}).get("executor_result")
+                if not isinstance(observed,dict) or observed.get("execution_input_sha256") != started_execution.get("execution_input_sha256"):
+                    raise JournalError(f"execution handoff digest mismatch at line {n}")
+        if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2:
+            descriptor=p["result"].get("report_provenance")
+            if not isinstance(descriptor,dict) or descriptor.get("status") not in {"available","unavailable"} or set(descriptor)-{"status","report_sha256"}:
+                raise JournalError(f"report provenance invalid at line {n}")
+            if descriptor["status"]=="available" and (type(descriptor.get("report_sha256")) is not str or not HEX.fullmatch(descriptor["report_sha256"])):
+                raise JournalError(f"report provenance invalid at line {n}")
+            if descriptor["status"]=="unavailable" and "report_sha256" in descriptor:
+                raise JournalError(f"report provenance invalid at line {n}")
         if event in {"CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p["commit_sha"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["commit_sha"])): raise JournalError(f"checkpoint commit invalid at line {n}")
         if event=="CHECKPOINT_INTENT" and any(type(p[k]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p[k]) for k in ("parent_head","tree_sha")): raise JournalError(f"checkpoint intent invalid at line {n}")
         if event=="CHECKPOINT_ABORTED" and type(p["reason"]) is not str: raise JournalError(f"checkpoint abort invalid at line {n}")
@@ -89,6 +245,50 @@ class Journal:
         if event in {"PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p["source"]) is not str or type(p["destination"]) is not str): raise JournalError(f"transition paths invalid at line {n}")
         if "witness" in p: _witness(p["witness"],n)
         if "execution" in p: _execution(p["execution"],n)
+        epoch2_execution = {"provenance_version", "execution_input_sha256", "report_provenance",
+                            "prompt_input", "context_path", "effective_prompt_path",
+                            "context_sha256", "effective_prompt_sha256"}
+        lifecycle_start = event == "RUN_STARTED"
+        # Checkpoint is the one explicit non-executor lifecycle.  Every other
+        # epoch-2 RUN_STARTED transaction owns an execution and its complete
+        # provenance bundle; absence cannot imply a legacy/manual mode.
+        # Epoch 2 must not infer legacy compatibility from missing provenance.
+        # Only a durable v1 schema marker is positive evidence of a legacy
+        # execution lifecycle; absent fields are corruption.
+        explicit_legacy = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/1"
+        if validation_epoch >= 2 and lifecycle_start and started is not None and p.get("action") != "checkpoint" and not explicit_legacy:
+            if "execution" not in p:
+                raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
+            execution = p.get("execution")
+            if not isinstance(execution, dict) or not epoch2_execution <= set(execution):
+                raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
+        if validation_epoch >= 2 and event in {"RUN_COMPLETED", "RUN_INTERRUPTED"} and "execution" in p:
+            execution=p.get("execution")
+            if not isinstance(execution,dict) or not epoch2_execution <= set(execution):
+                raise JournalError(f"epoch-2 execution provenance incomplete at line {n}")
+            result=p.get("result")
+            if not isinstance(result,dict) or not isinstance(result.get("report_provenance"),dict):
+                raise JournalError(f"epoch-2 terminal provenance incomplete at line {n}")
+        provenance_fields={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
+        has_provenance=isinstance(p.get("execution"),dict) and bool(provenance_fields & set(p["execution"]))
+        context_transaction=(event == "RUN_STARTED" or
+                             (event == "TRANSITION_PREPARED" and p.get("logical_event") == "RUN_STARTED"))
+        if context_transaction and has_provenance != ("context_supplement" in p):
+            raise JournalError(f"context provenance pairing invalid at line {n}")
+        if "context_supplement" in p:
+            supplement=p["context_supplement"]
+            if type(supplement) is not str or len(supplement.encode("utf-8")) > 4096:
+                raise JournalError(f"context supplement invalid at line {n}")
+            form=decode_context_supplement(supplement)
+            if encode_context_supplement(form)!=supplement: raise JournalError(f"context supplement is not canonical at line {n}")
+            if form["kind"] != "none" and form["generation"] != p.get("generation",0)-1: raise JournalError(f"context supplement parent mismatch at line {n}")
+            if form["kind"] == "none" and p.get("generation") != 1: raise JournalError(f"context supplement parent mismatch at line {n}")
+            if form["kind"] == "execution" and form["action"] == "checkpoint": raise JournalError(f"context supplement invalid at line {n}")
+            if generations is not None:
+                _validate_parent_context(form,p.get("generation",0),generations,n)
+            execution=p.get("execution")
+            if not isinstance(execution,dict) or "context_sha256" not in execution or hashlib.sha256(supplement.encode("utf-8")).hexdigest()!=execution["context_sha256"]:
+                raise JournalError(f"context supplement provenance invalid at line {n}")
     def append(self,event,**fields):
         events=self.read(); seq=len(events)+1
         e={"schema":SCHEMA,"seq":seq,"timestamp":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"event":event,"payload":fields,"previous_event_sha256":events[-1]["event_sha256"] if events else ZERO}

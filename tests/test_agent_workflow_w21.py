@@ -2,7 +2,7 @@ import hashlib,json,os,subprocess,sys,threading
 from pathlib import Path
 import pytest
 from tools.atlas_agent.executor import FakeExecutor
-from tools.atlas_agent.workflow import Workflow,WorkflowError
+from tools.atlas_agent.workflow import Workflow,WorkflowError,replay_journal
 
 def git(p,*args): return subprocess.check_output(["git",*args],cwd=p,text=True).strip()
 @pytest.fixture
@@ -162,6 +162,57 @@ def test_fake_exception_interrupts(repo):
     p,w=repo; accepted(w); fake=FakeExecutor(crash=True)
     with pytest.raises(WorkflowError,match="EXECUTOR_FAILURE"): w.execute(1,fake)
     assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"
+
+def test_keyboard_interrupt_durably_interrupts_before_reraising(repo):
+    class InterruptingExecutor(FakeExecutor):
+        def run_execution(self, prepared):
+            raise KeyboardInterrupt()
+
+    p,w=repo; accepted(w)
+    with pytest.raises(KeyboardInterrupt): w.execute(1,InterruptingExecutor())
+    assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"
+
+@pytest.mark.parametrize("error_type,reason",[
+    (KeyboardInterrupt,"KEYBOARD_INTERRUPT"),
+    # PRODUCT_RED before the fix: execute() replaced these after journaling.
+    (SystemExit,"EXECUTOR_FAILURE: sentinel"),
+    (GeneratorExit,"EXECUTOR_FAILURE: sentinel"),
+])
+@pytest.mark.parametrize("projection_failure",[False,True])
+def test_execute_preserves_baseexception_after_durable_interruption(
+        repo, monkeypatch, error_type, reason, projection_failure):
+    p,w=repo; accepted(w)
+    original_save=w._save
+    original_error=error_type("sentinel")
+
+    class InterruptingExecutor(FakeExecutor):
+        def run_execution(self, prepared):
+            raise original_error
+
+    if projection_failure:
+        def fail_terminal_projection(state):
+            if state["generations"]["1"]["status"]=="INTERRUPTED":
+                raise OSError("simulated projection failure")
+            return original_save(state)
+        monkeypatch.setattr(w,"_save",fail_terminal_projection)
+
+    with pytest.raises(error_type) as raised:
+        w.execute(1,InterruptingExecutor())
+    assert raised.value is original_error
+
+    interrupted=[event for event in w.journal.read()
+                 if event["event"]=="RUN_INTERRUPTED"]
+    assert len(interrupted)==1
+    assert interrupted[0]["payload"]["reason"]==reason
+    assert w._state()["generations"]["1"]["status"]==(
+        "RUNNING" if projection_failure else "INTERRUPTED")
+
+    reconstructed=replay_journal(w.journal.read())
+    assert reconstructed["generations"]["1"]["status"]=="INTERRUPTED"
+    if projection_failure:
+        monkeypatch.setattr(w,"_save",original_save)
+    assert w._interruption_reason(1)==reason
+
 def test_fail_before_launch_for_stale_state_and_repository(repo):
     p,w=repo; accepted(w); state=w._state_file(); data=json.loads(state.read_text()); data["generations"]["1"]["status"]="COMPLETED"; state.write_text(json.dumps(data)); fake=FakeExecutor()
     with pytest.raises(WorkflowError): w.execute(1,fake)
@@ -192,7 +243,7 @@ def test_codex_heartbeats_continue_after_stdout_eof(tmp_path):
     prompt_path=tmp_path/"prompt"; prompt_path.write_text("prompt")
     report_dir=tmp_path/"report"; events=[]
     envelope={"sandbox_mode":"read-only","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}
-    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,tmp_path,"eof-heartbeat",report_dir,tmp_path)
+    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,tmp_path,"eof-heartbeat",report_dir,tmp_path,input_mode="legacy")
     prepared=PreparedExecution(spec,"codex",(str(executable),),"codex/test",envelope)
     result=CodexExecutor(executable=str(executable),timeout_seconds=.3,heartbeat_seconds=.02,progress_callback=events.append).run_execution(prepared)
     assert result.exit_code==0 and result.timed_out is False
@@ -217,7 +268,7 @@ def test_codex_noninteractive_argv_and_mutation_guards(tmp_path):
     from tools.atlas_agent.executor import ExecutionSpec
     from pathlib import Path
     root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("hello")
-    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root)
+    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root,input_mode="legacy")
     ex=CodexExecutor(executable="/bin/true")
     ex.info=lambda: {"available":True,"version":"codex-cli 0.149.1"}
     prepared=ex.prepare_execution(spec); argv=list(prepared.command)
@@ -236,7 +287,7 @@ def test_workspace_write_network_is_explicit(tmp_path):
     from pathlib import Path
     root=tmp_path; path=root/"p"; path.write_text("x")
     from tools.atlas_agent.executor import ExecutionSpec
-    argv=list(ex.prepare_execution(ExecutionSpec(1,"0"*64,"implementation",path,root,"e",root/"r",root)).command)
+    argv=list(ex.prepare_execution(ExecutionSpec(1,"0"*64,"implementation",path,root,"e",root/"r",root,input_mode="legacy")).command)
     assert "sandbox_workspace_write.network_access=false" in argv
 
 def test_permission_refusal_observation_is_not_inferred_from_exit_zero():
@@ -311,7 +362,7 @@ def test_prepare_is_pure_and_discovery_is_post_start(tmp_path):
     from tools.atlas_agent.executor import ExecutionSpec
     root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("hello")
     ex=CodexExecutor(executable="/bin/true"); ex.info=lambda: (_ for _ in ()).throw(AssertionError("discovery before start"))
-    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root)
+    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root,input_mode="legacy")
     prepared=ex.prepare_execution(spec)
     assert prepared.version=="unresolved" and not (root/"report").exists()
 
