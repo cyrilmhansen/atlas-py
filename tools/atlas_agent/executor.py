@@ -55,6 +55,9 @@ class PreparedExecution:
     version: str
     permission_envelope: dict
     policy_snapshot: dict | None = None
+    # Executor-owned preparation state.  This is intentionally opaque to the
+    # workflow; concrete executors may use it to bind a run to its resources.
+    runtime_handle: object | None = None
 
 @dataclass(frozen=True)
 class ExecutionResult:

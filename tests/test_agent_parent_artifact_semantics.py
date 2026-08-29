@@ -5,7 +5,7 @@ import pytest
 
 from test_agent_operator_ergonomics import CodexFake, agent, jsonl
 from test_agent_workflow_w221 import accepted, make_repo
-from tools.atlas_agent.journal import Journal, JournalError, canonical
+from tools.atlas_agent.journal import Journal, JournalError, canonical, decode_context_supplement, _validate_parent_context
 from tools.atlas_agent.workflow import WorkflowError
 
 
@@ -111,6 +111,36 @@ def test_interrupted_projection_preserves_executor_result_and_thread_identity(tm
         "execution_result":{"session_id":"interrupted-thread","outcome":"failed"}}}}
     assert w._execution_result(state["generations"]["1"])["session_id"] == "interrupted-thread"
     assert "interrupted-thread" in w._known_thread_ids(state)
+
+
+def test_interrupted_parent_context_survives_validation_rebuild_and_replay(tmp_path):
+    from tools.atlas_agent.executor import FakeExecutor
+
+    _, w = make_repo(tmp_path)
+    accepted(w)
+    with pytest.raises(WorkflowError, match="EXECUTOR_TIMEOUT"):
+        w.execute(1, FakeExecutor(timed_out=True, observed_thread_id="interrupted-thread"))
+
+    parent = w._state()["generations"]["1"]
+    assert parent["status"] == "INTERRUPTED"
+    assert "report_provenance" in parent["result"]
+    assert parent["execution_result"]["session_id"] == "interrupted-thread"
+
+    accepted(w, generation=2)
+    child = CodexFake(stdout=jsonl({"type":"thread.started", "thread_id":"child"}, agent("done")), observed_thread_id="child")
+    w.execute(2, child)
+    context = next(e["payload"]["context_supplement"] for e in w.journal.read()
+                   if e["event"] == "RUN_STARTED" and e["payload"]["generation"] == 2)
+    assert "thread_id: interrupted-thread" in context
+    assert w._preflight()[1]["generations"]["2"]["status"] == "COMPLETED"
+    w._state_file().unlink()
+    assert w.rebuild()["generations"]["2"]["status"] == "COMPLETED"
+    assert w._preflight()[1]["generations"]["1"]["status"] == "INTERRUPTED"
+
+    form = decode_context_supplement(context)
+    forged = dict(form, thread_id="wrong-thread")
+    with pytest.raises(JournalError, match="parent thread invalid"):
+        _validate_parent_context(forged, 2, {1: parent}, 1)
 
 
 def test_terminal_v2_record_binds_observed_input_digest(tmp_path):

@@ -18,6 +18,12 @@ _CONTEXT_LINE=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 def canonical_context_identifier(value):
     """Return the representation permitted in a supplement, or omit it."""
     return value if isinstance(value,str) and _CONTEXT_LINE.fullmatch(value) else None
+def canonical_execution_result(record):
+    """Select the durable executor result used for historical context."""
+    terminal=(record.get("result") if isinstance(record.get("result"),dict) else {})
+    if isinstance(terminal.get("executor_result"),dict): return terminal["executor_result"]
+    if isinstance(record.get("execution_result"),dict): return record["execution_result"]
+    return {}
 def encode_context_supplement(form):
     """Encode the single canonical parent-context representation."""
     if form["kind"] == "none": return CONTEXT_HEADER+"- unavailable: no immediate parent artifact\n"
@@ -74,7 +80,7 @@ def _witness(value, line):
     if untracked!=sorted(untracked,key=lambda x:x["path"]) or len({x["path"] for x in untracked})!=len(untracked): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
     provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
     present=provenance & set(value)
@@ -104,6 +110,47 @@ def _execution(value,line):
         if value.get("owner_schema")!="atlas-agent-execution-owner/2" or "policy_snapshot" not in value: raise JournalError(f"execution owner schema invalid at line {line}")
         try: validate_snapshot(value["policy_snapshot"])
         except PolicyError as error: raise JournalError(f"policy snapshot invalid at line {line}") from error
+    modern_bwrap = value.get("execution_backend_schema") == "atlas-bwrap-execution/1"
+    if "execution_backend_schema" in value and not modern_bwrap:
+        raise JournalError(f"execution backend schema invalid at line {line}")
+    if "sandbox" in value:
+        descriptor = value["sandbox"]
+        required = {"schema","provider","backend","filesystem_mode","filesystem_enforcement",
+                    "process_enforcement","network_enforcement","requested_network_access",
+                    "resolved_network_access","user_namespace","pid_namespace","ipc_namespace",
+                    "mount_roles","temporary_storage","bwrap","bwrap_version","codex_executable",
+                    "codex_version","scratch_backing_class","exec_server_transport","inner_codex_sandbox","inner_codex_network"}
+        if type(descriptor) is not dict or set(descriptor) != required:
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        if descriptor["schema"] != "atlas-bwrap/1" or descriptor["provider"] != "atlas" or descriptor["backend"] != "bubblewrap":
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        if descriptor["filesystem_mode"] not in {"read-only","workspace-write"}:
+            raise JournalError(f"sandbox action mismatch at line {line}")
+        if descriptor["filesystem_enforcement"] != "atlas-bwrap":
+            raise JournalError(f"sandbox filesystem enforcement mismatch at line {line}")
+        if descriptor["process_enforcement"] != "atlas-bwrap":
+            raise JournalError(f"sandbox process enforcement mismatch at line {line}")
+        if descriptor["network_enforcement"] != "codex":
+            raise JournalError(f"sandbox network enforcement mismatch at line {line}")
+        if descriptor["requested_network_access"] is not False or descriptor["resolved_network_access"] is not False:
+            raise JournalError(f"sandbox network mismatch at line {line}")
+        if descriptor["pid_namespace"] is not True or descriptor["ipc_namespace"] is not True or descriptor["user_namespace"] != "bwrap-default":
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        if type(descriptor["mount_roles"]) is not list or len(descriptor["mount_roles"]) > 64 or any(type(x) is not str or len(x)>128 for x in descriptor["mount_roles"]):
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        if descriptor["temporary_storage"] != {"tmp":"private-tmpfs","shm":"private-tmpfs","var_tmp":"private-disk-scratch"}:
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        if descriptor["scratch_backing_class"] != "disk":
+            raise JournalError(f"sandbox provenance invalid at line {line}")
+        for key in ("bwrap","bwrap_version","codex_executable","codex_version","exec_server_transport","inner_codex_sandbox","inner_codex_network"):
+            if type(descriptor[key]) is not str or not descriptor[key] or len(descriptor[key]) > 512:
+                raise JournalError(f"sandbox provenance invalid at line {line}")
+        if descriptor["inner_codex_sandbox"] != descriptor["filesystem_mode"]:
+            raise JournalError(f"sandbox action mismatch at line {line}")
+        if descriptor["inner_codex_network"] != "restricted":
+            raise JournalError(f"sandbox network mismatch at line {line}")
+    if modern_bwrap and "sandbox" not in value:
+        raise JournalError(f"sandbox provenance missing at line {line}")
 
 def _validate_parent_context(form, generation, generations, line):
     """Check durable parent semantics as they existed before this event."""
@@ -123,8 +170,7 @@ def _validate_parent_context(form, generation, generations, line):
             raise JournalError(f"context supplement parent checkpoint invalid at line {line}")
         return
     execution=parent.get("execution") or {}
-    result=parent.get("result") or parent.get("execution_result") or {}
-    if isinstance(result,dict) and isinstance(result.get("executor_result"),dict): result=result["executor_result"]
+    result=canonical_execution_result(parent)
     if form.get("execution_id") != canonical_context_identifier(execution.get("execution_id")):
         raise JournalError(f"context supplement parent execution invalid at line {line}")
     if form.get("thread_id") != canonical_context_identifier(result.get("session_id")):
@@ -252,7 +298,9 @@ class Journal:
         if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2 and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
             raise JournalError(f"execution handoff digest mismatch at line {n}")
         if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and v2 and started_execution is not None:
-            if p.get("execution") != started_execution or not isinstance(p.get("result"),dict):
+            if p.get("execution") != started_execution:
+                raise JournalError(f"TERMINAL_EXECUTION_MISMATCH at line {n}")
+            if not isinstance(p.get("result"),dict):
                 raise JournalError(f"terminal v2 provenance incomplete at line {n}")
             if started_execution.get("execution_input_sha256") != started_execution.get("effective_prompt_sha256"):
                 raise JournalError(f"execution handoff digest mismatch at line {n}")
@@ -278,7 +326,30 @@ class Journal:
             if event=="TRANSITION_PREPARED" and p.get("logical_event")!="RUN_INTERRUPTED": raise JournalError(f"fallback artifacts invalid at line {n}")
         if event in {"PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p["source"]) is not str or type(p["destination"]) is not str): raise JournalError(f"transition paths invalid at line {n}")
         if "witness" in p: _witness(p["witness"],n)
-        if "execution" in p: _execution(p["execution"],n)
+        if "execution" in p:
+            _execution(p["execution"],n)
+            execution=p["execution"]
+            if execution.get("execution_backend_schema") == "atlas-bwrap-execution/1":
+                descriptor=execution.get("sandbox")
+                envelope=execution.get("permission_envelope")
+                expected={"patch_review":"read-only","state_audit":"read-only","implementation":"workspace-write"}
+                if not isinstance(descriptor,dict):
+                    raise JournalError(f"sandbox provenance missing at line {n}")
+                if p.get("action") in expected and descriptor.get("filesystem_mode") != expected[p["action"]]:
+                    raise JournalError(f"sandbox action mismatch at line {n}")
+                if not isinstance(envelope,dict) or descriptor.get("filesystem_mode") != envelope.get("sandbox_mode"):
+                    raise JournalError(f"sandbox permission mismatch at line {n}")
+                if descriptor.get("filesystem_enforcement") != "atlas-bwrap":
+                    raise JournalError(f"sandbox filesystem enforcement mismatch at line {n}")
+                if descriptor.get("process_enforcement") != "atlas-bwrap":
+                    raise JournalError(f"sandbox process enforcement mismatch at line {n}")
+                if descriptor.get("network_enforcement") != "codex":
+                    raise JournalError(f"sandbox network enforcement mismatch at line {n}")
+                if (envelope.get("network_access") is not False or
+                    descriptor.get("requested_network_access") is not False or
+                    descriptor.get("resolved_network_access") is not False or
+                    execution.get("network_access") is True):
+                    raise JournalError(f"sandbox network mismatch at line {n}")
         epoch2_execution = {"provenance_version", "execution_input_sha256", "report_provenance",
                             "prompt_input", "context_path", "effective_prompt_path",
                             "context_sha256", "effective_prompt_sha256"}
@@ -308,6 +379,8 @@ class Journal:
             result=p.get("result")
             if not isinstance(result,dict) or not isinstance(result.get("report_provenance"),dict):
                 raise JournalError(f"epoch-2 terminal provenance incomplete at line {n}")
+            if started_execution is not None and execution != started_execution:
+                raise JournalError(f"terminal execution provenance mismatch at line {n}")
         provenance_fields={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
         has_provenance=isinstance(p.get("execution"),dict) and bool(provenance_fields & set(p["execution"]))
         context_transaction=(event == "RUN_STARTED" or

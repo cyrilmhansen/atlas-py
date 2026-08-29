@@ -12,9 +12,10 @@ def sh(p,*a): return subprocess.check_output(["git",*a],cwd=p,text=True).strip()
 def repo(tmp_path):
     p=tmp_path/"r"; p.mkdir(); sh(p,"init","-q"); sh(p,"config","user.email","t@e"); sh(p,"config","user.name","t")
     (p/"a").write_text("a"); (p/".gitignore").write_text(""); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n'); sh(p,"add","."); sh(p,"commit","-qm","g"); w=Workflow(p); w.init(); return p,w
-def prompt(w,g=1,parent="genesis",action="implementation",body="body"):
+def prompt(w,g=1,parent="genesis",action="implementation",body="body",schema="atlas-agent-prompt/1"):
     parent_line=f'parent = "{parent}"' if parent=="genesis" else f"parent = {parent}"
-    raw=f'''+++\nschema = "atlas-agent-prompt/1"\ngeneration = {g}\n{parent_line}\ncheckpoint = "W1"\naction = "{action}"\nexpected_head = "{sh(w.root,"rev-parse","HEAD")}"\nsession_mode = "fresh"\n+++\n{body}\n'''.encode(); (w.base/"inbox"/f"user-{g}-{body}").write_bytes(raw); return raw
+    network_line = "network_access = false\n" if schema == "atlas-agent-prompt/2" else ""
+    raw=f'''+++\nschema = "{schema}"\ngeneration = {g}\n{parent_line}\ncheckpoint = "W1"\naction = "{action}"\nexpected_head = "{sh(w.root,"rev-parse","HEAD")}"\nsession_mode = "fresh"\n{network_line}+++\n{body}\n'''.encode(); (w.base/"inbox"/f"user-{g}-{body}").write_bytes(raw); return raw
 def digest(x): return hashlib.sha256(x).hexdigest()
 def running(w): raw=prompt(w); w.ingest(); w.start_run(1); return raw
 def test_state_and_spool_corruption_fail_closed(repo):
@@ -35,6 +36,94 @@ def test_implementation_can_complete_with_new_file_and_binds_content(repo):
     entry=state["latest_repository_witness"]["unexpected_untracked"][0]
     assert bytes.fromhex(entry["path"]).decode()=="new-source.py"
     assert entry["content_sha256"]==hashlib.sha256(b"file\0VALUE = 1\n").hexdigest()
+
+def test_modern_bwrap_provenance_survives_full_workflow_and_cannot_be_removed(repo):
+    p,w=repo; raw=prompt(w); w.ingest()
+    descriptor={"schema":"atlas-bwrap/1","provider":"atlas","backend":"bubblewrap",
+                "filesystem_mode":"workspace-write","filesystem_enforcement":"atlas-bwrap",
+                "process_enforcement":"atlas-bwrap","network_enforcement":"codex",
+                "requested_network_access":False,"resolved_network_access":False,
+                "user_namespace":"bwrap-default","pid_namespace":True,"ipc_namespace":True,
+                "mount_roles":[],"temporary_storage":{"tmp":"private-tmpfs","shm":"private-tmpfs","var_tmp":"private-disk-scratch"},
+                "bwrap":"bwrap","bwrap_version":"0.12","codex_executable":"/opt/codex",
+                "codex_version":"0.150.1","scratch_backing_class":"disk",
+                "exec_server_transport":"CODEX_EXEC_SERVER_URL/websocket-loopback",
+                "inner_codex_sandbox":"workspace-write","inner_codex_network":"restricted"}
+    class ModernFake(FakeExecutor):
+        def sandbox_descriptor(self): return dict(descriptor)
+    w.execute(1,ModernFake(permission_envelope={"sandbox_mode":"workspace-write","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}))
+    path=w.journal.path; rows=[json.loads(x) for x in path.read_text().splitlines()]
+    for row in rows:
+        if isinstance(row["payload"].get("execution"),dict):
+            row["payload"]["execution"].pop("sandbox",None)
+    _append_rehashed(path,rows)
+    with pytest.raises(Exception,match="sandbox provenance missing"):
+        w.journal.read()
+
+@pytest.mark.parametrize("corruption,expected", [
+    ("descriptor", "sandbox provenance missing"),
+    ("action", "sandbox action mismatch"),
+    ("permission", "sandbox permission mismatch"),
+    ("filesystem_enforcement", "sandbox filesystem enforcement mismatch"),
+    ("process_enforcement", "sandbox process enforcement mismatch"),
+    ("network_enforcement", "sandbox network enforcement mismatch"),
+    ("network_state", "sandbox network mismatch"),
+])
+def test_rehashed_modern_bwrap_semantic_corruption_fails_closed(repo, corruption, expected):
+    p,w=repo; prompt(w); w.ingest()
+    descriptor={"schema":"atlas-bwrap/1","provider":"atlas","backend":"bubblewrap",
+                "filesystem_mode":"workspace-write","filesystem_enforcement":"atlas-bwrap",
+                "process_enforcement":"atlas-bwrap","network_enforcement":"codex",
+                "requested_network_access":False,"resolved_network_access":False,
+                "user_namespace":"bwrap-default","pid_namespace":True,"ipc_namespace":True,
+                "mount_roles":[],"temporary_storage":{"tmp":"private-tmpfs","shm":"private-tmpfs","var_tmp":"private-disk-scratch"},
+                "bwrap":"bwrap","bwrap_version":"0.12","codex_executable":"/opt/codex",
+                "codex_version":"0.150.1","scratch_backing_class":"disk",
+                "exec_server_transport":"CODEX_EXEC_SERVER_URL/websocket-loopback",
+                "inner_codex_sandbox":"workspace-write","inner_codex_network":"restricted"}
+    class ModernFake(FakeExecutor):
+        def sandbox_descriptor(self): return dict(descriptor)
+    w.execute(1,ModernFake(permission_envelope={"sandbox_mode":"workspace-write","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}))
+    rows=[json.loads(x) for x in w.journal.path.read_text().splitlines()]
+    for row in rows:
+        execution=row["payload"].get("execution")
+        if not isinstance(execution,dict) or execution.get("execution_backend_schema") != "atlas-bwrap-execution/1": continue
+        if corruption == "descriptor": execution.pop("sandbox",None)
+        elif corruption == "action":
+            execution["sandbox"]["filesystem_mode"]="read-only"
+            execution["sandbox"]["inner_codex_sandbox"]="read-only"
+            execution["permission_envelope"]["sandbox_mode"]="read-only"
+        elif corruption == "permission": execution["permission_envelope"]["sandbox_mode"]="read-only"
+        elif corruption in {"filesystem_enforcement","process_enforcement","network_enforcement"}:
+            execution["sandbox"][corruption]="wrong"
+        elif corruption == "network_state": execution["sandbox"]["requested_network_access"]=True
+    _append_rehashed(w.journal.path,rows)
+    with pytest.raises(Exception,match=expected):
+        w.journal.read()
+
+
+def test_terminal_descriptor_must_equal_durable_start_descriptor(repo):
+    p,w=repo; prompt(w); w.ingest()
+    descriptor={"schema":"atlas-bwrap/1","provider":"atlas","backend":"bubblewrap",
+                "filesystem_mode":"workspace-write","filesystem_enforcement":"atlas-bwrap",
+                "process_enforcement":"atlas-bwrap","network_enforcement":"codex",
+                "requested_network_access":False,"resolved_network_access":False,
+                "user_namespace":"bwrap-default","pid_namespace":True,"ipc_namespace":True,
+                "mount_roles":[],"temporary_storage":{"tmp":"private-tmpfs","shm":"private-tmpfs","var_tmp":"private-disk-scratch"},
+                "bwrap":"bwrap","bwrap_version":"0.12","codex_executable":"/opt/codex",
+                "codex_version":"0.150.1","scratch_backing_class":"disk",
+                "exec_server_transport":"CODEX_EXEC_SERVER_URL/websocket-loopback",
+                "inner_codex_sandbox":"workspace-write","inner_codex_network":"restricted"}
+    class ModernFake(FakeExecutor):
+        def sandbox_descriptor(self): return dict(descriptor)
+    w.execute(1,ModernFake(permission_envelope={"sandbox_mode":"workspace-write","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}))
+    rows=[json.loads(x) for x in w.journal.path.read_text().splitlines()]
+    terminal=next(row for row in rows if row["event"] == "RUN_COMPLETED")
+    terminal["payload"]["execution"]["sandbox"]["bwrap_version"]="0.13"
+    _append_rehashed(w.journal.path,rows)
+    with pytest.raises(Exception,match="TERMINAL_EXECUTION_MISMATCH"):
+        w._validate_terminal_transition("RUN_COMPLETED", terminal["payload"],
+                                        replay_journal(rows[:rows.index(terminal)]))
 def test_patch_review_detects_witnessed_new_file_content_change(repo):
     p,w=repo; raw=running(w); new=p/"new-source.py"; new.write_text("reviewed\n")
     w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})

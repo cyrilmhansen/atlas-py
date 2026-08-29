@@ -7,6 +7,7 @@ from .workflow import Workflow,WorkflowError,replay_journal,witness_matches_poli
 from .spool import validate_spool
 from .repository import witness
 from .codex_executor import CodexExecutor
+from .bubblewrap import AtlasBubblewrapExecutor
 
 
 def _duration(started,finished):
@@ -46,6 +47,12 @@ class DispatchPresenter:
         if sandbox: values.append(f"sandbox {sandbox}")
         if type(network) is bool: values.append(f"network {'enabled' if network else 'disabled'}")
         if values: print(" · ".join(values))
+        sandbox_descriptor=event.get("sandbox") or {}
+        if sandbox_descriptor.get("backend") == "bubblewrap":
+            print("sandbox Atlas/bubblewrap")
+            print(f"workspace {'read-only' if sandbox_descriptor.get('filesystem_mode') == 'read-only' else 'read-write'}")
+            print("tmp memory · var/tmp disk")
+            print("network restricted by Codex")
         if snapshot.get("session_mode")=="reuse":
             values=[]
             if snapshot.get("reused_from_execution_id"): values.append(f"execution {snapshot['reused_from_execution_id']}")
@@ -100,11 +107,11 @@ def main(argv=None):
             print("repository witness " + ("MATCH" if current==state["latest_repository_witness"] else "MISMATCH"))
             print("push not performed")
         elif a.command=="report": print(w.report(a.generation))
-        elif a.command=="executor-info": print(json.dumps(CodexExecutor().info(),sort_keys=True,indent=2))
-        elif a.command=="execute": w.execute(a.generation,CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
+        elif a.command=="executor-info": print(json.dumps(AtlasBubblewrapExecutor().info(),sort_keys=True,indent=2))
+        elif a.command=="execute": w.execute(a.generation,AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
         elif a.command=="dispatch":
             presenter=DispatchPresenter()
-            executor=CodexExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,progress_callback=presenter.progress)
+            executor=AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,progress_callback=presenter.progress)
             w.dispatch(executor,observer=presenter.event)
         elif a.command=="complete-run":
             if not a.result: raise WorkflowError("--result JSON is required")

@@ -25,6 +25,8 @@ class CodexExecutor:
         validate_permission_envelope(self._envelope())
         if isinstance(self.timeout_seconds,bool) or not isinstance(self.timeout_seconds,(int,float)) or self.timeout_seconds <= 0: raise ExecutorError("INVALID_TIMEOUT")
         if isinstance(self.heartbeat_seconds,bool) or not isinstance(self.heartbeat_seconds,(int,float)) or self.heartbeat_seconds <= 0: raise ExecutorError("INVALID_HEARTBEAT_INTERVAL")
+    def _environment(self):
+        return dict(os.environ)
     def info(self):
         if not self.executable: return {"executor":"codex","executable":None,"available":False,"version":None,"capabilities":[]}
         p=subprocess.run([self.executable,"--version"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
@@ -186,7 +188,7 @@ class CodexExecutor:
                 # the new session belongs to Atlas even if setup is interrupted
                 # before any stream has been configured.
                 try:
-                    proc=subprocess.Popen(list(prepared.command),cwd=spec.repository_root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=stderr,start_new_session=True)
+                    proc=subprocess.Popen(list(prepared.command),cwd=spec.repository_root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=stderr,start_new_session=True,env=self._environment())
                 except OSError as error:
                     raise ExecutorError(f"CODEX_LAUNCH_FAILED: {error}") from error
                 try:

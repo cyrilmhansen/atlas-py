@@ -4,11 +4,12 @@ from dataclasses import replace
 from pathlib import Path
 from .model import Prompt
 from .prompt import parse_prompt, PromptError
-from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier
+from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
 from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
 from .codex_executor import CodexExecutor
+from .bubblewrap import AtlasBubblewrapExecutor
 from .telemetry import USAGE_SCHEMA,collect_usage,load_presentation_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 class WorkflowError(RuntimeError): pass
@@ -78,6 +79,8 @@ def replay_journal(events):
             if e["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="RUNNING" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
+                if rec.get("execution") is not None and p.get("execution") != rec["execution"]:
+                    raise WorkflowError("JOURNAL_TERMINAL_EXECUTION_MISMATCH")
                 status="COMPLETED" if e["event"]=="RUN_COMPLETED" else "INTERRUPTED"; rec["status"]=status; state["lifecycle"][g]=status
                 if e["event"]=="RUN_COMPLETED":
                     intent=state.get("outstanding_checkpoints",{}).get(g)
@@ -399,10 +402,7 @@ class Workflow:
         except PolicyError as error: raise WorkflowError(str(error)) from error
     @staticmethod
     def _execution_result(record):
-        if isinstance(record.get("result"),dict) and isinstance(record["result"].get("executor_result"),dict):
-            return record["result"]["executor_result"]
-        if isinstance(record.get("execution_result"),dict): return record["execution_result"]
-        return record.get("execution_result",{})
+        return canonical_execution_result(record)
     def _parent_context(self, state, generation):
         """Build the bounded, informational context for the immediate parent."""
         parent = state["generations"].get(str(generation - 1))
@@ -782,7 +782,7 @@ class Workflow:
                     except WorkflowError: raise
                 if snapshot["executor"]=="manual": raise WorkflowError("CHECKPOINT_MANUAL_REQUIRED")
             if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
-            executor=executor or CodexExecutor()
+            executor=executor or AtlasBubblewrapExecutor()
             if snapshot and isinstance(executor,CodexExecutor):
                 executor.model=snapshot["requested_model"]; executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
             ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
@@ -802,6 +802,9 @@ class Workflow:
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+            if hasattr(executor, "sandbox_descriptor"):
+                metadata["sandbox"] = executor.sandbox_descriptor()
+                metadata["execution_backend_schema"] = "atlas-bwrap-execution/1"
             metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
             if snapshot:
                 metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
@@ -855,6 +858,8 @@ class Workflow:
             execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
             prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
             launch={"kind":"dispatch_started","generation":generation,"action":x["action"],"session_mode":x.get("session_mode"),"execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+            if hasattr(executor, "sandbox_descriptor"):
+                launch["sandbox"] = executor.sandbox_descriptor()
             if snapshot: launch["policy_snapshot"]=snapshot
             self._observe(observer,launch)
             result=executor.run_execution(prepared)
