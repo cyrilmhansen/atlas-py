@@ -368,8 +368,8 @@ def test_checkpoint_reset_failure_is_distinct(repo,monkeypatch):
     with pytest.raises(WorkflowError,match="CHECKPOINT_ROLLBACK_FAILED: reset failed"): w.checkpoint(2,"will fail")
 
 
-def test_bubblewrap_executes_sealed_memfd_through_namespace_proc_symlink():
-    """Regression: bwrap must execute the inherited sealed fd, not host /proc lookup."""
+def test_bubblewrap_executes_controller_runtime_through_readonly_bind(tmp_path):
+    """Regression: bwrap executes the controller's authenticated runtime bind."""
     import fcntl
     import os
     import shutil
@@ -415,11 +415,16 @@ def test_bubblewrap_executes_sealed_memfd_through_namespace_proc_symlink():
             if os.path.exists(path):
                 command += ["--ro-bind", path, path]
 
+        runtime = tmp_path / "codex.runtime"
+        with open(runtime, "wb") as dst:
+            dst.write(Path(source).read_bytes())
+        os.chmod(runtime, 0o500)
+
         command += [
             "--proc", "/proc",
             "--dev", "/dev",
             "--dir", "/opt",
-            "--symlink", f"/proc/self/fd/{fd}", "/opt/atlas-codex",
+            "--ro-bind", str(runtime), "/opt/atlas-codex",
             "--",
             "/opt/atlas-codex",
         ]

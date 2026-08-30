@@ -7,6 +7,7 @@ is the process launched inside the namespace.
 from __future__ import annotations
 
 import os
+import hashlib
 import re
 import shutil
 import stat
@@ -57,6 +58,7 @@ class ScratchStore:
         self.control = self.root / "control"
         self.runs = self.root / "runs"
         self._authorities = {}
+        self._runtime_authorities = {}
 
     @staticmethod
     def _open_dir_at(parent_fd, name, create=False):
@@ -209,6 +211,8 @@ class ScratchStore:
             if authority is None:
                 raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_NOT_OWNED")
             root_fd, runs_fd, control_fd, run_fd, identity = authority
+            runtime_path = self.control / f"{path.name}.runtime"
+            self.remove_runtime(runtime_path)
             current = os.stat(path.name, dir_fd=runs_fd, follow_symlinks=False)
             if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
                 raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_CHANGED")
@@ -231,6 +235,86 @@ class ScratchStore:
                         try: os.close(fd)
                         except OSError: pass
 
+    def materialize_runtime(self, scratch: Path, execution_id: str, sealed_fd: int,
+                            expected_sha256: str) -> Path:
+        """Materialize an authenticated sealed runtime in controller control."""
+        scratch = Path(scratch)
+        authority = self._authorities.get(str(scratch))
+        if authority is None or scratch.parent != self.runs:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_NOT_OWNED")
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_DIGEST_REQUIRED")
+        _, _, control_fd, _, _ = authority
+        name = f"{execution_id}.runtime"
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,128}\.runtime", name):
+            raise AtlasSandboxError("ATLAS_SANDBOX_BAD_EXECUTION_ID")
+        runtime_fd = None
+        created = False
+        try:
+            runtime_fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                                 os.O_NOFOLLOW, 0o500, dir_fd=control_fd)
+            created = True
+            os.fchmod(runtime_fd, 0o500)
+            if os.fstat(runtime_fd).st_uid != os.getuid():
+                raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_OWNER_MISMATCH")
+            digest = hashlib.sha256()
+            offset = 0
+            while True:
+                chunk = os.pread(sealed_fd, 1024 * 1024, offset)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                written = 0
+                while written < len(chunk):
+                    count = os.write(runtime_fd, chunk[written:])
+                    if count <= 0:
+                        raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_COPY_FAILED")
+                    written += count
+                offset += len(chunk)
+            if digest.hexdigest() != expected_sha256:
+                raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_DIGEST_MISMATCH")
+            os.fsync(runtime_fd)
+            identity = os.fstat(runtime_fd)
+            if (identity.st_uid != os.getuid() or
+                    identity.st_mode & 0o777 != 0o500):
+                raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_PERMISSIONS")
+            os.fsync(control_fd)
+            path = self.control / name
+            self._runtime_authorities[str(path)] = (control_fd, identity)
+            return path
+        except (OSError, ValueError) as error:
+            if isinstance(error, AtlasSandboxError):
+                raise
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_MATERIALIZE_FAILED") from error
+        finally:
+            if runtime_fd is not None:
+                try: os.close(runtime_fd)
+                except OSError: pass
+            if created and str(self.control / name) not in self._runtime_authorities:
+                try: os.unlink(name, dir_fd=control_fd)
+                except OSError: pass
+                try: os.fsync(control_fd)
+                except OSError: pass
+
+    def remove_runtime(self, path: Path) -> None:
+        """Unlink only the exact runtime inode created by materialize_runtime."""
+        path = Path(path)
+        if path.parent != self.control:
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_NOT_OWNED")
+        record = self._runtime_authorities.get(str(path))
+        if record is None:
+            return
+        control_fd, identity = record
+        try:
+            current = os.stat(path.name, dir_fd=control_fd, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+                raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_CHANGED")
+            os.unlink(path.name, dir_fd=control_fd)
+            os.fsync(control_fd)
+            self._runtime_authorities.pop(str(path), None)
+        except OSError as error:
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_REMOVE_FAILED") from error
+
 class AtlasBubblewrapExecutor(CodexExecutor):
     """Codex executor whose remote execution environment is Atlas/bwrap."""
 
@@ -239,6 +323,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
 
     def __init__(self, *args, bwrap="bwrap", scratch_root=Path("/var/tmp/atlas-agent"), **kwargs):
         super().__init__(*args, **kwargs)
+        # The npm entrypoint is a dispatcher, not an executable that can be
+        # mounted as the Linux Codex runtime.  Resolve it once and make every
+        # subsequent identity check and sealed copy refer to the native image.
+        native = _native_codex(self.executable)
+        if native is not None:
+            self.executable = str(native)
         self.bwrap = shutil.which(bwrap) or (bwrap if Path(bwrap).is_file() else None)
         self.scratch_store = ScratchStore(Path(scratch_root))
         self._server = None; self._server_stdin = None; self._server_url = None; self._scratch = None
@@ -302,11 +392,15 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_GIT_TOPOLOGY_UNSUPPORTED")
         return git_dir
 
-    def _mount_command(self, spec, scratch: Path, runtime_fd: int, listen="ws://127.0.0.1:0") -> list[str]:
+    def _mount_command(self, spec, scratch: Path, runtime_path: Path | int, listen="ws://127.0.0.1:0") -> list[str]:
         root = spec.repository_root.resolve()
         git_dir = self._git_dir(root)
         mode = "read-only" if self.sandbox == "read-only" else "read-write"
         if isinstance(listen, int): listen=f"ws://127.0.0.1:{listen}"
+        # Keep the small unit-test helper API source-compatible.  Production
+        # startup always passes the controller-private materialized Path.
+        if isinstance(runtime_path, int):
+            runtime_path = Path(f"/proc/self/fd/{runtime_path}")
         args = [self.bwrap, "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc",
                 "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib",
                 "--ro-bind", "/lib64", "/lib64", "--symlink", "usr/bin", "/bin",
@@ -315,11 +409,10 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/home",
                 "--dir", "/home/atlas", "--dir", "/home/atlas/.codex", "--dir", "/var", "--dir", "/var/tmp",
                 "--bind", str(scratch), "/var/tmp",
-                # --ro-bind cannot resolve /proc/self/fd/N as a host-side
-                # source.  Create the link inside the namespace instead;
-                # pass_fds keeps this exact sealed memfd alive for exec.
+                # The controller-private runtime is never mounted as scratch;
+                # only its read-only bind is exposed at the Codex pathname.
                 "--dir", "/opt",
-                "--symlink", f"/proc/self/fd/{runtime_fd}", "/opt/atlas-codex",
+                "--ro-bind", str(runtime_path), "/opt/atlas-codex",
                 "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
                 "--chdir", str(root)]
@@ -334,7 +427,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def _start_server(self, spec, runtime_fd: int) -> None:
         self._scratch = self.scratch_store.create(str(spec.execution_id))
         try:
-            command = self._mount_command(spec,self._scratch,runtime_fd)
+            snapshot = spec.policy_snapshot or {}
+            runtime_path = self.scratch_store.materialize_runtime(
+                self._scratch, str(spec.execution_id), runtime_fd,
+                snapshot.get("codex_binary_sha256"),
+            )
+            command = self._mount_command(spec, self._scratch, runtime_path)
             self._server = subprocess.Popen(
                 command,
                 stdin=subprocess.PIPE,
@@ -365,7 +463,11 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                     except BlockingIOError: continue
                     if not chunk:
                         if endpoint is None:
-                            raise AtlasSandboxError("ATLAS_SANDBOX_EXEC_SERVER_URL_UNAVAILABLE")
+                            detail = (self._server.stderr.read() if self._server.stderr and
+                                      self._server.poll() is not None else b"").decode("utf-8", "replace")
+                            raise AtlasSandboxError(
+                                f"ATLAS_SANDBOX_EXEC_SERVER_URL_UNAVAILABLE: {detail[:300]}"
+                            )
                         if buffer:
                             raise AtlasSandboxError("ATLAS_SANDBOX_EXEC_SERVER_URL_MULTIPLE")
                         self._server_url = endpoint
@@ -411,7 +513,6 @@ class AtlasBubblewrapExecutor(CodexExecutor):
 
     def _stop_server(self) -> None:
         server, stdin, scratch = self._server, self._server_stdin, self._scratch
-        self._server = self._server_stdin = self._scratch = self._server_url = None
         errors = []
         def record(label, error):
             if error is not None:
@@ -419,34 +520,78 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         if stdin is not None:
             try: stdin.close()
             except BaseException as error: record("teardown", error)
+        reaped = server is None
         if server is not None:
-            try: server.wait(timeout=2)
+            try:
+                server.wait(timeout=2)
+                reaped = True
             except subprocess.TimeoutExpired:
                 try: server.send_signal(signal.SIGTERM)
-                except BaseException as error: record("teardown", error)
-                try: server.wait(timeout=2)
+                except BaseException as signal_error: record("teardown", signal_error)
+                try:
+                    server.wait(timeout=2)
+                    reaped = True
                 except subprocess.TimeoutExpired:
-                    try: server.kill()
-                    except BaseException as error: record("teardown", error)
-                    try: server.wait(timeout=2)
-                    except BaseException: record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
-                except BaseException as error:
-                    record("teardown", error)
-                    # A failed TERM wait must not suppress the KILL attempt.
                     try: server.kill()
                     except BaseException as kill_error: record("teardown", kill_error)
                     try: server.wait(timeout=2)
-                    except BaseException as reap_error: record("teardown", reap_error)
+                    except subprocess.TimeoutExpired:
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    except BaseException as reap_error:
+                        record("teardown", reap_error)
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    else:
+                        reaped = True
             except BaseException as error:
                 record("teardown", error)
+                try: server.send_signal(signal.SIGTERM)
+                except BaseException as signal_error: record("teardown", signal_error)
+                try:
+                    server.wait(timeout=2)
+                    reaped = True
+                except subprocess.TimeoutExpired:
+                    try: server.kill()
+                    except BaseException as kill_error: record("teardown", kill_error)
+                    try: server.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    except BaseException as reap_error:
+                        record("teardown", reap_error)
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    else:
+                        reaped = True
+                except BaseException as term_error:
+                    record("teardown", term_error)
+                    try: server.kill()
+                    except BaseException as kill_error: record("teardown", kill_error)
+                    try: server.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    except BaseException as reap_error:
+                        record("teardown", reap_error)
+                        record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
+                    else:
+                        reaped = True
             if server.stderr is not None:
                 try: server.stderr.close()
                 except BaseException as error: record("teardown", error)
-        if scratch is not None:
+        if reaped and scratch is not None:
             try:
                 self.scratch_store.cleanup(scratch)
             except BaseException as error:
                 record("cleanup", error)
+        if reaped and not errors:
+            self._server = self._server_stdin = self._scratch = self._server_url = None
+        elif reaped and not any(isinstance(error, AtlasSandboxError) and
+                                str(error) == "ATLAS_SANDBOX_SERVER_UNREAPED"
+                                for _, error in errors):
+            # Cleanup failures retain the handles so a later teardown can
+            # retry; the child itself was nevertheless positively reaped.
+            pass
+        elif not reaped and not any(isinstance(error, AtlasSandboxError) and
+                                    str(error) == "ATLAS_SANDBOX_SERVER_UNREAPED"
+                                    for _, error in errors):
+            record("teardown", AtlasSandboxError("ATLAS_SANDBOX_SERVER_UNREAPED"))
         if errors:
             _, primary = errors[0]
             for label, secondary in errors[1:]:
@@ -475,7 +620,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         if spec.action in {"patch_review", "state_audit"} and self.network_access:
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH")
         native = _native_codex(self.executable)
-        if native is None or native != Path(self.executable).resolve():
+        if native is None:
             raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
         # super().prepare_execution() already authenticated and executed
         # the sealed Codex image for its version before RUN_STARTED.
@@ -540,8 +685,8 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         runtime_fd=None
         try:
             # Configuration is revalidated at the final boundary.  The
-            # executable itself is copied from O_NOFOLLOW into one sealed
-            # memfd whose exact inode is shared by server and client.
+            # sealed memfd remains the controller-side execution source;
+            # startup separately authenticates identical bytes for bwrap.
             self._validate_runtime_identity(prepared.policy_snapshot)
             runtime_fd=self._sealed_runtime_fd(prepared.policy_snapshot)
             self._validate_sealed_runtime_fd(

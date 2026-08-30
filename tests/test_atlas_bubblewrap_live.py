@@ -1,11 +1,80 @@
 """Capability-gated tests of the actual bubblewrap boundary."""
 import os
+import hashlib
+import base64
+import json
 import select
 import shutil
+import socket
 import subprocess
 import tempfile
 from pathlib import Path
 import pytest
+
+from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor, AtlasSandboxError, _native_codex
+from tools.atlas_agent.executor import ExecutionSpec
+
+
+def _ws_send(sock, value):
+    payload = json.dumps(value, separators=(",", ":")).encode()
+    mask = os.urandom(4)
+    header = bytearray([0x81])
+    length = len(payload)
+    if length < 126:
+        header.append(0x80 | length)
+    elif length < 65536:
+        header.append(0x80 | 126); header.extend(length.to_bytes(2, "big"))
+    else:
+        header.append(0x80 | 127); header.extend(length.to_bytes(8, "big"))
+    sock.sendall(header + mask + bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload)))
+
+
+def _ws_recv(sock):
+    def read_exact(length):
+        data = bytearray()
+        while len(data) < length:
+            chunk = sock.recv(length - len(data))
+            if not chunk:
+                raise AssertionError("exec-server websocket closed")
+            data.extend(chunk)
+        return bytes(data)
+
+    while True:
+        first, second = read_exact(2)
+        opcode = first & 0x0f
+        length = second & 0x7f
+        if length == 126:
+            length = int.from_bytes(read_exact(2), "big")
+        elif length == 127:
+            length = int.from_bytes(read_exact(8), "big")
+        mask = read_exact(4) if second & 0x80 else None
+        payload = bytearray(read_exact(length))
+        if mask:
+            for i in range(length):
+                payload[i] ^= mask[i % 4]
+        if opcode == 0x9:
+            sock.sendall(bytes([0x8a, len(payload)]) + payload)
+            continue
+        if opcode == 0x8:
+            raise AssertionError("exec-server websocket closed")
+        if opcode == 0x1:
+            return json.loads(payload)
+
+
+def _ws_connect(url):
+    port = int(url.rsplit(":", 1)[1])
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+    key = base64.b64encode(os.urandom(16)).decode()
+    sock.sendall((
+        f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+        f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    ).encode())
+    response = bytearray()
+    while b"\r\n\r\n" not in response:
+        response.extend(sock.recv(4096))
+    assert response.startswith(b"HTTP/1.1 101"), response[:200]
+    return sock
 
 def _command(tmp_path, script, writable=False, scratch=None):
     repo=tmp_path/"repo"; repo.mkdir(exist_ok=True)
@@ -90,3 +159,129 @@ def test_live_pid_namespace_reaps_setsid_descendant(tmp_path):
             except OSError: pass
         if process.poll() is None:
             process.kill(); process.wait(timeout=3)
+
+
+def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path, monkeypatch):
+    """The real server must create its sandbox launcher from /opt/atlas-codex."""
+    if shutil.which("bwrap") is None:
+        pytest.skip("bubblewrap unavailable")
+    executable = os.environ.get("ATLAS_CODEX_EXECUTABLE", "codex")
+    executor = AtlasBubblewrapExecutor(executable=executable, scratch_root=tmp_path / "scratch")
+    native = _native_codex(executor.executable)
+    if native is None:
+        pytest.skip("installed native Codex unavailable")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir(mode=0o700)
+    (codex_home / "config.toml").write_text("suppress_unstable_features_warning = true\n")
+    snapshot = {
+        "schema": "atlas-agent-policy-snapshot/2",
+        "codex_binary_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
+    }
+    spec = ExecutionSpec(1, "0" * 64, "patch_review", repo / "prompt", repo,
+                        "live-runtime", tmp_path / "report", tmp_path / "runtime",
+                        policy_snapshot=snapshot)
+
+    original_mount = executor._mount_command
+    def observable_mount(spec, scratch, runtime_path, listen="ws://127.0.0.1:0"):
+        command = original_mount(spec, scratch, runtime_path, listen)
+        for i in range(len(command) - 1):
+            if command[i:i + 2] == ["--dir", "/home/atlas/.codex"]:
+                command[i:i + 2] = ["--bind", str(codex_home), "/home/atlas/.codex"]
+                break
+        return command
+    monkeypatch.setattr(executor, "_mount_command", observable_mount)
+
+    fd = executor._sealed_runtime_fd(snapshot)
+    runtime = tmp_path / "scratch" / "control" / "live-runtime.runtime"
+    try:
+        try:
+            executor._start_server(spec, fd)
+        except AtlasSandboxError as error:
+            if any(token in str(error).lower() for token in
+                   ("user namespace", "operation not permitted", "permission denied")):
+                pytest.skip(str(error))
+            raise
+        links = list(codex_home.glob("tmp/arg0/*/codex-linux-sandbox"))
+        assert runtime.exists()
+        assert links and links[0].is_symlink()
+        assert os.readlink(links[0]) == "/opt/atlas-codex"
+        assert "(deleted)" not in os.readlink(links[0])
+    finally:
+        try:
+            executor._stop_server()
+            assert not runtime.exists()
+        finally:
+            os.close(fd)
+
+
+def test_live_exec_server_spawns_true_through_linux_sandbox(tmp_path):
+    """Exercise process/start and process/read with no model or Codex turn."""
+    if shutil.which("bwrap") is None:
+        pytest.skip("bubblewrap unavailable")
+    executor = AtlasBubblewrapExecutor(
+        executable=os.environ.get("ATLAS_CODEX_EXECUTABLE", "codex"),
+        scratch_root=tmp_path / "scratch",
+    )
+    native = _native_codex(executor.executable)
+    if native is None:
+        pytest.skip("installed native Codex unavailable")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    snapshot = {
+        "schema": "atlas-agent-policy-snapshot/2",
+        "codex_binary_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
+    }
+    spec = ExecutionSpec(1, "0" * 64, "patch_review", repo / "prompt", repo,
+                        "live-process", tmp_path / "report", tmp_path / "runtime",
+                        policy_snapshot=snapshot)
+    fd = executor._sealed_runtime_fd(snapshot)
+    sock = None
+    try:
+        try:
+            executor._start_server(spec, fd)
+        except AtlasSandboxError as error:
+            if any(token in str(error).lower() for token in
+                   ("user namespace", "operation not permitted", "permission denied")):
+                pytest.skip(str(error))
+            raise
+        sock = _ws_connect(executor._server_url)
+
+        def request(request_id, method, params):
+            _ws_send(sock, {"id": request_id, "method": method, "params": params})
+            while True:
+                message = _ws_recv(sock)
+                if message.get("id") == request_id:
+                    assert "error" not in message, message
+                    return message["result"]
+
+        request(1, "initialize", {"clientName": "atlas-agent-test"})
+        _ws_send(sock, {"method": "initialized", "params": {}})
+        started = request(2, "process/start", {
+            "processId": "true-zero-token",
+            "argv": ["/bin/true"],
+            "cwd": repo.as_uri(),
+            "env": {},
+            "tty": False,
+            "arg0": "codex-linux-sandbox",
+        })
+        process_id = started["processId"]
+        result = request(3, "process/read", {
+            "processId": process_id,
+            "afterSeq": None,
+            "maxBytes": 4096,
+            "waitMs": 5000,
+        })
+        assert result["exited"] is True
+        assert result["exitCode"] == 0
+    finally:
+        if sock is not None:
+            sock.close()
+        try:
+            executor._stop_server()
+        finally:
+            os.close(fd)

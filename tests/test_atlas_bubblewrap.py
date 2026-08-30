@@ -1,6 +1,7 @@
 import hashlib
 import io
 import os
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ def _spec(tmp_path):
     (root / "prompt").write_bytes(b"hello")
     return ExecutionSpec(1, hashlib.sha256(b"hello").hexdigest(), "patch_review", root / "prompt",
                          root, "execution-test", tmp_path / "report", tmp_path / "runtime",
+                         policy_snapshot={"codex_binary_sha256": hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest()},
                          input_mode="bytes-v1", prompt_bytes=b"hello",
                          expected_input_sha256=hashlib.sha256(b"hello").hexdigest())
 
@@ -118,6 +120,13 @@ def test_mount_plan_has_distinct_storage_and_readonly_git(tmp_path, monkeypatch)
     assert "--unshare-pid" in command and "--unshare-ipc" in command
     assert "--clearenv" in command
     assert "--ro-bind" in command
+    runtime = tmp_path / "scratch" / "control" / "execution-test.runtime"
+    command = executor._mount_command(spec, tmp_path / "scratch" / "execution-test", runtime, 4321)
+    mount = command.index("--ro-bind", command.index(str(runtime)) - 1)
+    assert command[mount:mount + 3] == ["--ro-bind", str(runtime), "/opt/atlas-codex"]
+    assert ["/proc/self/fd/4321", "/opt/atlas-codex"] not in [
+        command[i:i + 2] for i in range(len(command) - 1)
+    ]
     repo_bind = next(i for i, value in enumerate(command)
                      if value == "--ro-bind" and command[i + 1] == str(spec.repository_root))
     assert repo_bind >= 0
@@ -189,6 +198,50 @@ def test_scratch_control_is_not_child_visible(tmp_path):
     run = store.create("run-a")
     assert (store.control / "run-a").is_file()
     assert not (run / store.MARKER).exists()
+
+
+def test_materialize_runtime_is_authenticated_and_controller_private(tmp_path, pinned_runtime_fd):
+    store = ScratchStore(tmp_path / "scratch")
+    run = store.create("run-a")
+    expected = hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest()
+    runtime = store.materialize_runtime(run, "run-a", pinned_runtime_fd, expected)
+    assert runtime == store.control / "run-a.runtime"
+    assert runtime.stat().st_uid == os.getuid()
+    assert runtime.stat().st_mode & 0o777 == 0o500
+    assert runtime.read_bytes() == Path("/usr/bin/true").read_bytes()
+    assert not (run / "run-a.runtime").exists()
+    store.remove_runtime(runtime)
+    store.cleanup(run)
+
+
+def test_materialized_runtime_sha_matches_sealed_fd(tmp_path, pinned_runtime_fd):
+    store = ScratchStore(tmp_path / "scratch")
+    run = store.create("run-a")
+    expected = hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest()
+    runtime = store.materialize_runtime(run, "run-a", pinned_runtime_fd, expected)
+    assert hashlib.sha256(runtime.read_bytes()).hexdigest() == hashlib.sha256(
+        os.pread(pinned_runtime_fd, 1024 * 1024, 0)
+    ).hexdigest()
+    store.cleanup(run)
+
+
+def test_materialized_runtime_is_never_under_runs(tmp_path, pinned_runtime_fd):
+    store = ScratchStore(tmp_path / "scratch")
+    run = store.create("run-a")
+    expected = hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest()
+    runtime = store.materialize_runtime(run, "run-a", pinned_runtime_fd, expected)
+    assert runtime.parent == store.control
+    assert not (run / runtime.name).exists()
+    store.cleanup(run)
+
+
+def test_materialize_runtime_digest_failure_removes_only_created_file(tmp_path, pinned_runtime_fd):
+    store = ScratchStore(tmp_path / "scratch")
+    run = store.create("run-a")
+    with pytest.raises(AtlasSandboxError, match="RUNTIME_DIGEST_MISMATCH"):
+        store.materialize_runtime(run, "run-a", pinned_runtime_fd, "0" * 64)
+    assert not (store.control / "run-a.runtime").exists()
+    store.cleanup(run)
 
 
 def test_action_mode_is_bound_before_launch(tmp_path, monkeypatch):
@@ -379,7 +432,12 @@ def test_execution_teardown_and_cleanup_keep_all_types(
     prepared = PreparedExecution(spec, "atlas", (), "test", {}, None, executor._descriptor)
     class Server:
         stderr = io.BytesIO()
-        def wait(self, timeout=None): raise TeardownError("teardown T")
+        def __init__(self): self.waits = [TeardownError("teardown T"), None]
+        def wait(self, timeout=None):
+            result = self.waits.pop(0)
+            if isinstance(result, BaseException): raise result
+        def send_signal(self, value): pass
+        def kill(self): pass
     executor._server = Server(); executor._scratch = tmp_path / "scratch" / "run"
     monkeypatch.setattr(
         executor, "_sealed_runtime_fd",
@@ -491,9 +549,12 @@ def test_launch_failure_still_cleans_scratch(
     assert not (tmp_path / "scratch" / "runs" / "execution-test").exists()
 
 
-def test_unreaped_server_still_cleans_scratch(tmp_path):
+def test_unreaped_server_retains_runtime_and_scratch_for_retry(tmp_path, pinned_runtime_fd):
     store = ScratchStore(tmp_path / "scratch")
     run = store.create("run-a")
+    runtime = store.materialize_runtime(
+        run, "run-a", pinned_runtime_fd,
+        hashlib.sha256(os.pread(pinned_runtime_fd, 1024 * 1024, 0)).hexdigest())
     class Stuck:
         pid = 1
         stdin = None
@@ -509,4 +570,64 @@ def test_unreaped_server_still_cleans_scratch(tmp_path):
     executor._server, executor._scratch = Stuck(), run
     with pytest.raises(AtlasSandboxError, match="UNREAPED"):
         executor._stop_server()
-    assert not run.exists()
+    assert run.exists() and runtime.exists()
+    assert executor._server is not None and executor._scratch == run
+
+
+@pytest.mark.parametrize("waits,expected_signal", [
+    ([], None),
+    (["timeout", "ok"], signal.SIGTERM),
+    (["timeout", "timeout", "ok"], signal.SIGKILL),
+])
+def test_stop_server_cleans_only_after_positive_reap(tmp_path, pinned_runtime_fd, waits, expected_signal):
+    store = ScratchStore(tmp_path / "scratch"); run = store.create("run-a")
+    expected = hashlib.sha256(os.pread(pinned_runtime_fd, 1024 * 1024, 0)).hexdigest()
+    runtime = store.materialize_runtime(run, "run-a", pinned_runtime_fd, expected)
+
+    class Process:
+        pid = 123; stdin = None; stderr = None
+        def __init__(self): self.calls = []; self.waits = list(waits)
+        def wait(self, timeout=None):
+            self.calls.append(("wait", timeout))
+            result = self.waits.pop(0) if self.waits else "ok"
+            if result == "timeout": raise subprocess.TimeoutExpired("server", timeout)
+            if result == "exception": raise KeyboardInterrupt()
+        def send_signal(self, value): self.calls.append(("signal", value))
+        def kill(self): self.calls.append(("kill", signal.SIGKILL))
+
+    process = Process(); executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    executor.scratch_store = store; executor._server = process; executor._scratch = run
+    if expected_signal is None:
+        executor._stop_server()
+    else:
+        executor._stop_server()
+    assert not runtime.exists() and not run.exists()
+    assert executor._server is None
+    if expected_signal is not None:
+        assert ("signal", expected_signal) in process.calls or ("kill", signal.SIGKILL) in process.calls
+
+
+@pytest.mark.parametrize("waits", [["timeout", "timeout", "timeout"],
+                                    ["exception", "ok"], ["exception", "exception", "ok"]])
+def test_stop_server_unconfirmed_or_interrupted_reap_retains_retry_state(tmp_path, pinned_runtime_fd, waits):
+    store = ScratchStore(tmp_path / "scratch"); run = store.create("run-a")
+    expected = hashlib.sha256(os.pread(pinned_runtime_fd, 1024 * 1024, 0)).hexdigest()
+    runtime = store.materialize_runtime(run, "run-a", pinned_runtime_fd, expected)
+    class Process:
+        pid = 123; stdin = None; stderr = None
+        def __init__(self): self.waits = list(waits); self.calls = []
+        def wait(self, timeout=None):
+            self.calls.append("wait"); result = self.waits.pop(0)
+            if result == "timeout": raise subprocess.TimeoutExpired("server", timeout)
+            if result == "exception": raise KeyboardInterrupt()
+        def send_signal(self, value): self.calls.append("term")
+        def kill(self): self.calls.append("kill")
+    process = Process(); executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    executor.scratch_store = store; executor._server = process; executor._scratch = run
+    if waits[-1] == "ok":
+        with pytest.raises(KeyboardInterrupt): executor._stop_server()
+        assert not runtime.exists() and not run.exists()
+    else:
+        with pytest.raises(AtlasSandboxError, match="UNREAPED"): executor._stop_server()
+        assert runtime.exists() and run.exists()
+        assert executor._server is process and executor._scratch == run
