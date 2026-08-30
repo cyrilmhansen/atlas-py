@@ -11,7 +11,7 @@ prompt_set_sha256 = "73973dc7b01c2aabcd4a02f7626fc4680523addcfacc2d63e120a5f83dc
 # directly on an OpenAI release tag.
 upstream_commit = "6478a751fde8884b2fdc76486fe23175a8e795d4"
 
-atlas_tag = "atlas-main-20260830-2"
+atlas_tag = "atlas-main-20260830-1"
 atlas_commit = "a201cff86d370703cfe3938e6c1f6f80348ef953"
 
 config_sha256 = "8680ff2454a4e2b954797d59308267e443a2565f1e8754c69a6707cc30c313ce"
