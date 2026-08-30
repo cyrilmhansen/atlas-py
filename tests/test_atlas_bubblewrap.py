@@ -23,6 +23,30 @@ def _spec(tmp_path):
                          expected_input_sha256=hashlib.sha256(b"hello").hexdigest())
 
 
+
+def _stub_codex_prepare(monkeypatch):
+    """Unit-isolate Bubblewrap from the authenticated Codex preparation layer."""
+    def prepare(self, spec):
+        envelope = {
+            "sandbox_mode": self.sandbox,
+            "approval_policy": "never",
+            "approvals_reviewer": "user",
+            "strict_config": True,
+            "ignore_rules": True,
+            "network_access": self.network_access,
+        }
+        return PreparedExecution(
+            spec,
+            "codex",
+            (str(self.executable),),
+            "codex/test",
+            envelope,
+            spec.policy_snapshot,
+        )
+
+    monkeypatch.setattr(CodexExecutor, "prepare_execution", prepare)
+
+
 def test_scratch_store_requires_positive_ownership(tmp_path):
     store = ScratchStore(tmp_path / "atlas-agent")
     path = store.create("run-a")
@@ -78,6 +102,7 @@ def test_current_run_cleanup_rejects_replaced_inode(tmp_path):
 
 
 def test_mount_plan_has_distinct_storage_and_readonly_git(tmp_path, monkeypatch):
+    _stub_codex_prepare(monkeypatch)
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
     native = _native_codex(executor.executable)
@@ -100,6 +125,7 @@ def test_mount_plan_has_distinct_storage_and_readonly_git(tmp_path, monkeypatch)
 
 
 def test_implementation_mount_keeps_git_metadata_readonly(tmp_path, monkeypatch):
+    _stub_codex_prepare(monkeypatch)
     spec = _spec(tmp_path)
     spec = spec.__class__(**{**spec.__dict__, "action": "implementation"})
     executor = AtlasBubblewrapExecutor(sandbox="workspace-write", scratch_root=tmp_path / "scratch")
@@ -112,15 +138,33 @@ def test_implementation_mount_keeps_git_metadata_readonly(tmp_path, monkeypatch)
     assert str(spec.repository_root / ".git") in command
 
 
-def test_network_enabled_fails_before_sandbox_launch(tmp_path):
-    spec = _spec(tmp_path)
-    executor = AtlasBubblewrapExecutor(network_access=True, scratch_root=tmp_path / "scratch")
-    with pytest.raises(AtlasSandboxError, match="ATLAS_SANDBOX_NETWORK_UNSUPPORTED"):
-        executor.prepare_execution(spec)
+def test_network_enabled_is_supported_by_sandbox_policy(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "tools.atlas_agent.bubblewrap._native_codex",
+        lambda _: Path("/bin/true"),
+    )
+    executor = AtlasBubblewrapExecutor(
+        executable="/bin/true",
+        bwrap="/bin/true",
+        network_access=True,
+        scratch_root=tmp_path / "scratch",
+    )
+    executor._validate_policy()
     assert not (tmp_path / "scratch").exists()
 
 
+
+@pytest.mark.parametrize("action", ["patch_review", "state_audit"])
+def test_restricted_actions_reject_network_before_sandbox_launch(tmp_path, monkeypatch, action):
+    _stub_codex_prepare(monkeypatch)
+    from dataclasses import replace
+    spec=replace(_spec(tmp_path), action=action)
+    executor=AtlasBubblewrapExecutor(network_access=True, scratch_root=tmp_path/"scratch")
+    with pytest.raises(AtlasSandboxError, match="ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH"):
+        executor.prepare_execution(spec)
+
 def test_descriptor_distinguishes_enforcement_layers(tmp_path, monkeypatch):
+    _stub_codex_prepare(monkeypatch)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
     executor.prepare_execution(_spec(tmp_path))
@@ -133,6 +177,7 @@ def test_descriptor_distinguishes_enforcement_layers(tmp_path, monkeypatch):
 
 
 def test_tmpfs_scratch_is_rejected(tmp_path, monkeypatch):
+    _stub_codex_prepare(monkeypatch)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "tmpfs")
     with pytest.raises(AtlasSandboxError, match="DISK_SCRATCH_REQUIRED"):
@@ -147,6 +192,7 @@ def test_scratch_control_is_not_child_visible(tmp_path):
 
 
 def test_action_mode_is_bound_before_launch(tmp_path, monkeypatch):
+    _stub_codex_prepare(monkeypatch)
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(sandbox="workspace-write", scratch_root=tmp_path / "scratch")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
@@ -154,11 +200,22 @@ def test_action_mode_is_bound_before_launch(tmp_path, monkeypatch):
         executor.prepare_execution(spec)
 
 
-def test_server_command_uses_child_assigned_port(tmp_path, monkeypatch):
+@pytest.fixture
+def pinned_runtime_fd():
+    fd = os.open("/usr/bin/true", os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def test_server_command_uses_child_assigned_port(tmp_path, monkeypatch, pinned_runtime_fd):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
-    command = executor._mount_command(spec, tmp_path / "scratch" / "run-a")
+    command = executor._mount_command(
+        spec, tmp_path / "scratch" / "run-a", pinned_runtime_fd
+    )
     assert "ws://127.0.0.1:0" in command
     assert "--exit-on-stdin-close" in command
     assert not any(value == "--listen" and command[i + 1] != "ws://127.0.0.1:0" for i, value in enumerate(command[:-1]))
@@ -204,36 +261,51 @@ class _OpenStartupProcess(_StartupProcess):
     b"not an endpoint\n",
     b"",
 ])
-def test_exec_server_accepts_only_one_exact_endpoint(tmp_path, monkeypatch, output):
+def test_exec_server_accepts_only_one_exact_endpoint(
+    tmp_path, monkeypatch, output, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
-    monkeypatch.setattr(executor, "_mount_command", lambda spec, scratch: ["fake"])
+    monkeypatch.setattr(
+        executor, "_mount_command",
+        lambda spec, scratch, runtime_fd: ["fake"],
+    )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: _StartupProcess(output))
     with pytest.raises(AtlasSandboxError):
-        executor._start_server(spec)
+        executor._start_server(spec, pinned_runtime_fd)
     assert not (tmp_path / "scratch" / "runs" / "execution-test").exists()
 
 
-def test_exec_server_accepts_exact_loopback_endpoint(tmp_path, monkeypatch):
+def test_exec_server_accepts_exact_loopback_endpoint(
+    tmp_path, monkeypatch, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
-    monkeypatch.setattr(executor, "_mount_command", lambda spec, scratch: ["fake"])
+    monkeypatch.setattr(
+        executor, "_mount_command",
+        lambda spec, scratch, runtime_fd: ["fake"],
+    )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: _StartupProcess(b"ws://127.0.0.1:1234\n"))
-    executor._start_server(spec)
+    executor._start_server(spec, pinned_runtime_fd)
     assert executor._server_url == "ws://127.0.0.1:1234"
     executor._stop_server()
 
 
-def test_exec_server_partial_endpoint_hits_startup_deadline(tmp_path, monkeypatch):
+def test_exec_server_partial_endpoint_hits_startup_deadline(
+    tmp_path, monkeypatch, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
     executor.STARTUP_TIMEOUT_SECONDS = .1
-    monkeypatch.setattr(executor, "_mount_command", lambda spec, scratch: ["fake"])
+    monkeypatch.setattr(
+        executor, "_mount_command",
+        lambda spec, scratch, runtime_fd: ["fake"],
+    )
     process = _OpenStartupProcess()
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
     started = time.monotonic()
     with pytest.raises(AtlasSandboxError, match="URL_UNAVAILABLE"):
-        executor._start_server(spec)
+        executor._start_server(spec, pinned_runtime_fd)
     assert time.monotonic() - started < 1
     assert not (tmp_path / "scratch" / "runs" / "execution-test").exists()
 
@@ -247,14 +319,29 @@ class CleanupError(ValueError): pass
     (None, TeardownError("teardown T"), CleanupError("cleanup C")),
     (None, None, CleanupError("cleanup C")),
 ])
-def test_all_failure_diagnostics_are_concrete(tmp_path, monkeypatch, execution, teardown, cleanup):
+def test_all_failure_diagnostics_are_concrete(
+    tmp_path, monkeypatch, execution, teardown, cleanup, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    monkeypatch.setattr(executor, "_validate_runtime_identity", lambda snapshot: None)
     executor._descriptor = object()
     prepared = PreparedExecution(spec, "atlas", (), "test", {}, None, executor._descriptor)
-    monkeypatch.setattr(executor, "_start_server", lambda spec: None)
-    monkeypatch.setattr(CodexExecutor, "run_execution", lambda self, prepared:
-                        (_ for _ in ()).throw(execution) if execution else object())
+    monkeypatch.setattr(
+        executor, "_sealed_runtime_fd",
+        lambda snapshot: os.dup(pinned_runtime_fd),
+    )
+    monkeypatch.setattr(
+        executor, "_validate_sealed_runtime_fd",
+        lambda fd, snapshot: None,
+    )
+    monkeypatch.setattr(executor, "_start_server", lambda spec, runtime_fd: None)
+    monkeypatch.setattr(
+        CodexExecutor,
+        "run_execution",
+        lambda self, prepared, _runtime_binary_fd=None:
+            (_ for _ in ()).throw(execution) if execution else object(),
+    )
     def stop():
         if teardown:
             raise teardown
@@ -282,19 +369,38 @@ def test_all_failure_diagnostics_are_concrete(tmp_path, monkeypatch, execution, 
         assert raised.value is cleanup
 
 
-def test_execution_teardown_and_cleanup_keep_all_types(tmp_path, monkeypatch):
+def test_execution_teardown_and_cleanup_keep_all_types(
+    tmp_path, monkeypatch, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    monkeypatch.setattr(executor, "_validate_runtime_identity", lambda snapshot: None)
     executor._descriptor = object()
     prepared = PreparedExecution(spec, "atlas", (), "test", {}, None, executor._descriptor)
     class Server:
         stderr = io.BytesIO()
         def wait(self, timeout=None): raise TeardownError("teardown T")
     executor._server = Server(); executor._scratch = tmp_path / "scratch" / "run"
-    monkeypatch.setattr(executor, "_start_server", lambda spec: None)
-    monkeypatch.setattr(executor.scratch_store, "cleanup", lambda path: (_ for _ in ()).throw(CleanupError("cleanup C")))
-    monkeypatch.setattr(CodexExecutor, "run_execution", lambda self, prepared:
-                        (_ for _ in ()).throw(RuntimeError("execution E")))
+    monkeypatch.setattr(
+        executor, "_sealed_runtime_fd",
+        lambda snapshot: os.dup(pinned_runtime_fd),
+    )
+    monkeypatch.setattr(
+        executor, "_validate_sealed_runtime_fd",
+        lambda fd, snapshot: None,
+    )
+    monkeypatch.setattr(executor, "_start_server", lambda spec, runtime_fd: None)
+    monkeypatch.setattr(
+        executor.scratch_store,
+        "cleanup",
+        lambda path: (_ for _ in ()).throw(CleanupError("cleanup C")),
+    )
+    monkeypatch.setattr(
+        CodexExecutor,
+        "run_execution",
+        lambda self, prepared, _runtime_binary_fd=None:
+            (_ for _ in ()).throw(RuntimeError("execution E")),
+    )
     assert executor._run_lock.acquire()
     try:
         with pytest.raises(RuntimeError, match="execution E") as raised:
@@ -306,15 +412,30 @@ def test_execution_teardown_and_cleanup_keep_all_types(tmp_path, monkeypatch):
     assert "CleanupError: cleanup C" in notes
 
 
-def test_execution_error_wins_over_teardown_error(tmp_path, monkeypatch):
+def test_execution_error_wins_over_teardown_error(
+    tmp_path, monkeypatch, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    monkeypatch.setattr(executor, "_validate_runtime_identity", lambda snapshot: None)
     descriptor = object()
     executor._descriptor = descriptor
     prepared = PreparedExecution(spec, "atlas", (), "test", {}, None, descriptor)
-    monkeypatch.setattr(executor, "_start_server", lambda spec: None)
-    monkeypatch.setattr(CodexExecutor, "run_execution", lambda self, prepared:
-                        (_ for _ in ()).throw(RuntimeError("primary execution")))
+    monkeypatch.setattr(
+        executor, "_sealed_runtime_fd",
+        lambda snapshot: os.dup(pinned_runtime_fd),
+    )
+    monkeypatch.setattr(
+        executor, "_validate_sealed_runtime_fd",
+        lambda fd, snapshot: None,
+    )
+    monkeypatch.setattr(executor, "_start_server", lambda spec, runtime_fd: None)
+    monkeypatch.setattr(
+        CodexExecutor,
+        "run_execution",
+        lambda self, prepared, _runtime_binary_fd=None:
+            (_ for _ in ()).throw(RuntimeError("primary execution")),
+    )
     monkeypatch.setattr(executor, "_stop_server", lambda: (_ for _ in ()).throw(
         RuntimeError("secondary teardown")))
     assert executor._run_lock.acquire()
@@ -352,15 +473,21 @@ def test_scratch_run_symlink_and_plausible_foreign_dir_are_not_removed(tmp_path)
     assert (store.runs / "foreign" / "keep").exists()
 
 
-def test_launch_failure_still_cleans_scratch(tmp_path, monkeypatch):
+def test_launch_failure_still_cleans_scratch(
+    tmp_path, monkeypatch, pinned_runtime_fd
+):
     spec = _spec(tmp_path)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
-    monkeypatch.setattr(executor, "_mount_command", lambda spec, scratch: ["missing"])
+    monkeypatch.setattr(
+        executor,
+        "_mount_command",
+        lambda spec, scratch, runtime_fd: ["missing"],
+    )
     def fail(*args, **kwargs):
         raise OSError("launch failed")
     monkeypatch.setattr(subprocess, "Popen", fail)
     with pytest.raises(AtlasSandboxError, match="LAUNCH_FAILED"):
-        executor._start_server(spec)
+        executor._start_server(spec, pinned_runtime_fd)
     assert not (tmp_path / "scratch" / "runs" / "execution-test").exists()
 
 

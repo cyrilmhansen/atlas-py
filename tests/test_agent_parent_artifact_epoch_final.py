@@ -83,7 +83,7 @@ def test_epoch_2_rejects_running_start_with_entire_execution_bundle_removed(tmp_
             row["payload"].pop("execution", None)
             row["payload"].pop("context_supplement", None)
     _rehash(w.journal.path, rows[:started + 1])
-    with pytest.raises(JournalError, match="epoch-2 execution provenance"):
+    with pytest.raises(JournalError, match="modern execution ownership missing"):
         Journal(w.journal.path).read()
 
 
@@ -276,8 +276,14 @@ def test_post_start_keyboard_interrupt_durably_interrupts_generation(tmp_path, m
 
 def test_keyboard_interrupt_at_first_post_start_projection_is_terminal(tmp_path, monkeypatch):
     _, w = make_repo(tmp_path)
-    accepted(w)
+    raw=accepted(w)
     from tools.atlas_agent import workflow as workflow_module
+    from tools.atlas_agent.policy import load_policy, resolve_policy
+    from tools.atlas_agent.prompt import parse_prompt
+    snapshot=resolve_policy(
+        load_policy(w.root/"atlas-agent-policy.toml"),
+        parse_prompt(raw),
+    )
     original = workflow_module.replay_journal
     tripped = False
 
@@ -299,8 +305,14 @@ def test_keyboard_interrupt_at_first_post_start_projection_is_terminal(tmp_path,
 
 def test_start_run_keyboard_interrupt_at_first_post_start_projection_is_terminal(tmp_path, monkeypatch):
     _, w = make_repo(tmp_path)
-    accepted(w)
+    raw=accepted(w)
     from tools.atlas_agent import workflow as workflow_module
+    from tools.atlas_agent.policy import load_policy, resolve_policy
+    from tools.atlas_agent.prompt import parse_prompt
+    snapshot=resolve_policy(
+        load_policy(w.root/"atlas-agent-policy.toml"),
+        parse_prompt(raw),
+    )
     original = workflow_module.replay_journal
     tripped = False
 
@@ -319,6 +331,16 @@ def test_start_run_keyboard_interrupt_at_first_post_start_projection_is_terminal
             "started_at": "2026-01-01T00:00:00Z",
             "pid": None,
             "report_dir": "reports/executions/start-run-interrupted",
+            "owner_schema": "atlas-agent-execution-owner/2",
+            "policy_snapshot": snapshot,
+            "permission_envelope": {
+                "sandbox_mode": snapshot["sandbox_mode"],
+                "approval_policy": "never",
+                "approvals_reviewer": "user",
+                "strict_config": True,
+                "ignore_rules": True,
+                "network_access": snapshot["network_access"],
+            },
         })
     monkeypatch.setattr(workflow_module, "replay_journal", original)
     rebuilt = original(w.journal.read())

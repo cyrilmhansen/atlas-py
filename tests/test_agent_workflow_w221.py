@@ -17,12 +17,15 @@ def git(path, *args):
     return subprocess.check_output(["git", *args], cwd=path, text=True).strip()
 
 
-def make_repo(tmp_path, policy=True, project_config=False):
+def make_repo(tmp_path, policy=True, project_config=False, policy_text=None):
     repo = tmp_path / "repo"; repo.mkdir(parents=True)
     git(repo, "init", "-q"); git(repo, "config", "user.email", "t@e"); git(repo, "config", "user.name", "t")
     (repo / "a").write_text("a")
     (repo / "atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n')
-    if policy: (repo / "atlas-agent-policy.toml").write_text(POLICY)
+    if policy:
+        (repo / "atlas-agent-policy.toml").write_text(
+            POLICY if policy_text is None else policy_text
+        )
     if project_config:
         (repo/".codex").mkdir(); (repo/".codex"/"config.toml").write_text("hooks = []\n")
     git(repo, "add", "."); git(repo, "commit", "-qm", "fixture")
@@ -74,9 +77,12 @@ def test_policy_model_split_and_implementation_lifecycle_are_exact():
     assert (fresh["session_mode"],reuse["session_mode"])==("fresh","reuse")
     assert fresh["sandbox_mode"]=="workspace-write"
     assert fresh["network_access"] is False and enabled["network_access"] is True
+    assert fresh["codex_profile"]=="atlas-luna-local" and fresh["web_search"]=="disabled"
+    assert enabled["codex_profile"]=="atlas-luna-web" and enabled["web_search"]=="live"
     for action in ("patch_review","state_audit"):
         snapshot=resolved(action)
         assert (snapshot["requested_model"],snapshot["requested_reasoning_effort"])==("gpt-5.6-sol","high")
+        assert snapshot["codex_profile"]=="atlas-sol-local" and snapshot["web_search"]=="disabled"
 
 
 @pytest.mark.parametrize("mutation", [
@@ -113,19 +119,514 @@ def test_v2_snapshot_owner_and_telemetry_enrichment(tmp_path):
 
 
 def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
+    import hashlib
     from tools.atlas_agent.codex_executor import CodexExecutor
-    from tools.atlas_agent.executor import ExecutionSpec
-    root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("p")
-    snapshot={"schema":"atlas-agent-policy-snapshot/1","policy_schema":"atlas-agent-policy/1","policy_config_sha256":"a"*64,"action":"implementation","checkpoint":"x","profile":"implementation","executor":"codex","requested_model":"gpt-5.6-sol","requested_reasoning_effort":"medium","session_mode":"fresh","sandbox_mode":"workspace-write","network_access_requested":False,"network_access":False,"web_search":"disabled","apps_enabled":False,"session_storage":"persist","max_hot_reuse_hops":3,"max_reuse_generation_gap":2}
-    assert validate_snapshot(snapshot)==snapshot  # Historical snapshots retain their stored model.
-    ex=CodexExecutor(executable="/bin/true",model="gpt-5.6-sol",sandbox="workspace-write",network_access=False); prepared=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,snapshot,input_mode="legacy"))
-    assert "--ignore-user-config" in prepared.command and "--strict-config" in prepared.command and "--ignore-rules" in prepared.command
-    assert "features.apps=false" in prepared.command and 'web_search="disabled"' in prepared.command
-    assert 'model_reasoning_effort="medium"' in prepared.command
-    reuse=dict(snapshot,session_mode="reuse",reused_from_execution_id="e0",requested_thread_id="thread",reuse_depth=1)
-    resumed=ex.prepare_execution(ExecutionSpec(1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,None,reuse,input_mode="legacy"))
-    assert resumed.command[1:3]==("exec","resume") and "thread" in resumed.command
+    from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
 
+    root=tmp_path
+    prompt_path=root/"prompt"
+    prompt_path.write_text("p")
+
+    # /1 remains readable historical provenance, but is never launch authority.
+    legacy={
+        "schema":"atlas-agent-policy-snapshot/1",
+        "policy_schema":"atlas-agent-policy/1",
+        "policy_config_sha256":"a"*64,
+        "action":"implementation",
+        "checkpoint":"x",
+        "profile":"implementation",
+        "executor":"codex",
+        "requested_model":"gpt-5.6-sol",
+        "requested_reasoning_effort":"medium",
+        "session_mode":"fresh",
+        "sandbox_mode":"workspace-write",
+        "network_access_requested":False,
+        "network_access":False,
+        "web_search":"disabled",
+        "apps_enabled":False,
+        "session_storage":"persist",
+        "max_hot_reuse_hops":3,
+        "max_reuse_generation_gap":2,
+    }
+    assert validate_snapshot(legacy)==legacy
+
+    legacy_spec=ExecutionSpec(
+        generation=1,
+        prompt_sha256="a"*64,
+        action="implementation",
+        prompt_path=prompt_path,
+        repository_root=root,
+        execution_id="legacy",
+        report_dir=root/"legacy-report",
+        runtime_root=root,
+        checkpoint=None,
+        policy_snapshot=legacy,
+        input_mode="legacy",
+    )
+    legacy_executor=CodexExecutor(
+        executable="/bin/true",
+        model="gpt-5.6-sol",
+        sandbox="workspace-write",
+        network_access=False,
+    )
+    with pytest.raises(ExecutorError, match="POLICY_SNAPSHOT_NOT_EXECUTABLE"):
+        legacy_executor.prepare_execution(legacy_spec)
+
+    # /2 is the only executable form. Use a complete pinned fixture runtime.
+    codex_home=root/"codex-home"
+    codex_home.mkdir(mode=0o700)
+
+    config=codex_home/"config.toml"
+    catalog=codex_home/"models-atlas-shell-only.json"
+    profile=codex_home/"atlas-luna-local.config.toml"
+
+    config.write_text("suppress_unstable_features_warning = true\n")
+    catalog.write_text('{"models":[]}\n')
+    profile.write_text(
+        'model = "gpt-5.6-luna"\n'
+        '[features.tool_registry]\n'
+        'allowed_tools = ["exec_command","write_stdin","apply_patch"]\n'
+    )
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    snapshot={
+        "schema":"atlas-agent-policy-snapshot/2",
+        "policy_schema":"atlas-agent-policy/1",
+        "policy_config_sha256":"a"*64,
+        "action":"implementation",
+        "checkpoint":"x",
+        "profile":"implementation",
+        "executor":"codex",
+        "requested_model":"gpt-5.6-luna",
+        "requested_reasoning_effort":"medium",
+        "session_mode":"fresh",
+        "sandbox_mode":"workspace-write",
+        "network_access_requested":False,
+        "network_access":False,
+        "web_search":"disabled",
+        "apps_enabled":False,
+        "session_storage":"persist",
+        "max_hot_reuse_hops":3,
+        "max_reuse_generation_gap":2,
+        "codex_profile":"atlas-luna-local",
+        "codex_binary_sha256":sha(Path("/bin/true").resolve()),
+        "codex_config_sha256":sha(config),
+        "codex_catalog_sha256":sha(catalog),
+        "codex_profile_sha256":sha(profile),
+    }
+    assert validate_snapshot(snapshot)==snapshot
+
+    true_executable=str(Path("/bin/true").resolve())
+    ex=CodexExecutor(
+        executable=true_executable,
+        model="gpt-5.6-luna",
+        sandbox="workspace-write",
+        network_access=False,
+        codex_home=codex_home,
+    )
+
+    fresh_spec=ExecutionSpec(
+        generation=1,
+        prompt_sha256="a"*64,
+        action="implementation",
+        prompt_path=prompt_path,
+        repository_root=root,
+        execution_id="fresh",
+        report_dir=root/"fresh-report",
+        runtime_root=root,
+        checkpoint=None,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
+    prepared=ex.prepare_execution(fresh_spec)
+
+    assert prepared.command[:4]==(
+        true_executable,"--profile","atlas-luna-local","exec"
+    )
+    assert "--ignore-user-config" not in prepared.command
+    assert "--strict-config" in prepared.command
+    assert "--ignore-rules" in prepared.command
+    assert "features.apps=false" in prepared.command
+    assert 'web_search="disabled"' in prepared.command
+    assert 'model_reasoning_effort="medium"' in prepared.command
+
+    reuse=dict(
+        snapshot,
+        session_mode="reuse",
+        reused_from_execution_id="e0",
+        requested_thread_id="thread",
+        reuse_depth=1,
+    )
+    assert validate_snapshot(reuse)==reuse
+
+    reuse_spec=ExecutionSpec(
+        generation=2,
+        prompt_sha256="b"*64,
+        action="implementation",
+        prompt_path=prompt_path,
+        repository_root=root,
+        execution_id="reuse",
+        report_dir=root/"reuse-report",
+        runtime_root=root,
+        checkpoint=None,
+        policy_snapshot=reuse,
+        input_mode="legacy",
+    )
+    resumed=ex.prepare_execution(reuse_spec)
+
+    assert resumed.command[:5]==(
+        true_executable,"--profile","atlas-luna-local","exec","resume"
+    )
+    assert "thread" in resumed.command
+    assert "--ignore-user-config" not in resumed.command
+
+
+
+def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeypatch):
+    import hashlib
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
+
+    root=tmp_path
+    prompt_path=root/"prompt"; prompt_path.write_text("p")
+
+    codex_home=root/"codex-home"; codex_home.mkdir(mode=0o700)
+    config=codex_home/"config.toml"; config.write_text("suppress_unstable_features_warning = true\n")
+    catalog=codex_home/"models-atlas-shell-only.json"; catalog.write_text('{"models":[]}\n')
+    profile=codex_home/"atlas-luna-local.config.toml"
+    profile.write_text('model = "gpt-5.6-luna"\n[features.tool_registry]\nallowed_tools = ["exec_command","write_stdin","apply_patch"]\n')
+
+    executable=root/"codex"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then\n"
+        "  echo 'codex-atlas-test 0.0'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    executable.chmod(0o700)
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    snapshot={
+        "schema":"atlas-agent-policy-snapshot/2",
+        "policy_schema":"atlas-agent-policy/1",
+        "policy_config_sha256":"a"*64,
+        "action":"implementation",
+        "checkpoint":"x",
+        "profile":"implementation",
+        "executor":"codex",
+        "requested_model":"gpt-5.6-luna",
+        "requested_reasoning_effort":"medium",
+        "session_mode":"fresh",
+        "sandbox_mode":"workspace-write",
+        "network_access_requested":False,
+        "network_access":False,
+        "web_search":"disabled",
+        "apps_enabled":False,
+        "session_storage":"persist",
+        "max_hot_reuse_hops":3,
+        "max_reuse_generation_gap":2,
+        "codex_profile":"atlas-luna-local",
+        "codex_binary_sha256":sha(executable),
+        "codex_config_sha256":sha(config),
+        "codex_catalog_sha256":sha(catalog),
+        "codex_profile_sha256":sha(profile),
+    }
+
+    spec=ExecutionSpec(
+        1,"a"*64,"implementation",prompt_path,root,"e",root/"r",root,
+        None,snapshot,input_mode="legacy",
+    )
+    ex=CodexExecutor(
+        executable=str(executable),
+        model="gpt-5.6-luna",
+        sandbox="workspace-write",
+        network_access=False,
+        codex_home=codex_home,
+    )
+
+    prepared=ex.prepare_execution(spec)
+    assert prepared.command[:4]==(
+        str(executable),"--profile","atlas-luna-local","exec"
+    )
+    assert "--ignore-user-config" not in prepared.command
+    assert ex._environment()["CODEX_HOME"]==str(codex_home)
+
+    # A CLI-compatible but unpinned executable cannot substitute for the fork.
+    fake=root/"fake-codex"
+    fake.write_text("#!/bin/sh\n# deliberately different binary\nexit 0\n"); fake.chmod(0o700)
+    bad=CodexExecutor(
+        executable=str(fake), model="gpt-5.6-luna",
+        sandbox="workspace-write", network_access=False,
+        codex_home=codex_home,
+    )
+    with pytest.raises(ExecutorError,match="CODEX_EXECUTABLE_DIGEST_MISMATCH"):
+        bad.prepare_execution(spec)
+
+    # A truncated/broadened profile cannot retain trust merely by name.
+    profile.write_text('model = "gpt-5.6-luna"\n')
+    with pytest.raises(ExecutorError,match="CODEX_PROFILE_DIGEST_MISMATCH"):
+        ex.prepare_execution(spec)
+
+    # Restore, prepare, then mutate: the final Popen boundary must recheck.
+    profile.write_text('model = "gpt-5.6-luna"\n[features.tool_registry]\nallowed_tools = ["exec_command","write_stdin","apply_patch"]\n')
+    prepared=ex.prepare_execution(spec)
+    profile.write_text('model = "gpt-5.6-luna"\n')
+    monkeypatch.setattr(
+        "tools.atlas_agent.codex_executor.subprocess.Popen",
+        lambda *a,**k: pytest.fail("Popen reached after profile mutation"),
+    )
+    with pytest.raises(ExecutorError,match="CODEX_PROFILE_DIGEST_MISMATCH"):
+        ex.run_execution(prepared)
+
+
+def test_new_snapshot_rejects_profile_network_mismatches():
+    policy=load_policy(ROOT/"atlas-agent-policy.toml")
+
+    def resolved(network):
+        raw=f'''+++
+schema = "atlas-agent-prompt/2"
+generation = 1
+parent = "genesis"
+checkpoint = "mapping"
+action = "implementation"
+expected_head = "{"a"*40}"
+session_mode = "fresh"
+network_access = {str(network).lower()}
++++
+'''.encode()
+        return resolve_policy(policy,parse_prompt(raw))
+
+    local=resolved(False)
+    web=resolved(True)
+
+    with pytest.raises(PolicyError):
+        validate_snapshot(dict(local,codex_profile="atlas-luna-web"))
+    with pytest.raises(PolicyError):
+        validate_snapshot(dict(web,codex_profile="atlas-luna-local"))
+    with pytest.raises(PolicyError):
+        validate_snapshot(dict(local,codex_profile="atlas-anything-local"))
+
+
+
+def test_modern_snapshot_cannot_downgrade_to_legacy_by_removing_runtime_identity():
+    import sys
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
+
+    policy=load_policy(ROOT/"atlas-agent-policy.toml")
+    raw=f'''+++
+schema = "atlas-agent-prompt/2"
+generation = 1
+parent = "genesis"
+checkpoint = "downgrade"
+action = "implementation"
+expected_head = "{"a"*40}"
+session_mode = "fresh"
+network_access = false
++++
+'''.encode()
+
+    snapshot=resolve_policy(policy,parse_prompt(raw))
+    assert snapshot["schema"] == "atlas-agent-policy-snapshot/2"
+
+    downgraded=dict(snapshot)
+    downgraded["schema"]="atlas-agent-policy-snapshot/1"
+    for key in (
+        "codex_profile",
+        "codex_binary_sha256",
+        "codex_config_sha256",
+        "codex_catalog_sha256",
+        "codex_profile_sha256",
+    ):
+        downgraded.pop(key)
+
+    # Explicit historical /1 remains readable as provenance.
+    validate_snapshot(downgraded)
+
+    # It is never executable.
+    prompt_path=ROOT/"README.md"
+    spec=ExecutionSpec(
+        generation=1,
+        prompt_sha256="a"*64,
+        action="implementation",
+        prompt_path=prompt_path,
+        repository_root=ROOT,
+        execution_id="legacy",
+        report_dir=ROOT,
+        runtime_root=ROOT,
+        checkpoint=None,
+        policy_snapshot=downgraded,
+        input_mode="legacy",
+    )
+    executor=CodexExecutor(
+        executable=sys.executable,
+        model="gpt-5.6-luna",
+        sandbox="workspace-write",
+        network_access=False,
+    )
+    with pytest.raises(ExecutorError, match="POLICY_SNAPSHOT_NOT_EXECUTABLE"):
+        executor.prepare_execution(spec)
+
+
+def test_legacy_snapshot_is_never_reuse_compatible(tmp_path):
+    repo,w=make_repo(tmp_path)
+    accepted(w)
+    fake=FakeExecutor(
+        observed_thread_id="legacy-thread",
+        observed_model="gpt-5.6-luna",
+        observed_reasoning="medium",
+    )
+    w.execute(1,fake)
+
+    # Create and accept the reuse request normally.
+    state=w._state()
+    target_owner=state["generations"]["1"]["execution"]
+    raw2=prompt(
+        w,
+        generation=2,
+        session="reuse",
+        target=target_owner["execution_id"],
+    )
+    w.ingest()
+    state=w._state()
+
+    # Reclassify only our in-memory target as explicit historical /1.
+    owner=state["generations"]["1"]["execution"]
+    owner["policy_snapshot"]["schema"]="atlas-agent-policy-snapshot/1"
+    for key in (
+        "codex_profile",
+        "codex_binary_sha256",
+        "codex_config_sha256",
+        "codex_catalog_sha256",
+        "codex_profile_sha256",
+    ):
+        owner["policy_snapshot"].pop(key,None)
+
+    current=resolve_policy(
+        load_policy(repo/"atlas-agent-policy.toml"),
+        parse_prompt(raw2),
+    )
+
+    with pytest.raises(WorkflowError, match="REUSE_TARGET_INCOMPATIBLE"):
+        w._reuse_snapshot(state,state["generations"]["2"],current)
+
+
+def test_pinned_runtime_rejects_prepared_command_binary_substitution(tmp_path):
+    import hashlib
+    from dataclasses import replace
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
+
+    root=tmp_path
+    prompt_path=root/"prompt"
+    prompt_path.write_text("p")
+
+    codex_home=root/"codex-home"
+    codex_home.mkdir(mode=0o700)
+    config=codex_home/"config.toml"
+    catalog=codex_home/"models-atlas-shell-only.json"
+    profile=codex_home/"atlas-luna-local.config.toml"
+    executable=root/"codex"
+
+    config.write_text("suppress_unstable_features_warning = true\n")
+    catalog.write_text('{"models":[]}\n')
+    profile.write_text(
+        'model = "gpt-5.6-luna"\n'
+        '[features.tool_registry]\n'
+        'allowed_tools = ["exec_command","write_stdin","apply_patch"]\n'
+    )
+    executable.write_bytes(Path("/usr/bin/true").read_bytes())
+    executable.chmod(0o500)
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    snapshot={
+        "schema":"atlas-agent-policy-snapshot/2",
+        "policy_schema":"atlas-agent-policy/1",
+        "policy_config_sha256":"a"*64,
+        "action":"implementation",
+        "checkpoint":"x",
+        "profile":"implementation",
+        "executor":"codex",
+        "requested_model":"gpt-5.6-luna",
+        "requested_reasoning_effort":"medium",
+        "session_mode":"fresh",
+        "sandbox_mode":"workspace-write",
+        "network_access_requested":False,
+        "network_access":False,
+        "web_search":"disabled",
+        "apps_enabled":False,
+        "session_storage":"persist",
+        "max_hot_reuse_hops":3,
+        "max_reuse_generation_gap":2,
+        "codex_profile":"atlas-luna-local",
+        "codex_binary_sha256":sha(executable),
+        "codex_config_sha256":sha(config),
+        "codex_catalog_sha256":sha(catalog),
+        "codex_profile_sha256":sha(profile),
+    }
+
+    executor=CodexExecutor(
+        executable=str(executable),
+        model="gpt-5.6-luna",
+        sandbox="workspace-write",
+        network_access=False,
+        codex_home=codex_home,
+    )
+    spec=ExecutionSpec(
+        generation=1,
+        prompt_sha256="a"*64,
+        action="implementation",
+        prompt_path=prompt_path,
+        repository_root=root,
+        execution_id="e",
+        report_dir=root/"report",
+        runtime_root=root,
+        checkpoint=None,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
+    prepared=executor.prepare_execution(spec)
+
+    substituted=replace(
+        prepared,
+        command=("/usr/bin/false",)+prepared.command[1:],
+    )
+    with pytest.raises(ExecutorError,match="PREPARED_COMMAND_MISMATCH"):
+        executor.run_execution(substituted)
+
+
+def test_pinned_runtime_fd_is_sealed_and_digest_bound(tmp_path):
+    import hashlib, os
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutorError
+
+    executable=tmp_path/"codex"
+    executable.write_bytes(Path("/usr/bin/true").read_bytes())
+    executable.chmod(0o500)
+
+    snapshot={
+        "schema":"atlas-agent-policy-snapshot/2",
+        "codex_binary_sha256":
+            hashlib.sha256(executable.read_bytes()).hexdigest(),
+    }
+
+    executor=CodexExecutor(executable=str(executable))
+    fd=executor._sealed_runtime_fd(snapshot)
+    try:
+        executor._validate_sealed_runtime_fd(fd,snapshot)
+
+        with pytest.raises(OSError):
+            os.write(fd,b"x")
+    finally:
+        os.close(fd)
 
 def test_network_resolution_and_checkpoint_are_prelaunch(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w,network=True); fake=FakeExecutor(observed_thread_id="thread-network")
@@ -197,7 +698,23 @@ def test_running_reuse_blocks_second_branch_from_same_thread(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w); w.execute(1,FakeExecutor(observed_thread_id="thread-T")); first=w._state()["generations"]["1"]["execution"]
     accepted(w,generation=2,session="reuse",target=first["execution_id"])
     snapshot=dict(first["policy_snapshot"],session_mode="reuse",reused_from_execution_id=first["execution_id"],requested_thread_id="thread-T",reuse_depth=1)
-    metadata={"execution_id":"running-e2","executor":"fake","started_at":"now","pid":None,"report_dir":"reports/executions/running-e2","permission_envelope":{"sandbox_mode":"workspace-write","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False},"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot}
+    metadata={
+        "execution_id":"running-e2",
+        "executor":"codex",
+        "started_at":"now",
+        "pid":None,
+        "report_dir":"reports/executions/running-e2",
+        "permission_envelope":{
+            "sandbox_mode":"workspace-write",
+            "approval_policy":"never",
+            "approvals_reviewer":"user",
+            "strict_config":True,
+            "ignore_rules":True,
+            "network_access":False,
+        },
+        "owner_schema":"atlas-agent-execution-owner/2",
+        "policy_snapshot":snapshot,
+    }
     w.start_run(2,execution=metadata)
     report=w.base/"reports"/"executions"/"running-e2"; report.mkdir(parents=True); (report/"execution.json").write_text(json.dumps({**metadata,"generation":2,"prompt_sha256":w._state()["generations"]["2"]["prompt_sha256"],"action":"implementation","command":[],"version":"fake/1"}))
     accepted(w,generation=3,session="reuse",target=first["execution_id"]); probe=FakeExecutor()

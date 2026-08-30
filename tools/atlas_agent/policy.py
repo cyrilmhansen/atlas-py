@@ -10,9 +10,10 @@ from pathlib import Path
 from .model import ACTIONS, SESSIONS
 
 POLICY_SCHEMA = "atlas-agent-policy/1"
-SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/1"
+LEGACY_SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/1"
+SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/2"
 _PROFILE_KEYS = {
-    "codex": {"executor", "model", "reasoning_effort", "sandbox", "network_default", "network_override", "allowed_session_modes", "fresh_storage"},
+    "codex": {"executor", "model", "reasoning_effort", "sandbox", "network_default", "network_override", "allowed_session_modes", "fresh_storage", "codex_profile_local", "codex_profile_web", "codex_binary_sha256", "codex_config_sha256", "codex_catalog_sha256", "codex_profile_local_sha256", "codex_profile_web_sha256"},
     "manual": {"executor", "allowed_session_modes"},
 }
 _BASE_KEYS = {"schema", "policy_schema", "policy_config_sha256", "action", "checkpoint", "profile", "executor", "session_mode", "network_access_requested", "network_access", "web_search", "apps_enabled", "session_storage", "max_hot_reuse_hops", "max_reuse_generation_gap"}
@@ -47,8 +48,23 @@ def _profile(value, name):
         raise PolicyError("MODEL_CONFIG_INVALID", name)
     if type(value["reasoning_effort"]) is not str or value["reasoning_effort"] not in {"low", "medium", "high"}:
         raise PolicyError("POLICY_SCHEMA_INVALID", f"reasoning {name}")
-    if any(type(value[k]) is not str or not value[k] for k in ("sandbox", "network_override", "fresh_storage")):
+    if any(type(value[k]) is not str or not value[k] for k in ("sandbox", "network_override", "fresh_storage", "codex_profile_local", "codex_profile_web")):
         raise PolicyError("POLICY_SCHEMA_INVALID", f"profile types {name}")
+    expected_profiles = {
+        "implementation": ("atlas-luna-local", "atlas-luna-web"),
+        "patch_review": ("atlas-sol-local", "atlas-sol-web"),
+        "state_audit": ("atlas-sol-local", "atlas-sol-web"),
+    }
+    if name in expected_profiles and (
+        value["codex_profile_local"], value["codex_profile_web"]
+    ) != expected_profiles[name]:
+        raise PolicyError("POLICY_SCHEMA_INVALID", f"codex profiles {name}")
+    for key in (
+        "codex_binary_sha256", "codex_config_sha256", "codex_catalog_sha256",
+        "codex_profile_local_sha256", "codex_profile_web_sha256",
+    ):
+        if type(value[key]) is not str or not re.fullmatch(r"[0-9a-f]{64}", value[key]):
+            raise PolicyError("POLICY_SCHEMA_INVALID", f"{key} {name}")
     if value["sandbox"] not in {"read-only", "workspace-write"}:
         raise PolicyError("POLICY_SCHEMA_INVALID", f"sandbox {name}")
     if type(value["network_default"]) is not bool or value["network_override"] not in {"explicit", "forbidden"} or value["fresh_storage"] not in {"persist", "ephemeral"}:
@@ -106,14 +122,23 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
         "session_mode": prompt.session_mode,
         "network_access_requested": prompt.network_access if prompt.prompt_schema == "atlas-agent-prompt/2" else False,
         "network_access": network_access,
-        "web_search": "disabled",
+        "web_search": "live" if network_access else "disabled",
         "apps_enabled": False,
         "session_storage": cfg.get("fresh_storage", "ephemeral"),
         "max_hot_reuse_hops": limits["max_hot_reuse_hops"],
         "max_reuse_generation_gap": limits["max_reuse_generation_gap"],
     }
     if cfg["executor"] == "codex":
-        snapshot.update({"requested_model": cfg["model"], "requested_reasoning_effort": cfg["reasoning_effort"], "sandbox_mode": cfg["sandbox"]})
+        snapshot.update({
+            "requested_model": cfg["model"],
+            "requested_reasoning_effort": cfg["reasoning_effort"],
+            "sandbox_mode": cfg["sandbox"],
+            "codex_profile": cfg["codex_profile_web"] if network_access else cfg["codex_profile_local"],
+            "codex_binary_sha256": cfg["codex_binary_sha256"],
+            "codex_config_sha256": cfg["codex_config_sha256"],
+            "codex_catalog_sha256": cfg["codex_catalog_sha256"],
+            "codex_profile_sha256": cfg["codex_profile_web_sha256"] if network_access else cfg["codex_profile_local_sha256"],
+        })
     if action == "state_audit":
         snapshot["cold_policy"] = "conversational"
         snapshot["freshness_verification"] = "deferred"
@@ -140,13 +165,58 @@ def resolve_policy(policy, prompt):
 
 
 def validate_snapshot(snapshot):
-    if type(snapshot) is not dict or snapshot.get("schema") != SNAPSHOT_SCHEMA:
+    if type(snapshot) is not dict or snapshot.get("schema") not in {
+        LEGACY_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA
+    }:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot schema")
+    snapshot_schema = snapshot["schema"]
     required = _BASE_KEYS | {"requested_model", "requested_reasoning_effort", "sandbox_mode"} if snapshot.get("executor") == "codex" else _BASE_KEYS
-    if not required <= set(snapshot) or set(snapshot) - (required | {"reused_from_execution_id", "requested_thread_id", "reuse_depth", "cold_policy", "freshness_verification"}):
+    runtime_keys = {
+        "codex_binary_sha256", "codex_config_sha256",
+        "codex_catalog_sha256", "codex_profile_sha256",
+    }
+    optional = {
+        "reused_from_execution_id", "requested_thread_id", "reuse_depth",
+        "cold_policy", "freshness_verification", "codex_profile",
+    } | runtime_keys
+    if not required <= set(snapshot) or set(snapshot) - (required | optional):
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot fields")
-    if snapshot.get("profile") != snapshot.get("action") or snapshot.get("policy_schema") != POLICY_SCHEMA or snapshot.get("web_search") != "disabled" or snapshot.get("apps_enabled") is not False:
+    if snapshot.get("profile") != snapshot.get("action") or snapshot.get("policy_schema") != POLICY_SCHEMA or snapshot.get("apps_enabled") is not False:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot invariants")
+
+    if snapshot_schema == SNAPSHOT_SCHEMA:
+        if snapshot.get("executor") == "codex":
+            if "codex_profile" not in snapshot or not runtime_keys <= set(snapshot):
+                raise PolicyError("POLICY_SCHEMA_INVALID", "codex runtime identity")
+            for key in runtime_keys:
+                if type(snapshot.get(key)) is not str or not re.fullmatch(r"[0-9a-f]{64}", snapshot[key]):
+                    raise PolicyError("POLICY_SCHEMA_INVALID", f"snapshot {key}")
+
+            mapping = {
+                ("implementation", False): ("gpt-5.6-luna", "atlas-luna-local", "disabled"),
+                ("implementation", True): ("gpt-5.6-luna", "atlas-luna-web", "live"),
+                ("patch_review", False): ("gpt-5.6-sol", "atlas-sol-local", "disabled"),
+                ("state_audit", False): ("gpt-5.6-sol", "atlas-sol-local", "disabled"),
+            }
+            expected = mapping.get((snapshot.get("action"), snapshot.get("network_access")))
+            observed = (
+                snapshot.get("requested_model"),
+                snapshot.get("codex_profile"),
+                snapshot.get("web_search"),
+            )
+            if expected is None or observed != expected:
+                raise PolicyError(
+                    "POLICY_SCHEMA_INVALID",
+                    "snapshot model/profile/network mismatch",
+                )
+        elif "codex_profile" in snapshot or runtime_keys & set(snapshot):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "unexpected codex runtime identity")
+    else:
+        # /1 is positively identified historical provenance, replay-only.
+        if "codex_profile" in snapshot or runtime_keys & set(snapshot):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "legacy snapshot runtime identity")
+        if snapshot.get("web_search") != "disabled":
+            raise PolicyError("POLICY_SCHEMA_INVALID", "legacy snapshot invariants")
     if type(snapshot.get("policy_config_sha256")) is not str or not re.fullmatch(r"[0-9a-f]{64}", snapshot["policy_config_sha256"]):
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot hash")
     if snapshot.get("action") not in ACTIONS or snapshot.get("session_mode") not in SESSIONS or snapshot.get("executor") not in {"codex", "manual"}:

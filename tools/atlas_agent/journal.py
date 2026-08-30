@@ -132,7 +132,15 @@ def _execution(value,line):
             raise JournalError(f"sandbox process enforcement mismatch at line {line}")
         if descriptor["network_enforcement"] != "codex":
             raise JournalError(f"sandbox network enforcement mismatch at line {line}")
-        if descriptor["requested_network_access"] is not False or descriptor["resolved_network_access"] is not False:
+        requested_network = descriptor["requested_network_access"]
+        resolved_network = descriptor["resolved_network_access"]
+        if type(requested_network) is not bool or type(resolved_network) is not bool or requested_network != resolved_network:
+            raise JournalError(f"sandbox network mismatch at line {line}")
+        envelope = value.get("permission_envelope")
+        if isinstance(envelope, dict) and envelope.get("network_access") is not resolved_network:
+            raise JournalError(f"sandbox network mismatch at line {line}")
+        snapshot = value.get("policy_snapshot")
+        if isinstance(snapshot, dict) and snapshot.get("network_access") is not resolved_network:
             raise JournalError(f"sandbox network mismatch at line {line}")
         if descriptor["pid_namespace"] is not True or descriptor["ipc_namespace"] is not True or descriptor["user_namespace"] != "bwrap-default":
             raise JournalError(f"sandbox provenance invalid at line {line}")
@@ -147,7 +155,8 @@ def _execution(value,line):
                 raise JournalError(f"sandbox provenance invalid at line {line}")
         if descriptor["inner_codex_sandbox"] != descriptor["filesystem_mode"]:
             raise JournalError(f"sandbox action mismatch at line {line}")
-        if descriptor["inner_codex_network"] != "restricted":
+        expected_inner_network = "enabled" if descriptor["resolved_network_access"] else "restricted"
+        if descriptor["inner_codex_network"] != expected_inner_network:
             raise JournalError(f"sandbox network mismatch at line {line}")
     if modern_bwrap and "sandbox" not in value:
         raise JournalError(f"sandbox provenance missing at line {line}")
@@ -185,8 +194,8 @@ def _validate_parent_context(form, generation, generations, line):
 class Journal:
     def __init__(self,path:Path): self.path=path
 
-    def _archived_prompt_schema(self, prompt_sha256, line):
-        """Return schema evidence from the hash-bound immutable prompt archive."""
+    def _archived_prompt(self, prompt_sha256, line):
+        """Return the hash-bound immutable parsed prompt."""
         archive=self.path.parent / "prompts" / f"{prompt_sha256}.txt"
         try:
             raw=archive.read_bytes()
@@ -195,9 +204,12 @@ class Journal:
         if hashlib.sha256(raw).hexdigest()!=prompt_sha256:
             raise JournalError(f"prompt archive hash mismatch at line {line}")
         try:
-            return parse_prompt(raw).prompt_schema
+            return parse_prompt(raw)
         except PromptError as error:
             raise JournalError(f"prompt archive invalid at line {line}") from error
+
+    def _archived_prompt_schema(self, prompt_sha256, line):
+        return self._archived_prompt(prompt_sha256, line).prompt_schema
     def read(self):
         if not self.path.exists(): return []
         out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False
@@ -219,20 +231,39 @@ class Journal:
                     if type(epoch) is not int or epoch not in {1, 2}: raise JournalError(f"validation epoch invalid at line {n}")
                     validation_epoch = epoch
                     initialized=True
+                archived_prompt=None
                 if raw["event"] == "PROMPT_ACCEPTED":
-                    archived_schema=self._archived_prompt_schema(raw["payload"]["prompt_sha256"],n)
+                    archived_prompt=self._archived_prompt(raw["payload"]["prompt_sha256"],n)
+                    archived_schema=archived_prompt.prompt_schema
                     journal_schema=raw["payload"].get("prompt_schema")
                     if journal_schema is not None and journal_schema != archived_schema:
                         raise JournalError(f"prompt schema archive mismatch at line {n}")
-                    if archived_schema == "atlas-agent-prompt/2" and journal_schema != archived_schema:
-                        raise JournalError(f"prompt schema archive mismatch at line {n}")
+                    if archived_schema == "atlas-agent-prompt/2":
+                        if journal_schema != archived_schema:
+                            raise JournalError(f"prompt schema archive mismatch at line {n}")
+                        if (
+                            "network_access" not in raw["payload"]
+                            or raw["payload"]["network_access"] is not archived_prompt.network_access
+                        ):
+                            raise JournalError(f"prompt network archive mismatch at line {n}")
                 self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
                 p=raw["payload"]
                 if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
                 elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}:
                     prepared=outstanding.pop(p["transaction_id"],None)
                     if raw["event"]=="PROMPT_ACCEPTED":
-                        generations[p["generation"]]={"generation":p["generation"],"action":p["action"],"status":"ACCEPTED","prompt_schema":p.get("prompt_schema")}
+                        generations[p["generation"]]={
+                            "generation":p["generation"],
+                            "action":p["action"],
+                            "status":"ACCEPTED",
+                            "prompt_schema":p.get("prompt_schema"),
+                            "network_access": (
+                                archived_prompt.network_access
+                                if archived_prompt is not None
+                                and archived_prompt.prompt_schema == "atlas-agent-prompt/2"
+                                else False
+                            ),
+                        }
                     elif raw["event"]=="RUN_STARTED":
                         rec=generations.get(p["generation"])
                         if rec: rec.update({"status":"RUNNING","execution":p.get("execution")})
@@ -256,7 +287,7 @@ class Journal:
             "PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},
             "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},
             "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts","acquired_untracked"},
-            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness"},
+            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness","network_access"},
             "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution","acquired_untracked"},
             "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts"},
             "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
@@ -286,6 +317,25 @@ class Journal:
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
         started=(generations or {}).get(p.get("generation")) or (generations or {}).get(str(p.get("generation")))
         started_execution=started.get("execution") if isinstance(started,dict) else None
+
+        if (
+            isinstance(started,dict)
+            and started.get("prompt_schema") == "atlas-agent-prompt/2"
+            and (
+                event == "RUN_STARTED"
+                or (
+                    event == "TRANSITION_PREPARED"
+                    and p.get("logical_event") == "RUN_STARTED"
+                )
+            )
+        ):
+            expected_network=started.get("network_access")
+            if (
+                type(expected_network) is not bool
+                or "network_access" not in p
+                or p["network_access"] is not expected_network
+            ):
+                raise JournalError(f"prompt network provenance mismatch at line {n}")
         # The prompt schema is durable transaction provenance.  It must remain
         # authoritative even if an attacker removes every v2 field from the
         # execution/result copies.
@@ -295,6 +345,57 @@ class Journal:
         explicit_legacy = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/1"
         archived_v2 = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/2"
         v2=archived_v2 or (validation_epoch >= 2 and not explicit_legacy)
+
+        # A hash-bound v2 prompt is positive modern evidence.  Modern execution
+        # ownership must not be inferred from optional fields that can be
+        # removed from the journal.
+        start_event = (
+            event == "RUN_STARTED"
+            or (
+                event == "TRANSITION_PREPARED"
+                and p.get("logical_event") == "RUN_STARTED"
+            )
+        )
+        terminal_event = event in {"RUN_COMPLETED","RUN_INTERRUPTED"}
+        terminal_with_owner = terminal_event and started_execution is not None
+
+        if archived_v2 and (start_event or terminal_with_owner):
+            execution=p.get("execution")
+            if not isinstance(execution,dict):
+                raise JournalError(f"modern execution ownership missing at line {n}")
+
+            if execution.get("owner_schema") != "atlas-agent-execution-owner/2":
+                raise JournalError(f"modern execution owner schema missing at line {n}")
+
+            snapshot=execution.get("policy_snapshot")
+            try:
+                validate_snapshot(snapshot)
+            except PolicyError as error:
+                raise JournalError(f"modern policy snapshot invalid at line {n}") from error
+            if (
+                not isinstance(snapshot,dict)
+                or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
+            ):
+                raise JournalError(f"modern policy snapshot invalid at line {n}")
+
+            envelope=execution.get("permission_envelope")
+            if not isinstance(envelope,dict):
+                raise JournalError(f"modern permission envelope missing at line {n}")
+            if (
+                envelope.get("network_access") is not snapshot.get("network_access")
+                or envelope.get("sandbox_mode") != snapshot.get("sandbox_mode")
+            ):
+                raise JournalError(f"modern permission envelope mismatch at line {n}")
+
+            if start_event and (
+                "network_access" not in p
+                or p["network_access"] is not snapshot.get("network_access_requested")
+            ):
+                raise JournalError(f"modern network request mismatch at line {n}")
+
+            # Real Codex executions must carry the concrete sandbox backend;
+            # FakeExecutor histories used by deterministic tests are not
+            # reclassified as Bubblewrap executions.
         if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2 and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
             raise JournalError(f"execution handoff digest mismatch at line {n}")
         if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and v2 and started_execution is not None:
@@ -345,10 +446,30 @@ class Journal:
                     raise JournalError(f"sandbox process enforcement mismatch at line {n}")
                 if descriptor.get("network_enforcement") != "codex":
                     raise JournalError(f"sandbox network enforcement mismatch at line {n}")
-                if (envelope.get("network_access") is not False or
-                    descriptor.get("requested_network_access") is not False or
-                    descriptor.get("resolved_network_access") is not False or
-                    execution.get("network_access") is True):
+                network = envelope.get("network_access")
+                snapshot = execution.get("policy_snapshot")
+                if (type(network) is not bool or
+                    descriptor.get("requested_network_access") is not network or
+                    descriptor.get("resolved_network_access") is not network):
+                    raise JournalError(f"sandbox network mismatch at line {n}")
+                if isinstance(snapshot,dict):
+                    if snapshot.get("network_access") is not network:
+                        raise JournalError(f"sandbox network mismatch at line {n}")
+                    if (
+                        event=="RUN_STARTED"
+                        and snapshot.get("schema")=="atlas-agent-policy-snapshot/2"
+                    ):
+                        if (
+                            "network_access" not in p
+                            or p["network_access"] is not snapshot.get("network_access_requested")
+                        ):
+                            raise JournalError(f"sandbox network request mismatch at line {n}")
+                elif event=="RUN_STARTED" and "network_access" in p:
+                    raise JournalError(f"sandbox network request mismatch at line {n}")
+                expected_inner_network = "enabled" if network else "restricted"
+                if descriptor.get("inner_codex_network") != expected_inner_network:
+                    raise JournalError(f"sandbox network mismatch at line {n}")
+                if p.get("action") in {"patch_review","state_audit"} and network:
                     raise JournalError(f"sandbox network mismatch at line {n}")
         epoch2_execution = {"provenance_version", "execution_input_sha256", "report_provenance",
                             "prompt_input", "context_path", "effective_prompt_path",

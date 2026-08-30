@@ -483,7 +483,12 @@ class Workflow:
         if not isinstance(thread_id,str) or not thread_id: raise WorkflowError("REUSE_TARGET_NO_THREAD")
         target_snapshot=owner.get("policy_snapshot")
         if owner.get("owner_schema")!="atlas-agent-execution-owner/2" or not isinstance(target_snapshot,dict): raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
-        for key in ("action","profile","executor","requested_model","requested_reasoning_effort","sandbox_mode","network_access","web_search","apps_enabled","session_storage"):
+        if (
+            target_snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
+            or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
+        ):
+            raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
+        for key in ("action","profile","executor","requested_model","requested_reasoning_effort","sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
             if target_snapshot.get(key)!=snapshot.get(key): raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
         generation=record["generation"]
         if generation-target["generation"]>snapshot["max_reuse_generation_gap"]: raise WorkflowError("REUSE_TARGET_STALE")
@@ -540,6 +545,11 @@ class Workflow:
                     raise WorkflowError("EXECUTION_ID_COLLISION")
                 if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
+            if x.get("prompt_schema") == "atlas-agent-prompt/2":
+                network_access=x.get("network_access")
+                if type(network_access) is not bool:
+                    raise WorkflowError("PROMPT_NETWORK_PROVENANCE_MISSING")
+                payload["network_access"]=network_access
             if execution is not None:
                 # Preserve the public launcher path while giving an epoch-2
                 # durable start the same provenance shape as execute().
@@ -802,8 +812,17 @@ class Workflow:
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
-            if hasattr(executor, "sandbox_descriptor"):
-                metadata["sandbox"] = executor.sandbox_descriptor()
+            sandbox_descriptor = (
+                prepared.runtime_handle
+                if isinstance(prepared.runtime_handle, dict)
+                else None
+            )
+            if sandbox_descriptor is None and hasattr(executor, "sandbox_descriptor"):
+                candidate = executor.sandbox_descriptor()
+                if isinstance(candidate, dict) and candidate:
+                    sandbox_descriptor = candidate
+            if sandbox_descriptor is not None:
+                metadata["sandbox"] = dict(sandbox_descriptor)
                 metadata["execution_backend_schema"] = "atlas-bwrap-execution/1"
             metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
             if snapshot:
@@ -813,6 +832,8 @@ class Workflow:
             execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
             start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context.decode("utf-8")}
+            if snapshot is not None:
+                start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
             self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
             def publish_owner(stage,transaction):
                 if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)

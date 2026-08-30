@@ -237,6 +237,7 @@ def test_codex_executor_configuration_is_explicit():
 def test_codex_heartbeats_continue_after_stdout_eof(tmp_path):
     from tools.atlas_agent.codex_executor import CodexExecutor
     from tools.atlas_agent.executor import ExecutionSpec,PreparedExecution
+    from tests.codex_test_support import IOCodexExecutor
     executable=tmp_path/"close-stdout"
     executable.write_text("#!/bin/sh\nexec 1>&-\nsleep 0.08\n")
     executable.chmod(0o755)
@@ -245,7 +246,7 @@ def test_codex_heartbeats_continue_after_stdout_eof(tmp_path):
     envelope={"sandbox_mode":"read-only","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}
     spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,tmp_path,"eof-heartbeat",report_dir,tmp_path,input_mode="legacy")
     prepared=PreparedExecution(spec,"codex",(str(executable),),"codex/test",envelope)
-    result=CodexExecutor(executable=str(executable),timeout_seconds=.3,heartbeat_seconds=.02,progress_callback=events.append).run_execution(prepared)
+    result=IOCodexExecutor(executable=str(executable),timeout_seconds=.3,heartbeat_seconds=.02,progress_callback=events.append).run_execution(prepared)
     assert result.exit_code==0 and result.timed_out is False
     assert any(event["kind"]=="heartbeat" for event in events)
     assert (report_dir/"stdout.log").read_bytes()==b""
@@ -264,31 +265,69 @@ def test_fake_explicit_permission_observation_is_preserved(repo):
     assert result["permission_observation_status"] == "observed" and result["permission_failures"] == failures
 
 def test_codex_noninteractive_argv_and_mutation_guards(tmp_path):
-    from tools.atlas_agent.codex_executor import CodexExecutor
     from tools.atlas_agent.executor import ExecutionSpec
-    from pathlib import Path
-    root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("hello")
-    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root,input_mode="legacy")
-    ex=CodexExecutor(executable="/bin/true")
-    ex.info=lambda: {"available":True,"version":"codex-cli 0.149.1"}
-    prepared=ex.prepare_execution(spec); argv=list(prepared.command)
+    from tests.codex_test_support import pinned_codex
+
+    root=tmp_path
+    prompt_path=root/"prompt"
+    prompt_path.write_text("hello")
+
+    ex,snapshot=pinned_codex(root,"/bin/true")
+    spec=ExecutionSpec(
+        1,"0"*64,"implementation",prompt_path,root,"e",
+        root/"report",root,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
+
+    prepared=ex.prepare_execution(spec)
+    argv=list(prepared.command)
+
     assert "--strict-config" in argv and "--ignore-rules" in argv
-    assert 'approval_policy="never"' in argv and 'approvals_reviewer="user"' in argv
-    assert argv[argv.index("--sandbox")+1] == "read-only"
-    for kwargs in ({"approval_policy":"on-request"},{"approvals_reviewer":"auto_review"},{"ignore_rules":False},{"strict_config":False}):
-        bad=CodexExecutor(executable="/bin/true",**kwargs)
+    assert 'approval_policy="never"' in argv
+    assert 'approvals_reviewer="user"' in argv
+    assert argv[argv.index("--sandbox")+1] == "workspace-write"
+
+    for kwargs in (
+        {"approval_policy":"on-request"},
+        {"approvals_reviewer":"auto_review"},
+        {"ignore_rules":False},
+        {"strict_config":False},
+    ):
+        bad,bad_snapshot=pinned_codex(root,"/bin/true",**kwargs)
+        bad_spec=ExecutionSpec(
+            1,"0"*64,"implementation",prompt_path,root,"bad",
+            root/"bad-report",root,
+            policy_snapshot=bad_snapshot,
+            input_mode="legacy",
+        )
         with pytest.raises(Exception,match="NONINTERACTIVE_PERMISSION_POLICY_REQUIRED"):
-            bad.prepare_execution(spec)
+            bad.prepare_execution(bad_spec)
+
 
 def test_workspace_write_network_is_explicit(tmp_path):
-    from tools.atlas_agent.codex_executor import CodexExecutor
-    ex=CodexExecutor(executable="/bin/true",sandbox="workspace-write",network_access=False)
-    ex.info=lambda: {"available":True,"version":"codex-cli 0.149.1"}
-    from pathlib import Path
-    root=tmp_path; path=root/"p"; path.write_text("x")
     from tools.atlas_agent.executor import ExecutionSpec
-    argv=list(ex.prepare_execution(ExecutionSpec(1,"0"*64,"implementation",path,root,"e",root/"r",root,input_mode="legacy")).command)
+    from tests.codex_test_support import pinned_codex
+
+    root=tmp_path
+    path=root/"p"
+    path.write_text("x")
+
+    ex,snapshot=pinned_codex(
+        root,
+        "/bin/true",
+        sandbox="workspace-write",
+        network_access=False,
+    )
+    spec=ExecutionSpec(
+        1,"0"*64,"implementation",path,root,"e",root/"r",root,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
+
+    argv=list(ex.prepare_execution(spec).command)
     assert "sandbox_workspace_write.network_access=false" in argv
+
 
 def test_permission_refusal_observation_is_not_inferred_from_exit_zero():
     from tools.atlas_agent.codex_executor import CodexExecutor
@@ -357,14 +396,34 @@ def test_real_concurrent_same_generation_has_one_owner(repo):
     assert w._state()["generations"]["1"]["status"]=="COMPLETED"
     assert len(list((w.base/"reports"/"executions").glob("*/execution.json")))==1
 
-def test_prepare_is_pure_and_discovery_is_post_start(tmp_path):
-    from tools.atlas_agent.codex_executor import CodexExecutor
+def test_prepare_resolves_authenticated_version_before_start_without_info(tmp_path):
     from tools.atlas_agent.executor import ExecutionSpec
-    root=tmp_path; prompt_path=root/"prompt"; prompt_path.write_text("hello")
-    ex=CodexExecutor(executable="/bin/true"); ex.info=lambda: (_ for _ in ()).throw(AssertionError("discovery before start"))
-    spec=ExecutionSpec(1,"0"*64,"implementation",prompt_path,root,"e",root/"report",root,input_mode="legacy")
+    from tests.codex_test_support import pinned_codex
+
+    root=tmp_path
+    prompt_path=root/"prompt"
+    prompt_path.write_text("hello")
+
+    ex,snapshot=pinned_codex(root,"/bin/true")
+    ex.info=lambda: (_ for _ in ()).throw(
+        AssertionError("pathname diagnostic info must not be used by prepare")
+    )
+
+    spec=ExecutionSpec(
+        1,"0"*64,"implementation",prompt_path,root,"e",
+        root/"report",root,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
+
     prepared=ex.prepare_execution(spec)
-    assert prepared.version=="unresolved" and not (root/"report").exists()
+
+    assert isinstance(prepared.version,str)
+    assert prepared.version
+    assert prepared.version != "unresolved"
+    assert not (root/"report").exists()
+    assert ex.post_start_prepare(prepared) is prepared
+
 
 def test_doctor_validates_report_owners_after_completion(repo):
     p,w=repo; accepted(w); w.execute(1,FakeExecutor()); assert subprocess.run([sys.executable,"-m","tools.atlas_agent","doctor"],cwd=p,env=dict(os.environ,PYTHONPATH=str(Path(__file__).parents[1])),capture_output=True).returncode==0

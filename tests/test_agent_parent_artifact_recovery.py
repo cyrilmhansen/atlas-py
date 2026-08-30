@@ -1,5 +1,7 @@
 import hashlib
 import json
+from tools.atlas_agent.policy import load_policy, resolve_policy
+from tools.atlas_agent.prompt import parse_prompt
 
 import pytest
 
@@ -73,6 +75,7 @@ def test_unpublishable_context_does_not_strand_authoritative_recovery(tmp_path):
     _, w = make_repo(tmp_path)
     raw = accepted(w)
     prompt_sha = hashlib.sha256(raw).hexdigest()
+    snapshot = resolve_policy(load_policy(w.root/"atlas-agent-policy.toml"), parse_prompt(raw))
     supplement = w._parent_context({"generations": {}}, 1)[0].decode()
     execution_id = "123e4567-e89b-12d3-a456-426614174000"
     context = w.base / "reports" / "contexts"
@@ -91,12 +94,15 @@ def test_unpublishable_context_does_not_strand_authoritative_recovery(tmp_path):
         "effective_prompt_sha256": hashlib.sha256(raw + supplement.encode()).hexdigest(),
         "provenance_version": 2, "execution_input_sha256": hashlib.sha256(raw + supplement.encode()).hexdigest(),
         "report_provenance": {"status": "unavailable"},
+        "owner_schema": "atlas-agent-execution-owner/2",
+        "policy_snapshot": snapshot,
     }
     w.journal.append("TRANSITION_PREPARED", transaction_id="tx", logical_event="RUN_STARTED",
                      source="accepted/" + next(p.name for p in (w.base / "accepted").iterdir()),
                      destination="running/implementation/g000001-" + prompt_sha + ".txt",
                      prompt_sha256=prompt_sha, generation=1, action="implementation",
                      witness=w._state()["generations"]["1"]["witness"],
+                     network_access=False,
                      execution=owner, context_supplement=supplement)
     state = w.recover()
     assert state["generations"]["1"]["status"] == "RUNNING"

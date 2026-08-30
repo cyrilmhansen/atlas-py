@@ -8,6 +8,7 @@ import pytest
 
 from tools.atlas_agent.cli import DispatchPresenter, main
 from tools.atlas_agent.codex_executor import CodexExecutor
+from tests.codex_test_support import pinned_codex
 from tools.atlas_agent.executor import ExecutorError, ExecutionSpec, FakeExecutor
 from tools.atlas_agent.workflow import WorkflowError
 
@@ -26,7 +27,6 @@ def agent(text):
 class CodexFake(FakeExecutor):
     def prepare_execution(self,spec):
         return replace(super().prepare_execution(spec),executor="codex")
-
 
 def test_fresh_dispatch_summary_and_unavailable_telemetry_is_omitted(tmp_path,capsys):
     _,workflow=make_repo(tmp_path); accepted(workflow)
@@ -163,8 +163,19 @@ printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"
     executable.chmod(0o755)
     prompt=tmp_path/"prompt.txt"; prompt.write_text("work\n")
     events=[]
-    executor=CodexExecutor(executable=str(executable),timeout_seconds=2,heartbeat_seconds=0.01,progress_callback=events.append)
-    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path,input_mode="legacy")
+    executor,snapshot=pinned_codex(
+        tmp_path,
+        executable,
+        timeout_seconds=2,
+        heartbeat_seconds=0.01,
+        progress_callback=events.append,
+    )
+    spec=ExecutionSpec(
+        1,"a"*64,"implementation",prompt,tmp_path,"execution",
+        tmp_path/"report",tmp_path,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
     prepared=executor.post_start_prepare(executor.prepare_execution(spec))
 
     result=executor.run_execution(prepared)
@@ -196,8 +207,13 @@ def _prepared_script_executor(tmp_path, body, **kwargs):
     executable.write_text(f"#!{sys.executable}\n" + body)
     executable.chmod(0o755)
     prompt=tmp_path/"prompt.txt"; prompt.write_text("work\n")
-    executor=CodexExecutor(executable=str(executable),**kwargs)
-    spec=ExecutionSpec(1,"a"*64,"implementation",prompt,tmp_path,"execution",tmp_path/"report",tmp_path,input_mode="legacy")
+    executor,snapshot=pinned_codex(tmp_path,executable,**kwargs)
+    spec=ExecutionSpec(
+        1,"a"*64,"implementation",prompt,tmp_path,"execution",
+        tmp_path/"report",tmp_path,
+        policy_snapshot=snapshot,
+        input_mode="legacy",
+    )
     return executor,executor.post_start_prepare(executor.prepare_execution(spec))
 
 

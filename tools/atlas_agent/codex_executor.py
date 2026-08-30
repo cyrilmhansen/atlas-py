@@ -1,9 +1,10 @@
 from __future__ import annotations
-import hashlib, json, os, re, select, shutil, signal, subprocess, threading, time
+import fcntl, hashlib, json, os, re, select, shutil, signal, stat, subprocess, threading, time
 from dataclasses import replace
 from pathlib import Path
 from .executor import ExecutorError, ExecutionResult, ExecutionSpec, PreparedExecution, utc_now, validate_permission_envelope
 from .jsonl import DEFAULT_MAX_JSONL_LINE_BYTES, iter_bounded_jsonl
+from .policy import POLICY_SCHEMA, SNAPSHOT_SCHEMA, PolicyError, validate_snapshot
 
 class CodexExecutor:
     SHUTDOWN_GRACE_SECONDS=5
@@ -11,8 +12,16 @@ class CodexExecutor:
     def __init__(self, executable="codex", model=None, sandbox="read-only", ephemeral=True,
                  sandbox_mode=None, approval_policy="never", approvals_reviewer="user",
                  ignore_rules=True, strict_config=True, network_access=False, timeout_seconds=300,
-                 progress_callback=None, heartbeat_seconds=30):
-        self.executable=shutil.which(executable) or (executable if Path(executable).is_file() else None)
+                 progress_callback=None, heartbeat_seconds=30, codex_home=None):
+        if executable == "codex":
+            executable = os.environ.get("ATLAS_CODEX_EXECUTABLE", executable)
+        self.codex_home = Path(
+            codex_home
+            or os.environ.get("ATLAS_CODEX_HOME")
+            or (Path.home()/".local/share/atlas-agent/codex-home")
+        ).expanduser()
+        resolved=shutil.which(executable) or (executable if Path(executable).is_file() else None)
+        self.executable=str(Path(resolved).absolute()) if resolved else None
         self.model=model; self.sandbox=sandbox_mode or sandbox; self.sandbox_mode=self.sandbox; self.ephemeral=ephemeral
         self.approval_policy=approval_policy; self.approvals_reviewer=approvals_reviewer
         self.ignore_rules=ignore_rules; self.strict_config=strict_config; self.network_access=network_access
@@ -26,12 +35,325 @@ class CodexExecutor:
         if isinstance(self.timeout_seconds,bool) or not isinstance(self.timeout_seconds,(int,float)) or self.timeout_seconds <= 0: raise ExecutorError("INVALID_TIMEOUT")
         if isinstance(self.heartbeat_seconds,bool) or not isinstance(self.heartbeat_seconds,(int,float)) or self.heartbeat_seconds <= 0: raise ExecutorError("INVALID_HEARTBEAT_INTERVAL")
     def _environment(self):
-        return dict(os.environ)
-    def info(self):
-        if not self.executable: return {"executor":"codex","executable":None,"available":False,"version":None,"capabilities":[]}
-        p=subprocess.run([self.executable,"--version"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+        env = dict(os.environ)
+        env["CODEX_HOME"] = str(self.codex_home)
+        return env
+    @staticmethod
+    def _trusted_directory(path):
+        path=Path(path)
+        if not path.is_absolute():
+            raise ExecutorError("CODEX_HOME_UNTRUSTED")
+        try:
+            st=path.lstat()
+            if path.resolve(strict=True) != path:
+                raise ExecutorError("CODEX_HOME_UNTRUSTED")
+        except (OSError, RuntimeError) as error:
+            raise ExecutorError("CODEX_HOME_UNTRUSTED") from error
+        if (
+            stat.S_ISLNK(st.st_mode) or
+            not stat.S_ISDIR(st.st_mode) or
+            st.st_uid not in {0, os.geteuid()} or
+            st.st_mode & 0o022
+        ):
+            raise ExecutorError("CODEX_HOME_UNTRUSTED")
+
+    @staticmethod
+    def _trusted_file_sha256(path, *, executable=False, error_code="CODEX_RUNTIME_FILE_UNTRUSTED"):
+        path=Path(path)
+        if not path.is_absolute():
+            raise ExecutorError(error_code)
+        flags=os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            if path.resolve(strict=True) != path:
+                raise ExecutorError(error_code)
+            fd=os.open(path, flags)
+        except (OSError, RuntimeError) as error:
+            raise ExecutorError(error_code) from error
+        try:
+            st=os.fstat(fd)
+            if (
+                not stat.S_ISREG(st.st_mode) or
+                st.st_uid not in {0, os.geteuid()} or
+                st.st_mode & 0o022 or
+                (executable and not (st.st_mode & 0o111))
+            ):
+                raise ExecutorError(error_code)
+            digest=hashlib.sha256()
+            while True:
+                chunk=os.read(fd, 1024*1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+
+    def _require_executable_snapshot(self, snapshot):
+        try:
+            validated=validate_snapshot(snapshot)
+        except (PolicyError, TypeError, AttributeError) as error:
+            raise ExecutorError("POLICY_SNAPSHOT_NOT_EXECUTABLE") from error
+        if (
+            validated.get("schema") != SNAPSHOT_SCHEMA
+            or validated.get("policy_schema") != POLICY_SCHEMA
+            or validated.get("executor") != "codex"
+            or not isinstance(validated.get("codex_profile"),str)
+        ):
+            raise ExecutorError("POLICY_SNAPSHOT_NOT_EXECUTABLE")
+        return validated
+
+    def _validate_runtime_identity(self, snapshot):
+        snapshot=self._require_executable_snapshot(snapshot)
+        if not self.executable:
+            raise ExecutorError("CODEX_NOT_FOUND")
+
+        self._trusted_directory(self.codex_home)
+
+        profile=snapshot["codex_profile"]
+        paths={
+            "codex_binary_sha256": Path(self.executable),
+            "codex_config_sha256": self.codex_home/"config.toml",
+            "codex_catalog_sha256": self.codex_home/"models-atlas-shell-only.json",
+            "codex_profile_sha256": self.codex_home/f"{profile}.config.toml",
+        }
+        codes={
+            "codex_binary_sha256": "CODEX_EXECUTABLE_DIGEST_MISMATCH",
+            "codex_config_sha256": "CODEX_CONFIG_DIGEST_MISMATCH",
+            "codex_catalog_sha256": "CODEX_CATALOG_DIGEST_MISMATCH",
+            "codex_profile_sha256": "CODEX_PROFILE_DIGEST_MISMATCH",
+        }
+        for key,path in paths.items():
+            actual=self._trusted_file_sha256(
+                path,
+                executable=(key=="codex_binary_sha256"),
+                error_code=codes[key],
+            )
+            if actual != snapshot.get(key):
+                raise ExecutorError(codes[key])
+
+    def _sealed_runtime_fd(self, snapshot):
+        """Create an immutable executable copy of the pinned Codex inode."""
+        if (
+            not isinstance(snapshot,dict)
+            or snapshot.get("schema") != SNAPSHOT_SCHEMA
+            or not self.executable
+        ):
+            raise ExecutorError("CODEX_PINNED_RUNTIME_REQUIRED")
+
+        source=Path(self.executable)
+        flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0)
+        try:
+            if not source.is_absolute() or source.resolve(strict=True) != source:
+                raise ExecutorError("CODEX_EXECUTABLE_DIGEST_MISMATCH")
+            source_fd=os.open(source,flags)
+        except (OSError,RuntimeError) as error:
+            raise ExecutorError("CODEX_EXECUTABLE_DIGEST_MISMATCH") from error
+
+        runtime_fd=None
+        try:
+            st=os.fstat(source_fd)
+            if (
+                not stat.S_ISREG(st.st_mode)
+                or st.st_uid not in {0,os.geteuid()}
+                or st.st_mode & 0o022
+                or not (st.st_mode & 0o111)
+            ):
+                raise ExecutorError("CODEX_EXECUTABLE_DIGEST_MISMATCH")
+
+            if not hasattr(os,"memfd_create") or not hasattr(os,"MFD_ALLOW_SEALING"):
+                raise ExecutorError("CODEX_PINNED_RUNTIME_UNAVAILABLE")
+
+            runtime_fd=os.memfd_create(
+                "atlas-codex-runtime",
+                os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+            )
+
+            digest=hashlib.sha256()
+            while True:
+                chunk=os.read(source_fd,1024*1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                offset=0
+                while offset<len(chunk):
+                    written=os.write(runtime_fd,chunk[offset:])
+                    if written<=0:
+                        raise ExecutorError("CODEX_PINNED_RUNTIME_COPY_FAILED")
+                    offset+=written
+
+            if digest.hexdigest()!=snapshot.get("codex_binary_sha256"):
+                raise ExecutorError("CODEX_EXECUTABLE_DIGEST_MISMATCH")
+
+            os.fchmod(runtime_fd,0o500)
+
+            required_seals=(
+                fcntl.F_SEAL_SEAL
+                | fcntl.F_SEAL_SHRINK
+                | fcntl.F_SEAL_GROW
+                | fcntl.F_SEAL_WRITE
+            )
+            fcntl.fcntl(runtime_fd,fcntl.F_ADD_SEALS,required_seals)
+            actual_seals=fcntl.fcntl(runtime_fd,fcntl.F_GET_SEALS)
+            if actual_seals & required_seals != required_seals:
+                raise ExecutorError("CODEX_PINNED_RUNTIME_UNSEALED")
+
+            return runtime_fd
+        except BaseException:
+            if runtime_fd is not None:
+                try: os.close(runtime_fd)
+                except OSError: pass
+            raise
+        finally:
+            os.close(source_fd)
+
+    @staticmethod
+    def _validate_sealed_runtime_fd(fd,snapshot):
+        if type(fd) is not int or fd<0:
+            raise ExecutorError("CODEX_PINNED_RUNTIME_INVALID")
+        try:
+            st=os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise ExecutorError("CODEX_PINNED_RUNTIME_INVALID")
+
+            required_seals=(
+                fcntl.F_SEAL_SEAL
+                | fcntl.F_SEAL_SHRINK
+                | fcntl.F_SEAL_GROW
+                | fcntl.F_SEAL_WRITE
+            )
+            if fcntl.fcntl(fd,fcntl.F_GET_SEALS) & required_seals != required_seals:
+                raise ExecutorError("CODEX_PINNED_RUNTIME_UNSEALED")
+
+            digest=hashlib.sha256()
+            offset=0
+            while True:
+                chunk=os.pread(fd,1024*1024,offset)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                offset+=len(chunk)
+            if digest.hexdigest()!=snapshot.get("codex_binary_sha256"):
+                raise ExecutorError("CODEX_EXECUTABLE_DIGEST_MISMATCH")
+        except OSError as error:
+            raise ExecutorError("CODEX_PINNED_RUNTIME_INVALID") from error
+
+    def _build_command(self,spec,snapshot):
+        codex_profile=snapshot.get("codex_profile") if snapshot else None
+        reuse=bool(snapshot and snapshot.get("session_mode")=="reuse")
+        requested_thread_id=snapshot.get("requested_thread_id") if reuse else None
+        if reuse and (not isinstance(requested_thread_id,str) or not requested_thread_id):
+            raise ExecutorError("REUSE_TARGET_MISSING")
+
+        argv=[self.executable]
+        if codex_profile:
+            argv += ["--profile",codex_profile]
+        argv += ["exec","resume"] if reuse else ["exec"]
+        argv += ["--json"]
+        if not reuse:
+            argv += ["-C",str(spec.repository_root)]
+        if reuse:
+            argv += ["-c",f'sandbox_mode="{self.sandbox}"']
+        else:
+            argv += ["--sandbox",self.sandbox]
+
+        if snapshot and not codex_profile:
+            argv.append("--ignore-user-config")
+        if self.strict_config:
+            argv.append("--strict-config")
+        if self.ignore_rules:
+            argv.append("--ignore-rules")
+
+        argv += [
+            "-c",f'approval_policy="{self.approval_policy}"',
+            "-c",f'approvals_reviewer="{self.approvals_reviewer}"',
+        ]
+        if snapshot:
+            argv += [
+                "-c","features.apps=false",
+                "-c",f'web_search="{snapshot["web_search"]}"',
+            ]
+        if self.sandbox=="workspace-write":
+            argv += [
+                "-c",
+                f"sandbox_workspace_write.network_access={str(self.network_access).lower()}",
+            ]
+        if snapshot:
+            argv += [
+                "-c",
+                f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"',
+            ]
+        if self.ephemeral and (
+            not snapshot or snapshot.get("session_storage")=="ephemeral"
+        ):
+            argv.append("--ephemeral")
+        if self.model:
+            argv += ["--model",self.model]
+
+        argv += [requested_thread_id,"-"] if reuse else ["-"]
+        return tuple(argv)
+
+    def _validated_runtime_command(self,prepared,runtime_fd=None):
+        if prepared.policy_snapshot != prepared.spec.policy_snapshot:
+            raise ExecutorError("POLICY_SNAPSHOT_BINDING_MISMATCH")
+        snapshot=self._require_executable_snapshot(prepared.policy_snapshot)
+        self._validate_runtime_identity(snapshot)
+
+        expected=self._build_command(prepared.spec,snapshot)
+        if prepared.command!=expected:
+            raise ExecutorError("PREPARED_COMMAND_MISMATCH")
+
+        owned=False
+        if runtime_fd is None:
+            runtime_fd=self._sealed_runtime_fd(snapshot)
+            owned=True
+        else:
+            self._validate_sealed_runtime_fd(runtime_fd,snapshot)
+
+        command=list(expected)
+        command[0]=f"/proc/self/fd/{runtime_fd}"
+        return command,(runtime_fd,),runtime_fd if owned else None
+
+    def _runtime_info(self, snapshot, runtime_fd):
+        """Probe only the sealed, policy-bound Codex image."""
+        snapshot=self._require_executable_snapshot(snapshot)
+        self._validate_sealed_runtime_fd(runtime_fd,snapshot)
+        try:
+            p=subprocess.run(
+                [f"/proc/self/fd/{runtime_fd}","--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=5,
+                pass_fds=(runtime_fd,),
+            )
+        except (OSError,subprocess.TimeoutExpired) as error:
+            raise ExecutorError("CODEX_VERSION_FAILED") from error
         version=(p.stdout or p.stderr).decode("utf-8","replace").strip()
-        return {"executor":"codex","executable":self.executable,"available":p.returncode==0,"version":version,"capabilities":["exec","jsonl","stdin-prompt","model","sandbox","ephemeral","resume"]}
+        if p.returncode != 0 or not version:
+            raise ExecutorError("CODEX_VERSION_FAILED")
+        return {
+            "executor":"codex",
+            "executable":self.executable,
+            "available":True,
+            "version":version,
+            "capabilities":["exec","jsonl","stdin-prompt","model","sandbox","ephemeral","resume"],
+        }
+
+    def info(self):
+        """Diagnostic metadata only; never execute an unpinned pathname."""
+        available=False
+        if self.executable:
+            try:
+                available=Path(self.executable).is_file()
+            except OSError:
+                available=False
+        return {
+            "executor":"codex",
+            "executable":self.executable,
+            "available":available,
+            "version":None,
+            "capabilities":["exec","jsonl","stdin-prompt","model","sandbox","ephemeral","resume"],
+        }
     def prepare_execution(self,spec):
         self._validate_policy()
         if not self.executable: raise ExecutorError("CODEX_NOT_FOUND")
@@ -41,36 +363,39 @@ class CodexExecutor:
         if spec.input_mode == "bytes-v1" and hashlib.sha256(spec.prompt_bytes).hexdigest() != spec.expected_input_sha256:
             raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
         if not spec.prompt_path.is_file(): raise ExecutorError("PROMPT_MISSING")
-        snapshot=spec.policy_snapshot
-        if snapshot:
-            if snapshot.get("executor")!="codex" or self.model != snapshot.get("requested_model") or self.approval_policy != "never" or self.approvals_reviewer != "user" or self.sandbox != snapshot.get("sandbox_mode") or self.network_access != snapshot.get("network_access"):
-                raise ExecutorError("POLICY_RESOLUTION_MISMATCH")
-        reuse=bool(snapshot and snapshot.get("session_mode")=="reuse")
-        requested_thread_id=snapshot.get("requested_thread_id") if reuse else None
-        if reuse and (not isinstance(requested_thread_id,str) or not requested_thread_id):
-            raise ExecutorError("REUSE_TARGET_MISSING")
-        argv=[self.executable,"exec","resume"] if reuse else [self.executable,"exec"]
-        argv += ["--json"]
-        if not reuse: argv += ["-C",str(spec.repository_root)]
-        if reuse: argv += ["-c",f'sandbox_mode="{self.sandbox}"']
-        else: argv += ["--sandbox",self.sandbox]
-        if snapshot: argv.append("--ignore-user-config")
-        if self.strict_config: argv.append("--strict-config")
-        if self.ignore_rules: argv.append("--ignore-rules")
-        argv += ["-c",f'approval_policy="{self.approval_policy}"',"-c",f'approvals_reviewer="{self.approvals_reviewer}"']
-        if snapshot:
-            argv += ["-c","features.apps=false","-c","web_search=\"disabled\""]
-        if self.sandbox == "workspace-write": argv += ["-c",f"sandbox_workspace_write.network_access={str(self.network_access).lower()}"]
-        if snapshot:
-            argv += ["-c",f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"']
-        if self.ephemeral and (not snapshot or snapshot.get("session_storage")=="ephemeral"): argv.append("--ephemeral")
-        if self.model: argv += ["--model",self.model]
-        argv += [requested_thread_id,"-"] if reuse else ["-"]
-        return PreparedExecution(spec,"codex",tuple(argv),"unresolved",self._envelope(),snapshot)
+        snapshot=self._require_executable_snapshot(spec.policy_snapshot)
+        codex_profile=snapshot["codex_profile"]
+        if (
+            self.model != snapshot.get("requested_model")
+            or self.approval_policy != "never"
+            or self.approvals_reviewer != "user"
+            or self.sandbox != snapshot.get("sandbox_mode")
+            or self.network_access != snapshot.get("network_access")
+        ):
+            raise ExecutorError("POLICY_RESOLUTION_MISMATCH")
+        if not re.fullmatch(r"atlas-[a-z0-9-]+-(?:local|web)",codex_profile):
+            raise ExecutorError("CODEX_PROFILE_INVALID")
+        self._validate_runtime_identity(snapshot)
+
+        # Version identification is part of the pre-RUN_STARTED trust
+        # boundary.  Execute only bytes copied into a sealed memfd whose
+        # digest was already authenticated against the policy snapshot.
+        runtime_fd=self._sealed_runtime_fd(snapshot)
+        try:
+            info=self._runtime_info(snapshot,runtime_fd)
+        finally:
+            os.close(runtime_fd)
+
+        command=self._build_command(spec,snapshot)
+        return PreparedExecution(
+            spec,"codex",command,info["version"],
+            self._envelope(),snapshot,
+        )
+
     def post_start_prepare(self, prepared):
-        info=self.info()
-        if not info["available"]: raise ExecutorError("CODEX_VERSION_FAILED")
-        return replace(prepared, version=info["version"])
+        # No subprocess or fallible runtime probing is permitted after the
+        # durable RUN_STARTED boundary.
+        return prepared
     @staticmethod
     def _permission_observations(out_path, err_path, max_line_bytes=DEFAULT_MAX_JSONL_LINE_BYTES):
         failures=[]
@@ -166,7 +491,20 @@ class CodexExecutor:
     def _close_stdin(prompt, state):
         try: prompt.close()
         except Exception as error: state["close_error"] = error
-    def run_execution(self,prepared):
+    def run_execution(self,prepared,_runtime_binary_fd=None):
+        command,pass_fds,owned_fd=self._validated_runtime_command(
+            prepared,_runtime_binary_fd
+        )
+        try:
+            return self._run_execution_inner(
+                prepared,command,pass_fds
+            )
+        finally:
+            if owned_fd is not None:
+                try: os.close(owned_fd)
+                except OSError: pass
+
+    def _run_execution_inner(self,prepared,launch_command,pass_fds):
         spec=prepared.spec; spec.report_dir.mkdir(parents=True,exist_ok=True)
         out=spec.report_dir/"stdout.log"; err=spec.report_dir/"stderr.log"; started=utc_now()
         try:
@@ -188,7 +526,19 @@ class CodexExecutor:
                 # the new session belongs to Atlas even if setup is interrupted
                 # before any stream has been configured.
                 try:
-                    proc=subprocess.Popen(list(prepared.command),cwd=spec.repository_root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=stderr,start_new_session=True,env=self._environment())
+                    # Final trust-boundary revalidation: configuration or the
+                    # pinned fork may not change between prepare and exec.
+                    self._validate_runtime_identity(prepared.policy_snapshot)
+                    proc=subprocess.Popen(
+                        launch_command,
+                        cwd=spec.repository_root,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=stderr,
+                        start_new_session=True,
+                        env=self._environment(),
+                        pass_fds=pass_fds,
+                    )
                 except OSError as error:
                     raise ExecutorError(f"CODEX_LAUNCH_FAILED: {error}") from error
                 try:

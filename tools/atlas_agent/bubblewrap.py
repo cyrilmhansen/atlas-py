@@ -249,8 +249,6 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         super()._validate_policy()
         if self.sandbox not in {"read-only", "workspace-write"}:
             raise AtlasSandboxError("ATLAS_SANDBOX_MODE_UNSUPPORTED")
-        if self.network_access:
-            raise AtlasSandboxError("ATLAS_SANDBOX_NETWORK_UNSUPPORTED")
         if not sys.platform.startswith("linux"):
             raise AtlasSandboxError("ATLAS_SANDBOX_LINUX_REQUIRED")
         if not self.bwrap:
@@ -304,10 +302,9 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_GIT_TOPOLOGY_UNSUPPORTED")
         return git_dir
 
-    def _mount_command(self, spec, scratch: Path, listen="ws://127.0.0.1:0") -> list[str]:
+    def _mount_command(self, spec, scratch: Path, runtime_fd: int, listen="ws://127.0.0.1:0") -> list[str]:
         root = spec.repository_root.resolve()
         git_dir = self._git_dir(root)
-        native = _native_codex(self.executable)
         mode = "read-only" if self.sandbox == "read-only" else "read-write"
         if isinstance(listen, int): listen=f"ws://127.0.0.1:{listen}"
         args = [self.bwrap, "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc",
@@ -318,7 +315,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/home",
                 "--dir", "/home/atlas", "--dir", "/home/atlas/.codex", "--dir", "/var", "--dir", "/var/tmp",
                 "--bind", str(scratch), "/var/tmp",
-                "--ro-bind", str(native), "/opt/atlas-codex", "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
+                # --ro-bind cannot resolve /proc/self/fd/N as a host-side
+                # source.  Create the link inside the namespace instead;
+                # pass_fds keeps this exact sealed memfd alive for exec.
+                "--dir", "/opt",
+                "--symlink", f"/proc/self/fd/{runtime_fd}", "/opt/atlas-codex",
+                "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
                 "--chdir", str(root)]
         args += ["--ro-bind" if mode == "read-only" else "--bind", str(root), str(root)]
@@ -329,12 +331,18 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                  "--environment-id", f"atlas-{spec.execution_id}", "--exit-on-stdin-close"]
         return args
 
-    def _start_server(self, spec) -> None:
+    def _start_server(self, spec, runtime_fd: int) -> None:
         self._scratch = self.scratch_store.create(str(spec.execution_id))
         try:
-            command = self._mount_command(spec, self._scratch)
-            self._server = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE, start_new_session=True)
+            command = self._mount_command(spec,self._scratch,runtime_fd)
+            self._server = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                pass_fds=(runtime_fd,),
+            )
             self._server_stdin = self._server.stdin
             if self._server.stdout is None:
                 raise AtlasSandboxError("ATLAS_SANDBOX_EXEC_SERVER_URL_UNAVAILABLE")
@@ -448,7 +456,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def _environment(self):
         if not isinstance(self._server_url, str) or not re.fullmatch(r"ws://127\.0\.0\.1:[1-9][0-9]{0,4}", self._server_url):
             raise AtlasSandboxError("ATLAS_SANDBOX_EXEC_SERVER_UNAVAILABLE")
-        env = dict(os.environ)
+        env = super()._environment()
         env["CODEX_EXEC_SERVER_URL"] = self._server_url
         return env
 
@@ -464,9 +472,16 @@ class AtlasBubblewrapExecutor(CodexExecutor):
 
     def _prepare_execution_locked(self, spec):
         prepared = super().prepare_execution(spec)
-        codex_info = self.info()
-        if not codex_info.get("available"):
+        if spec.action in {"patch_review", "state_audit"} and self.network_access:
+            raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH")
+        native = _native_codex(self.executable)
+        if native is None or native != Path(self.executable).resolve():
+            raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
+        # super().prepare_execution() already authenticated and executed
+        # the sealed Codex image for its version before RUN_STARTED.
+        if not isinstance(prepared.version,str) or not prepared.version:
             raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_VERSION_FAILED")
+        bwrap_version = self._bwrap_version()
         self._validate_namespace()
         # Validate all host-side topology and scratch policy before RUN_STARTED.
         self._git_dir(spec.repository_root.resolve())
@@ -479,56 +494,84 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             "schema": self.SANDBOX_VERSION, "provider": "atlas", "backend": "bubblewrap",
             "filesystem_mode": self.sandbox, "filesystem_enforcement": "atlas-bwrap",
             "process_enforcement": "atlas-bwrap", "network_enforcement": "codex",
-            "requested_network_access": self.network_access, "resolved_network_access": False,
+            "requested_network_access": self.network_access, "resolved_network_access": self.network_access,
             "user_namespace": "bwrap-default", "pid_namespace": True, "ipc_namespace": True,
             "mount_roles": ["usr-ro", "system-layout-ro", "etc-ro", "proc-new", "dev-new",
                             "tmp-private-tmpfs", "shm-private-tmpfs", "var-tmp-private-disk-scratch",
                             "home-private-ephemeral", "repository", "git-metadata-ro", "codex-native-ro"],
             "temporary_storage": {"tmp": "private-tmpfs", "shm": "private-tmpfs", "var_tmp": "private-disk-scratch"},
-            "bwrap": self.bwrap, "bwrap_version": codex_info.get("atlas_bwrap"),
-            "codex_executable": str(_native_codex(self.executable)), "codex_version": codex_info.get("version"),
+            "bwrap": self.bwrap, "bwrap_version": bwrap_version,
+            "codex_executable": str(_native_codex(self.executable)), "codex_version": prepared.version,
             "scratch_backing_class": self._filesystem_class(self.scratch_store.root),
             "exec_server_transport": "CODEX_EXEC_SERVER_URL/websocket-loopback",
-            "inner_codex_sandbox": self.sandbox, "inner_codex_network": "restricted",
+            "inner_codex_sandbox": self.sandbox, "inner_codex_network": "enabled" if self.network_access else "restricted",
         }
         return replace(prepared, runtime_handle=self._descriptor)
 
     def sandbox_descriptor(self):
         return dict(self._descriptor or {})
 
+    def _bwrap_version(self):
+        if not self.bwrap:
+            return None
+        try:
+            result=subprocess.run(
+                [self.bwrap,"--version"],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=5,
+            )
+        except (OSError,subprocess.TimeoutExpired):
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
     def info(self):
-        info = super().info()
-        if self.bwrap:
-            try:
-                version = subprocess.run([self.bwrap, "--version"], capture_output=True, check=False,
-                                         text=True).stdout.strip()
-            except OSError:
-                version = None
-        else:
-            version = None
-        info["atlas_bwrap"] = version
+        info=super().info()
+        info["atlas_bwrap"]=self._bwrap_version()
         return info
 
     def run_execution(self, prepared):
         if prepared.runtime_handle is not self._descriptor or not self._run_lock.locked():
             raise AtlasSandboxError("ATLAS_SANDBOX_PREPARATION_REQUIRED")
-        primary = teardown = None
-        result = None
+
+        primary=teardown=None
+        result=None
+        runtime_fd=None
         try:
-            self._start_server(prepared.spec)
-            result = super().run_execution(prepared)
+            # Configuration is revalidated at the final boundary.  The
+            # executable itself is copied from O_NOFOLLOW into one sealed
+            # memfd whose exact inode is shared by server and client.
+            self._validate_runtime_identity(prepared.policy_snapshot)
+            runtime_fd=self._sealed_runtime_fd(prepared.policy_snapshot)
+            self._validate_sealed_runtime_fd(
+                runtime_fd,prepared.policy_snapshot
+            )
+
+            self._start_server(prepared.spec,runtime_fd)
+            result=super().run_execution(
+                prepared,
+                _runtime_binary_fd=runtime_fd,
+            )
         except BaseException as error:
-            primary = error
+            primary=error
+
         try:
             self._stop_server()
         except BaseException as error:
-            teardown = error
+            teardown=error
         finally:
+            if runtime_fd is not None:
+                try: os.close(runtime_fd)
+                except OSError: pass
             self._run_lock.release()
+
         if primary is not None:
             if teardown is not None:
-                primary.add_note(f"teardown: {type(teardown).__name__}: {teardown}")
-                for note in getattr(teardown, "__notes__", ()):
+                primary.add_note(
+                    f"teardown: {type(teardown).__name__}: {teardown}"
+                )
+                for note in getattr(teardown,"__notes__",()):
                     primary.add_note(note)
             raise primary
         if teardown is not None:

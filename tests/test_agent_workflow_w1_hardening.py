@@ -366,3 +366,72 @@ def test_checkpoint_reset_failure_is_distinct(repo,monkeypatch):
         return real_run(root,*args,**kwargs)
     monkeypatch.setattr(repository,"_run",failed_commit_and_reset)
     with pytest.raises(WorkflowError,match="CHECKPOINT_ROLLBACK_FAILED: reset failed"): w.checkpoint(2,"will fail")
+
+
+def test_bubblewrap_executes_sealed_memfd_through_namespace_proc_symlink():
+    """Regression: bwrap must execute the inherited sealed fd, not host /proc lookup."""
+    import fcntl
+    import os
+    import shutil
+    import subprocess
+
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        pytest.skip("bubblewrap unavailable")
+    if not hasattr(os, "memfd_create"):
+        pytest.skip("memfd unavailable")
+
+    source = shutil.which("true")
+    if source is None:
+        pytest.skip("true executable unavailable")
+
+    fd = os.memfd_create(
+        "atlas-bwrap-test",
+        os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+    )
+    try:
+        with open(source, "rb") as src:
+            while chunk := src.read(1024 * 1024):
+                os.write(fd, chunk)
+
+        os.fchmod(fd, 0o500)
+        fcntl.fcntl(
+            fd,
+            fcntl.F_ADD_SEALS,
+            fcntl.F_SEAL_SEAL
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_WRITE,
+        )
+
+        command = [
+            bwrap,
+            "--die-with-parent",
+            "--unshare-pid",
+            "--unshare-ipc",
+            "--ro-bind", "/usr", "/usr",
+        ]
+        for path in ("/lib", "/lib64"):
+            if os.path.exists(path):
+                command += ["--ro-bind", path, path]
+
+        command += [
+            "--proc", "/proc",
+            "--dev", "/dev",
+            "--dir", "/opt",
+            "--symlink", f"/proc/self/fd/{fd}", "/opt/atlas-codex",
+            "--",
+            "/opt/atlas-codex",
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            pass_fds=(fd,),
+            check=False,
+            timeout=5,
+        )
+        assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    finally:
+        os.close(fd)

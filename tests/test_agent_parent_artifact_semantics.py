@@ -1,5 +1,7 @@
 import hashlib
 import json
+from tools.atlas_agent.policy import load_policy, resolve_policy
+from tools.atlas_agent.prompt import parse_prompt
 
 import pytest
 
@@ -60,16 +62,29 @@ def test_parent_context_uses_historical_state(tmp_path):
 
 def test_false_effective_hash_does_not_publish_owner_or_commit(tmp_path):
     _,w=make_repo(tmp_path); raw=accepted(w)
+    snapshot=resolve_policy(load_policy(w.root/"atlas-agent-policy.toml"),parse_prompt(raw))
     source=next((w.base/"accepted").iterdir())
     supplement=w._parent_context({"generations":{}},1)[0].decode()
     execution_id="123e4567-e89b-12d3-a456-426614174000"
     owner={"execution_id":execution_id,"executor":"fake","started_at":"2026-08-26T00:00:00Z","pid":None,
-           "report_dir":f"reports/executions/{execution_id}","prompt_input":"accepted_prompt_plus_atlas_context",
+           "report_dir":f"reports/executions/{execution_id}",
+           "permission_envelope":{
+               "sandbox_mode":snapshot["sandbox_mode"],
+               "approval_policy":"never",
+               "approvals_reviewer":"user",
+               "strict_config":True,
+               "ignore_rules":True,
+               "network_access":snapshot["network_access"],
+           },
+           "owner_schema":"atlas-agent-execution-owner/2",
+           "policy_snapshot":snapshot,
+           "prompt_input":"accepted_prompt_plus_atlas_context",
            "context_path":f"reports/contexts/{execution_id}.txt","effective_prompt_path":f"reports/contexts/{execution_id}-effective.txt",
            "context_sha256":hashlib.sha256(supplement.encode()).hexdigest(),"effective_prompt_sha256":"0"*64}
     w.journal.append("TRANSITION_PREPARED",transaction_id="tx",logical_event="RUN_STARTED",
                      source=f"accepted/{source.name}",destination=f"running/implementation/{source.name}",
                      prompt_sha256=hashlib.sha256(raw).hexdigest(),generation=1,action="implementation",
+                     network_access=False,
                      execution=owner,context_supplement=supplement)
     with pytest.raises(WorkflowError,match="(?:EXECUTION_CONTEXT_HASH_MISMATCH|epoch-2 start witness incomplete)"):
         w.recover()

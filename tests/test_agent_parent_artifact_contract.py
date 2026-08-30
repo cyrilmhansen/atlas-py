@@ -5,7 +5,7 @@ import json
 import pytest
 
 from test_agent_operator_ergonomics import CodexFake, agent, jsonl
-from test_agent_workflow_w221 import accepted, make_repo
+from test_agent_workflow_w221 import POLICY, accepted, make_repo
 from tools.atlas_agent.journal import Journal, JournalError, canonical, decode_context_supplement, encode_context_supplement
 from tools.atlas_agent.workflow import WorkflowError
 
@@ -79,6 +79,63 @@ def test_initialization_validation_epoch_rejects_boolean(tmp_path):
     with pytest.raises(JournalError, match="validation epoch"):
         Journal(w.journal.path).read()
 
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["PROMPT_ACCEPTED", "TRANSITION_PREPARED", "RUN_STARTED"],
+)
+def test_v2_network_request_provenance_cannot_be_omitted(tmp_path, target):
+    _, w=make_repo(tmp_path)
+    accepted(w, network=True)
+    w.execute(
+        1,
+        CodexFake(
+            stdout=jsonl(
+                {"type":"thread.started","thread_id":"network-thread"},
+                agent("done"),
+            ),
+            observed_thread_id="network-thread",
+        ),
+    )
+
+    def mutate(rows):
+        for row in rows:
+            if row["event"] != target:
+                continue
+            if (
+                target == "TRANSITION_PREPARED"
+                and row["payload"].get("logical_event") != "RUN_STARTED"
+            ):
+                continue
+            row["payload"].pop("network_access", None)
+            return
+        raise AssertionError(f"{target} not found")
+
+    _rehash(w.journal.path, mutate)
+
+    with pytest.raises(
+        JournalError,
+        match="network archive|network provenance|network request",
+    ):
+        Journal(w.journal.path).read()
+
+
+def test_v2_network_request_must_match_archived_prompt(tmp_path):
+    _, w=make_repo(tmp_path)
+    accepted(w, network=True)
+
+    def mutate(rows):
+        for row in rows:
+            if row["event"]=="PROMPT_ACCEPTED":
+                row["payload"]["network_access"]=False
+                return
+        raise AssertionError("PROMPT_ACCEPTED not found")
+
+    _rehash(w.journal.path, mutate)
+
+    with pytest.raises(JournalError, match="prompt network archive mismatch"):
+        Journal(w.journal.path).read()
 
 def test_recovery_rejects_false_effective_hash_before_publication(tmp_path):
     _, w=make_repo(tmp_path); _run(w)
@@ -167,9 +224,10 @@ def test_keyboard_interrupt_reason_and_status_survive_journal_replay(tmp_path):
 
 
 def test_policy_interruption_replays_available_report_and_rejects_tampering(tmp_path):
+    import hashlib
+    import re
     import sys
-    _, w = make_repo(tmp_path)
-    accepted(w)
+
     executable = tmp_path / "reporting-codex.py"
     executable.write_text(
         f"#!{sys.executable}\n"
@@ -180,8 +238,65 @@ def test_policy_interruption_replays_available_report_and_rejects_tampering(tmp_
         "print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'final report'}}), flush=True)\n"
     )
     executable.chmod(0o755)
+
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir(mode=0o700)
+    config = codex_home / "config.toml"
+    catalog = codex_home / "models-atlas-shell-only.json"
+    profile = codex_home / "atlas-luna-local.config.toml"
+
+    config.write_text("suppress_unstable_features_warning = true\n")
+    catalog.write_text('{"models":[]}\n')
+    profile.write_text(
+        'model = "gpt-5.6-luna"\n'
+        '[features]\n'
+        'apps = false\n'
+        'multi_agent = false\n'
+        '[features.tool_registry]\n'
+        'allowed_tools = ["exec_command", "write_stdin", "apply_patch"]\n'
+    )
+
+    def sha(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    # This integration test deliberately injects a fake Codex executable.
+    # Give that fixture a self-contained pinned Atlas runtime rather than
+    # weakening production runtime-identity enforcement.
+    policy = POLICY
+    start = policy.index("[profiles.implementation]")
+    end = policy.index("\n[profiles.", start + 1)
+    block = policy[start:end]
+
+    replacements = {
+        "codex_binary_sha256": sha(executable),
+        "codex_config_sha256": sha(config),
+        "codex_catalog_sha256": sha(catalog),
+        "codex_profile_local_sha256": sha(profile),
+    }
+    for key, value in replacements.items():
+        block, count = re.subn(
+            rf'^{key} = "[0-9a-f]{{64}}"$',
+            f'{key} = "{value}"',
+            block,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        assert count == 1
+
+    policy = policy[:start] + block + policy[end:]
+
+    # The pinned fixture policy must exist before the repository commit and
+    # Workflow.init(), so every durable witness sees the final policy.
+    repo, w = make_repo(tmp_path, policy_text=policy)
+
+    accepted(w)
+
     from tools.atlas_agent.codex_executor import CodexExecutor
-    executor = CodexExecutor(executable=str(executable), timeout_seconds=3)
+    executor = CodexExecutor(
+        executable=str(executable),
+        timeout_seconds=3,
+        codex_home=codex_home,
+    )
     with pytest.raises(WorkflowError, match="REPOSITORY_POLICY_VIOLATION"):
         w.execute(1, executor)
     w._state_file().unlink(); state = w.rebuild()

@@ -140,6 +140,18 @@ access works. W2.1 does not map actions to these policies; callers provide an
 explicit sandbox configuration. Unsupported non-interactive settings fail
 closed, and `--approve-for-me` is not enabled by default.
 
+### Threat model
+
+Atlas Agent constrains the authority available to model-generated commands,
+including filesystem, network, and tool access, and detects pre-existing drift
+of pinned Codex runtime and configuration identities before execution.
+
+Atlas Agent does not attempt to defend against a malicious process already
+running under the same Unix UID as the operator, deliberate concurrent
+modification by the operator, root compromise, or host compromise. In
+particular, same-UID pathname replacement after validation is outside this
+threat model.
+
 The durable `result.json` contains `permission_envelope`,
 `permission_observation_status` (`observed`, `partial`, or `unavailable`), and
 `permission_failures`. Codex 0.149.1 may refuse a tool command while still
@@ -155,13 +167,14 @@ interrupts the child, records `outcome: "timeout"`, and interrupts the W1
 run; it never waits for a human approval. The fake executor implements the
 same permission result fields so lifecycle tests do not have a second schema.
 
-`prepare_execution()` is pure with respect to external execution: it validates
-the request and constructs argv without launching Codex or discovering its
-version. W1 preflight and `RUN_STARTED` happen first; version discovery and
-the child process happen only after the run is `RUNNING`. A discovery failure
-interrupts the run. Execution ids are checked against lifecycle owners and
-existing report directories under the workflow lock; a collision fails closed
-and never reuses a report directory.
+`prepare_execution()` does not launch the Codex session. It validates the
+request and pinned runtime/configuration identities, constructs argv, and
+resolves the Codex version from authenticated runtime bytes before
+`RUN_STARTED`. The actual Codex child process is launched only after the run
+is `RUNNING`. Preparation failures therefore occur before execution begins.
+Execution ids are checked against lifecycle owners and existing report
+directories under the workflow lock; a collision fails closed and never
+reuses a report directory.
 
 `execution.json` and `result.json` are owner-bound artifacts. Their execution
 id, generation, prompt hash, action, and permission metadata are checked by

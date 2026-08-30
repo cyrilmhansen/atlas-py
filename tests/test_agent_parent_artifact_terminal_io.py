@@ -8,6 +8,7 @@ import pytest
 
 from tools.atlas_agent.codex_executor import CodexExecutor
 from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
+from tests.codex_test_support import IOCodexExecutor, pinned_codex
 
 
 def _spec(tmp_path, **changes):
@@ -33,10 +34,12 @@ def test_modern_input_contract_fails_closed_without_bytes_or_digest(tmp_path):
 
 
 def test_legacy_input_contract_is_deliberate(tmp_path):
-    executor = CodexExecutor(executable="/bin/sh")
+    executor,snapshot = pinned_codex(tmp_path,"/bin/true")
     with pytest.raises(ExecutorError, match="INVALID_EXECUTION_INPUT_MODE"):
-        executor.prepare_execution(_spec(tmp_path))
-    prepared = executor.prepare_execution(_spec(tmp_path, input_mode="legacy"))
+        executor.prepare_execution(_spec(tmp_path, policy_snapshot=snapshot))
+    prepared = executor.prepare_execution(
+        _spec(tmp_path, input_mode="legacy", policy_snapshot=snapshot)
+    )
     assert prepared.spec.input_mode == "legacy"
 
 
@@ -44,9 +47,15 @@ def test_modern_input_contract_accepts_exact_supplied_bytes(tmp_path):
     import hashlib
 
     data = b"authoritative bytes"
-    executor = CodexExecutor(executable="/bin/sh")
+    executor,snapshot = pinned_codex(tmp_path,"/bin/true")
     prepared = executor.prepare_execution(
-        _spec(tmp_path, prompt_bytes=data, input_mode="bytes-v1", expected_input_sha256=hashlib.sha256(data).hexdigest())
+        _spec(
+            tmp_path,
+            prompt_bytes=data,
+            input_mode="bytes-v1",
+            expected_input_sha256=hashlib.sha256(data).hexdigest(),
+            policy_snapshot=snapshot,
+        )
     )
     assert prepared.spec.prompt_bytes == data
 
@@ -89,7 +98,7 @@ def test_popen_setup_failure_reaps_process_group(monkeypatch, tmp_path):
     proc = Proc()
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: proc)
     monkeypatch.setattr("os.set_blocking", lambda *args: (_ for _ in ()).throw(OSError("setup failed")))
-    executor = CodexExecutor()
+    executor = IOCodexExecutor()
     reaped = []
     monkeypatch.setattr(executor, "_terminate_and_reap", lambda value: reaped.append(value) or -1)
     with pytest.raises(ExecutorError, match="CODEX_STREAM_FAILED: setup failed"):
@@ -106,7 +115,7 @@ def test_post_popen_interrupt_at_first_setup_boundary_reaps_group(monkeypatch, t
             raise KeyboardInterrupt()
     proc=Proc()
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: proc)
-    executor=CodexExecutor()
+    executor=IOCodexExecutor()
     reaped=[]
     monkeypatch.setattr(executor, "_terminate_and_reap", lambda value: reaped.append(value) or -1)
     with pytest.raises(KeyboardInterrupt):
@@ -129,7 +138,7 @@ def test_stdin_close_failure_precedes_timeout(monkeypatch, tmp_path):
         except OSError: pass
         state["close_error"] = OSError("close failed")
 
-    executor = CodexExecutor(timeout_seconds=.01, heartbeat_seconds=1)
+    executor = IOCodexExecutor(timeout_seconds=.01, heartbeat_seconds=1)
     monkeypatch.setattr(executor, "_close_stdin", close_stdin)
     monkeypatch.setattr(executor, "_terminate_and_reap", lambda proc: released.set() or -2)
     with pytest.raises(ExecutorError, match="CODEX_INPUT_CLOSE_FAILED: close failed"):
@@ -137,7 +146,7 @@ def test_stdin_close_failure_precedes_timeout(monkeypatch, tmp_path):
 
 
 def test_stdin_write_failure_precedes_timeout(monkeypatch, tmp_path):
-    executor=CodexExecutor(timeout_seconds=.01, heartbeat_seconds=1)
+    executor=IOCodexExecutor(timeout_seconds=.01, heartbeat_seconds=1)
     def reap(proc):
         raise AssertionError("timeout cleanup must not win over writer failure")
     monkeypatch.setattr(executor, "_terminate_and_reap", reap)
@@ -157,8 +166,13 @@ def test_keyboard_interrupt_reaps_the_process(monkeypatch, tmp_path):
         "print('{}', flush=True)\n"
     )
     executable.chmod(0o755)
-    spec = _spec(tmp_path, input_mode="legacy")
-    executor = CodexExecutor(executable=str(executable), timeout_seconds=1, heartbeat_seconds=1)
+    executor,snapshot = pinned_codex(
+        tmp_path,
+        executable,
+        timeout_seconds=1,
+        heartbeat_seconds=1,
+    )
+    spec = _spec(tmp_path, input_mode="legacy", policy_snapshot=snapshot)
     prepared = executor.prepare_execution(spec)
     cleaned = []
     def reap(proc):
@@ -184,10 +198,15 @@ def test_run_boundary_revalidates_modern_input_before_popen(tmp_path, monkeypatc
     from dataclasses import replace
 
     data = b"authoritative bytes"
-    executor = CodexExecutor(executable="/bin/sh")
+    executor,snapshot = pinned_codex(tmp_path,"/bin/true")
     prepared = executor.prepare_execution(
-        _spec(tmp_path, prompt_bytes=data, input_mode="bytes-v1",
-              expected_input_sha256=hashlib.sha256(data).hexdigest())
+        _spec(
+            tmp_path,
+            prompt_bytes=data,
+            input_mode="bytes-v1",
+            expected_input_sha256=hashlib.sha256(data).hexdigest(),
+            policy_snapshot=snapshot,
+        )
     )
     prepared = replace(prepared, spec=replace(prepared.spec, prompt_bytes=b"changed"))
     calls = []
@@ -213,11 +232,21 @@ def test_duplex_backpressure_hands_off_exact_oversized_input(tmp_path):
         "sys.stdout.write(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'done'}})+'\\n'); sys.stdout.flush()\n"
     )
     data = b"x" * (128 * 1024)
-    spec = _spec(tmp_path, prompt_bytes=data, input_mode="bytes-v1", expected_input_sha256=hashlib.sha256(data).hexdigest())
-    prepared = CodexExecutor(executable=sys.executable).prepare_execution(spec)
-    result = CodexExecutor(executable=sys.executable).run_execution(
-        prepared.__class__(prepared.spec, prepared.executor, (sys.executable, str(script)), prepared.version, prepared.permission_envelope)
+    from tools.atlas_agent.executor import PreparedExecution
+    spec = _spec(
+        tmp_path,
+        prompt_bytes=data,
+        input_mode="bytes-v1",
+        expected_input_sha256=hashlib.sha256(data).hexdigest(),
     )
+    prepared = PreparedExecution(
+        spec,
+        "codex",
+        (sys.executable, str(script)),
+        "test",
+        {},
+    )
+    result = IOCodexExecutor(executable=sys.executable).run_execution(prepared)
     assert result.exit_code == 0 and result.execution_input_sha256 == hashlib.sha256(data).hexdigest()
 
 
@@ -229,11 +258,36 @@ def test_new_session_descendant_is_contained_after_leader_exit(tmp_path):
         f"p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\nopen({str(descendant)!r},'w').write(str(p.pid))\n"
         "print('{\"type\":\"thread.started\",\"thread_id\":\"leader\"}', flush=True)\n"
     )
-    executor = CodexExecutor(executable=sys.executable)
-    spec = _spec(tmp_path, prompt_bytes=b"", input_mode="bytes-v1", expected_input_sha256=__import__('hashlib').sha256(b"").hexdigest())
-    prepared = executor.prepare_execution(spec)
-    prepared = prepared.__class__(prepared.spec, prepared.executor, (sys.executable, str(script)), prepared.version, prepared.permission_envelope)
+    from tools.atlas_agent.executor import PreparedExecution
+    executor = IOCodexExecutor(executable=sys.executable)
+    spec = _spec(
+        tmp_path,
+        prompt_bytes=b"",
+        input_mode="bytes-v1",
+        expected_input_sha256=__import__('hashlib').sha256(b"").hexdigest(),
+    )
+    prepared = PreparedExecution(
+        spec,
+        "codex",
+        (sys.executable, str(script)),
+        "test",
+        {},
+    )
     result = executor.run_execution(prepared)
     assert result.exit_code == 0
     pid = int(descendant.read_text())
-    with pytest.raises(ProcessLookupError): os.kill(pid, 0)
+
+    # SIGKILL has been delivered to the inherited process group, but after
+    # the leader exits the descendant is no longer our child.  PID 1 may
+    # therefore need a short interval to reap the dead process, especially
+    # while the full test suite is under load.
+    import time
+    deadline = time.monotonic() + 1.0
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail(f"descendant {pid} still exists after bounded reap wait")
+        time.sleep(0.01)
