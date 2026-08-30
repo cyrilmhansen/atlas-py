@@ -1,0 +1,21 @@
+model = "gpt-5.6-sol"
+model_catalog_json = "/home/john/.local/share/atlas-agent/codex-home/models-atlas-shell-only.json"
+web_search = "live"
+
+[agents]
+enabled = false
+
+[skills.bundled]
+enabled = false
+
+[features]
+apps = false
+multi_agent = false
+multi_agent_v2 = false
+plugins = false
+skill_search = false
+skill_mcp_dependency_install = false
+skip_host_skill_discovery = true
+
+[features.tool_registry]
+allowed_tools = ["exec_command", "write_stdin", "web.run"]

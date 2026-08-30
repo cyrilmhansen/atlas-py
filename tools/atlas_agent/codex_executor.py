@@ -6,6 +6,23 @@ from .executor import ExecutorError, ExecutionResult, ExecutionSpec, PreparedExe
 from .jsonl import DEFAULT_MAX_JSONL_LINE_BYTES, iter_bounded_jsonl
 from .policy import POLICY_SCHEMA, SNAPSHOT_SCHEMA, PolicyError, validate_snapshot
 
+
+def _toml_basic_string(value: str) -> str:
+    """Encode one TOML basic string without escaping Unicode scalars."""
+    escaped = []
+    for char in value:
+        code = ord(char)
+        if char == "\\": escaped.append("\\\\")
+        elif char == '"': escaped.append('\\"')
+        elif char == "\b": escaped.append("\\b")
+        elif char == "\t": escaped.append("\\t")
+        elif char == "\n": escaped.append("\\n")
+        elif char == "\f": escaped.append("\\f")
+        elif char == "\r": escaped.append("\\r")
+        elif code < 0x20 or code == 0x7f: escaped.append(f"\\u{code:04x}")
+        else: escaped.append(char)
+    return '"' + "".join(escaped) + '"'
+
 class CodexExecutor:
     SHUTDOWN_GRACE_SECONDS=5
     SHUTDOWN_KILL_SECONDS=5
@@ -21,7 +38,7 @@ class CodexExecutor:
             or (Path.home()/".local/share/atlas-agent/codex-home")
         ).expanduser()
         resolved=shutil.which(executable) or (executable if Path(executable).is_file() else None)
-        self.executable=str(Path(resolved).absolute()) if resolved else None
+        self.executable=str(Path(resolved).resolve(strict=True)) if resolved else None
         self.model=model; self.sandbox=sandbox_mode or sandbox; self.sandbox_mode=self.sandbox; self.ephemeral=ephemeral
         self.approval_policy=approval_policy; self.approvals_reviewer=approvals_reviewer
         self.ignore_rules=ignore_rules; self.strict_config=strict_config; self.network_access=network_access
@@ -73,7 +90,6 @@ class CodexExecutor:
             st=os.fstat(fd)
             if (
                 not stat.S_ISREG(st.st_mode) or
-                st.st_uid not in {0, os.geteuid()} or
                 st.st_mode & 0o022 or
                 (executable and not (st.st_mode & 0o111))
             ):
@@ -154,7 +170,6 @@ class CodexExecutor:
             st=os.fstat(source_fd)
             if (
                 not stat.S_ISREG(st.st_mode)
-                or st.st_uid not in {0,os.geteuid()}
                 or st.st_mode & 0o022
                 or not (st.st_mode & 0o111)
             ):
@@ -282,6 +297,13 @@ class CodexExecutor:
                 "-c",
                 f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"',
             ]
+            if snapshot["action"] == "state_audit":
+                role_path = self.codex_home / "atlas-agent-prompts" / "state_audit.md"
+                try:
+                    role_instructions = role_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as error:
+                    raise ExecutorError("ATLAS_STATE_AUDIT_PROMPT_MISSING") from error
+                argv += ["-c", f"developer_instructions={_toml_basic_string(role_instructions)}"]
         if self.ephemeral and (
             not snapshot or snapshot.get("session_storage")=="ephemeral"
         ):

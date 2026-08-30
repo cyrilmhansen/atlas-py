@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import tomllib
 from pathlib import Path
+from .assets import ASSET_VERSION, asset_set_identity, prompt_set_identity
 
 from .model import ACTIONS, SESSIONS
 
@@ -17,6 +17,41 @@ _PROFILE_KEYS = {
     "manual": {"executor", "allowed_session_modes"},
 }
 _BASE_KEYS = {"schema", "policy_schema", "policy_config_sha256", "action", "checkpoint", "profile", "executor", "session_mode", "network_access_requested", "network_access", "web_search", "apps_enabled", "session_storage", "max_hot_reuse_hops", "max_reuse_generation_gap"}
+
+
+def _toml_string(value):
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = escaped.replace("\b", "\\b").replace("\t", "\\t").replace("\n", "\\n")
+    escaped = escaped.replace("\f", "\\f").replace("\r", "\\r")
+    return '"' + escaped + '"'
+
+
+def _toml_value(value):
+    if isinstance(value, str):
+        return _toml_string(value)
+    if type(value) is bool:
+        return "true" if value else "false"
+    if type(value) is int:
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    raise TypeError(f"unsupported TOML value: {type(value).__name__}")
+
+
+def toml_dumps(data):
+    """Canonical UTF-8 TOML for semantic policy hashing."""
+    lines = []
+    def emit(table, path=()):
+        scalars = [(key, value) for key, value in table.items() if not isinstance(value, dict)]
+        for key, value in sorted(scalars):
+            lines.append(f"{key} = {_toml_value(value)}")
+        for key in sorted(key for key, value in table.items() if isinstance(value, dict)):
+            lines.append("")
+            section = ".".join((*path, key))
+            lines.append(f"[{section}]")
+            emit(table[key], (*path, key))
+    emit(data)
+    return "\n".join(lines) + "\n"
 
 
 class PolicyError(ValueError):
@@ -104,7 +139,7 @@ def load_policy(path: Path):
 
 def policy_config_sha256(data):
     validate_policy(data)
-    semantic = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    semantic = toml_dumps(data).encode("utf-8")
     return hashlib.sha256(semantic).hexdigest()
 
 
@@ -139,6 +174,14 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
             "codex_catalog_sha256": cfg["codex_catalog_sha256"],
             "codex_profile_sha256": cfg["codex_profile_web_sha256"] if network_access else cfg["codex_profile_local_sha256"],
         })
+        assets = Path(__file__).parents[2] / "codex-assets" / ASSET_VERSION
+        try:
+            snapshot.update({"asset_set_sha256": asset_set_identity(assets),
+                             "prompt_set_sha256": prompt_set_identity(assets),
+                             "asset_version": ASSET_VERSION})
+        except (OSError, ValueError):
+            # Release assets are optional for historical/replay-only installs.
+            pass
     if action == "state_audit":
         snapshot["cold_policy"] = "conversational"
         snapshot["freshness_verification"] = "deferred"
@@ -178,6 +221,7 @@ def validate_snapshot(snapshot):
     optional = {
         "reused_from_execution_id", "requested_thread_id", "reuse_depth",
         "cold_policy", "freshness_verification", "codex_profile",
+        "asset_set_sha256", "prompt_set_sha256", "asset_version",
     } | runtime_keys
     if not required <= set(snapshot) or set(snapshot) - (required | optional):
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot fields")
