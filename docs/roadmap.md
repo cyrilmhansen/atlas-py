@@ -2,276 +2,228 @@
 
 Document version: **0.2**
 
-This roadmap reflects the state reached after the Atlas Agent v0.1.1 release
-and the deployment/release qualification work performed around it.
+This roadmap reflects the state reached after Atlas Agent v0.1.1 and the
+release/deployment qualification work performed around it.
 
-It is intentionally a prioritization document, not a complete inventory of
-possible Atlas features.
+It is a prioritization document, not a catalogue of every possible Atlas
+feature.
 
 The central rule is:
 
-> Atlas Agent exists to make Atlas development reliable. Once Atlas Agent is
-> installable, diagnosable, and proven on an external project, further Agent
-> sophistication must not displace work on Atlas itself without concrete
-> evidence that the infrastructure is blocking progress.
+> Atlas Agent exists to make Atlas development reliable. Once it is installable,
+> diagnosable, and proven on an external project, further Agent sophistication
+> must not displace Atlas Core work without concrete evidence that the
+> infrastructure is blocking progress.
 
-The immediate objective is therefore to finish a minimal, boring, reusable
-Linux installation surface for Atlas Agent, validate it outside the Atlas
-repository, then return development priority to the Atlas Semantic Core.
-
----
-
-## 1. Scope and planning horizon
-
-Current primary platform:
+The immediate objective is therefore:
 
 ```text
-OS:                 Linux
-shell:              bash
-architecture:       x86_64
-sandbox backend:    Bubblewrap
-model controller:   qualified Atlas Codex fork
-```
-
-Other operating systems and architectures remain legitimate future targets,
-but they are not allowed to delay the current Linux deployment path.
-
-This roadmap distinguishes four horizons:
-
-```text
-NOW
-    finish the minimum machine-installation product
-
-NEXT
-    validate that product on Memoria and fix generic friction
-
-THEN
-    return priority to Atlas Core and external semantic use cases
-
-LATER
-    automation, portability, broader hardening, and optional ergonomics
+finish minimal Linux installation
+→ validate it outside the Atlas repository
+→ fix only generic deployment friction
+→ return primary effort to Atlas Core
 ```
 
 ---
 
-## 2. Current baseline
+## 1. Current planning boundary
 
-Atlas Agent v0.1.1 established a significantly stronger baseline than v0.1.0.
+Primary supported target for the next tranche:
 
-The release qualified:
+```text
+OS                  Linux
+shell               bash
+architecture        x86_64
+sandbox             Bubblewrap
+controller          qualified Atlas Codex fork
+```
 
-- an exact Atlas Agent source release;
-- a machine-readable release manifest;
-- a pinned Atlas Codex source release;
-- an exact native Codex executable identity by SHA-256;
+Other platforms remain future targets, but they must not delay the current
+Linux golden path.
+
+The roadmap uses four horizons:
+
+```text
+NOW     finish the machine-installation product
+NEXT    validate it on Memoria
+THEN    return to Atlas Core and external semantic use cases
+LATER   automation, portability, broader hardening, optional ergonomics
+```
+
+---
+
+## 2. Baseline established by v0.1.1
+
+Atlas Agent v0.1.1 qualified:
+
+- an exact Atlas Agent release and manifest;
+- an exact Atlas Codex source release;
+- a native Codex executable identified by SHA-256;
 - versioned canonical Codex assets;
 - versioned compact prompts;
 - atomic CODEX_HOME provisioning;
 - runtime identity checks before execution;
-- a sealed executable authority;
-- a stable runtime path compatible with Codex `current_exe()` helper dispatch;
+- sealed executable authority;
+- a stable runtime path compatible with Codex `current_exe()`;
 - Bubblewrap execution through the real Codex exec-server;
 - zero-token live helper execution;
 - an authenticated Luna smoke;
-- a release procedure based on explicit gates;
-- a user deployment guide separating machine installation from project state.
+- an explicit release procedure;
+- a deployment guide separating machine installation from project state.
 
-This means the main remaining problem is no longer "can Atlas Agent execute a
-qualified model safely enough for development?"
+The immediate problem is no longer whether Atlas Agent can run a qualified
+model.
 
-The immediate problem is now:
+It is now:
 
 ```text
-can a user install and diagnose the already-qualified system
+can a user install and diagnose the qualified system
 without reconstructing release-engineering knowledge by hand?
 ```
 
 ---
 
-## 3. Planning principles learned from v0.1.1
+## 3. Durable planning principles
 
-### 3.1 Separate identities
+### 3.1 Keep identities separate
 
-The following are independent release/deployment dimensions:
+Independent dimensions include:
 
 ```text
-Atlas Agent source release
-Atlas Agent commit
-Atlas Codex source release
-Atlas Codex commit
-Codex native executable bytes
-Codex executable SHA-256
-canonical Codex assets
+Atlas Agent source/tag/commit
+Atlas Codex source/tag/commit
+Codex executable bytes/SHA
+canonical assets
 prompt set
 project policy
 user authentication
 project workflow journal
-Git publication/tag state
+Git publication state
 ```
 
-A roadmap item should say which identity it changes.
+Changing one must not silently imply changing another.
 
-Changing one dimension must not silently imply changing another.
+### 3.2 Agent release != Codex release
 
-### 3.2 A new Agent release does not imply a new Codex release
+A new Atlas Agent release does not require a new Codex release when Codex
+source and binary bytes are unchanged.
 
-If the Codex source and qualified binary are unchanged, reuse the exact
-existing Codex release.
+### 3.3 Binary bytes are runtime authority
 
-Do not manufacture a new Codex tag merely because Atlas Agent has a new tag.
+A path locates the executable.
 
-### 3.3 Exact executable bytes are runtime authority
+Its SHA-256 identifies the qualified runtime.
 
-A pathname is a locator.
+Therefore one exact qualified Codex binary may legitimately be shared by
+multiple independent Atlas Agent installations on one machine.
 
-The executable SHA-256 is the runtime identity.
+### 3.4 Assets and auth are different state classes
 
-Therefore the same already-qualified native binary can legitimately be shared
-between multiple independent Atlas Agent installations on the same machine.
-
-### 3.4 Canonical assets and authentication are different classes of state
-
-Canonical assets are versioned and immutable for a release.
+Canonical assets are versioned release state.
 
 Authentication is mutable user state.
 
-The Atlas CODEX_HOME may reference user authentication after canonical asset
-provisioning without making the secret part of the canonical asset set.
+A CODEX_HOME may reference user auth after asset provisioning without adding
+the secret to the canonical asset set.
 
-### 3.5 Project state is not machine-installation state
+### 3.5 Machine and project lifecycles are different
 
-Machine state includes:
+Machine state:
 
 ```text
-Agent release checkout
-qualified Codex executable
+Agent release
+qualified Codex binary
 canonical CODEX_HOME
-user auth reference
+auth reference
 Bubblewrap/runtime prerequisites
 ```
 
-Project state includes:
+Project state:
 
 ```text
 atlas-agent-policy.toml
-.git/atlas-agent journal and spool
+.git/atlas-agent
 repository witness
-prompts
-execution reports
-checkpoint history
+prompts/reports/checkpoints
 ```
 
-The two lifecycles must remain separate.
+### 3.6 `doctor` is not an installation diagnostic
 
-### 3.6 `doctor` and installation diagnosis are different responsibilities
+`atlas-agent doctor` validates project workflow state.
 
-`atlas-agent doctor` validates a project workflow.
+A separate installation diagnostic is required.
 
-It is not proof that the machine installation is complete.
+### 3.7 External projects are product tests
 
-A separate `install-doctor` is required.
+A second project can reveal hidden assumptions prepared by Atlas's own
+development environment.
 
-### 3.7 Release qualification and user deployment are different workflows
+### 3.8 Atlas Agent must become boring
 
-Release qualification may use maintainers' test suites, source checkouts,
-manual SHA checks, and explicit publication gates.
-
-Normal users should not need to reproduce those steps.
-
-The installer should consume release artifacts produced by that process.
-
-### 3.8 Use external projects to reveal missing product surfaces
-
-Atlas Agent developed inside Atlas can accidentally depend on prepared state
-that is invisible to its maintainers.
-
-A second project is therefore a product test, not merely another functional
-smoke.
-
-### 3.9 Do not let Atlas Agent become the product
-
-After the minimum installation and external-project validation are complete,
-Atlas Agent should move toward maintenance mode.
-
-New Agent features require evidence of a recurring problem.
+After installation and external-project validation, new Agent features require
+repeated evidence of need.
 
 ---
 
-# NOW — finish the minimum installable Atlas Agent
+# NOW — minimum installable Atlas Agent
 
-## P0.1 — Publish or define distribution of the qualified Codex runtime
+## P0.1 — Distribution of the qualified Codex runtime
 
 **Priority: critical**
 
-The deployment guide exposed the largest remaining gap on a virgin machine:
-the release manifest can identify the required native Codex executable, but an
-ordinary user still needs a reliable way to obtain the exact qualified bytes.
+The largest remaining virgin-machine gap is distribution of the exact native
+Codex executable recorded by `atlas-release.toml`.
 
-A local rebuild is not equivalent to the qualified binary.
+A local rebuild is not automatically the qualified binary, even from the same
+source commit.
 
-Even from the same source commit, rebuilt bytes may differ.
-
-### Required outcome
-
-For each supported production target, an Atlas Agent release must identify a
-retrievable binary artifact whose SHA-256 is the value in `atlas-release.toml`.
-
-Initial target:
+Initial supported target:
 
 ```text
 x86_64-unknown-linux-gnu
 ```
 
-### Preferred properties
+Required properties:
 
 - immutable published artifact;
-- deterministic association with the recorded Codex source tag and commit;
-- SHA-256 recorded in Atlas release metadata;
-- download path usable by `atlas-agent install`;
-- no dependency on a maintainer's development checkout;
-- no automatic trust based solely on filename or tag.
+- explicit association with Codex tag and commit;
+- SHA-256 recorded in the Agent release manifest;
+- retrievable by the future installer;
+- no trust based only on filename or tag;
+- no dependency on a maintainer development checkout.
 
-### Explicit non-goal
-
-Do not make reproducible Codex builds a prerequisite for the first installer.
-
-Reproducible builds may be valuable later, but distribution of already
-qualified bytes solves the current deployment problem directly.
+Do not make reproducible builds a prerequisite for this first step.
 
 ### Exit criterion
 
-A fresh Linux machine can obtain the exact native Codex binary required by one
-published Atlas Agent release and verify its digest without access to the Atlas
-or Codex development working directories.
+A fresh Linux host can obtain the exact binary required by a published Atlas
+Agent release and verify its SHA without access to Atlas/Codex development
+working directories.
 
 ---
 
-## P0.2 — Implement `atlas-agent install`
+## P0.2 — `atlas-agent install`
 
 **Priority: critical**
 
-This command turns the manual Linux/bash bootstrap in
-`docs/deploy-existing-project.md` into a supported machine-level operation.
+Turn the manual bootstrap from `docs/deploy-existing-project.md` into a
+supported machine-level command.
 
-### Responsibilities
+Responsibilities:
 
-`atlas-agent install` should, for a selected Atlas Agent release:
-
-- resolve the Atlas Agent release identity;
-- read `atlas-release.toml`;
-- select a supported local target;
-- obtain or locate the exact qualified Codex executable;
-- verify the executable SHA-256;
-- install a stable Atlas Agent command;
-- provision the canonical CODEX_HOME atomically;
+- select/resolve one Agent release;
+- read and validate `atlas-release.toml`;
+- select the supported host target;
+- obtain or locate the exact Codex executable;
+- verify its SHA-256 and permissions;
+- install a stable `atlas-agent` command;
+- provision canonical CODEX_HOME atomically;
 - verify asset and prompt identities;
-- establish the mutable authentication reference without copying secrets;
-- verify basic host prerequisites;
+- connect mutable user auth without copying secrets;
+- verify host prerequisites;
 - leave project repositories untouched.
 
-### Installation layout
-
-A normal installation should use a stable machine location such as:
+Recommended durable layout:
 
 ```text
 ~/.local/share/atlas-agent/
@@ -281,218 +233,161 @@ A normal installation should use a stable machine location such as:
     └── vX.Y.Z/
 ```
 
-The exact directory convention may evolve, but versioned release state must not
-be conflated with mutable project state.
+The installer should be idempotent for an already-correct installation and
+refuse unexplained inconsistent state rather than partially repairing it.
 
-### Idempotence
-
-Re-running installation for an already correct release should succeed without
-silently replacing qualified bytes.
-
-An existing inconsistent destination should produce a diagnostic rather than
-being partially repaired in place.
-
-### Credentials
-
-The installer must not:
-
-- print credential contents;
-- copy credentials into release assets;
-- include credentials in release hashes;
-- persist provider secrets in project repositories.
+It must never print, commit, release-hash, or copy credential contents into
+canonical assets.
 
 ### Exit criterion
 
-On a supported Linux host, a user can install a published Atlas Agent release
-using one documented command path and obtain a stable `atlas-agent` invocation
-without setting `PYTHONPATH` manually.
+A supported Linux user can install one published Agent release without manual
+`PYTHONPATH`, manual asset copying, or source-tree archaeology.
 
 ---
 
-## P0.3 — Implement `atlas-agent install-doctor`
+## P0.3 — `atlas-agent install-doctor`
 
 **Priority: critical**
 
-The installation diagnostic must be independent from any project's
-`.git/atlas-agent` journal.
+The diagnostic must operate without any project `.git/atlas-agent` journal.
 
-### Diagnostic level A — static installation identity
+### Level A — static identity
 
-Check at minimum:
+Check at least:
 
 ```text
-Atlas Agent release identity
-release manifest validity
-qualified Codex target selection
-Codex executable regular-file status
-Codex executable permissions
-Codex SHA-256
-CODEX_HOME ownership and permissions
-canonical config digest
-catalog digest
-profile digests
+Agent release/tag/commit
+release manifest
+Codex target/path/type/permissions/SHA
+CODEX_HOME ownership/permissions
+config/catalog/profile digests
 asset-set identity
 prompt-set identity
-auth reference existence/readability
+auth link/readability
 Bubblewrap presence
-basic platform support
+platform support
 ```
 
-### Diagnostic level B — zero-token runtime qualification
+### Level B — zero-token production probe
 
-Exercise the real production chain without calling a model:
+Exercise:
 
 ```text
 qualified Codex bytes
 → sealed runtime authority
-→ stable controller-owned runtime path
+→ stable runtime path
 → Bubblewrap
 → Codex exec-server
-→ current_exe helper dispatch
+→ current_exe helper
 → codex-linux-sandbox
 → /bin/true
 → exit 0
-→ confirmed child/server reap
-→ runtime cleanup
+→ confirmed reap/cleanup
 ```
 
-This should become a public product diagnostic rather than a pytest-only
-maintainer operation.
+This should become a public product diagnostic, not remain pytest-only.
 
-### Diagnostic level C — optional authenticated smoke
+### Level C — optional authenticated smoke
 
-Proposed interface:
+Proposed form:
 
 ```bash
 atlas-agent install-doctor --authenticated
 ```
 
-This may consume model tokens.
+It may consume tokens and should prove host-side Codex authentication plus one
+minimal model turn.
 
-It should prove that the host-side Codex controller can authenticate and
-complete a minimal model turn using the qualified installation.
-
-The result must distinguish:
+Report the three levels independently:
 
 ```text
-installation OK
+installation identity OK
 zero-token runtime OK
 authenticated service OK
 ```
 
-rather than collapsing them into one boolean.
-
 ### Exit criterion
 
-A user can determine whether a machine is ready for Atlas-controlled execution
-without initializing a project and without reading release-engineering docs.
+A user can determine whether a machine is ready for Atlas execution without
+initializing a project or reading the release procedure.
 
 ---
 
-## P0.4 — Add explicit version and installation identity reporting
+## P0.4 — Version and installation identity
 
 **Priority: high, small scope**
 
-Provide a stable operator surface such as:
+Provide a stable surface such as:
 
 ```bash
 atlas-agent --version
 atlas-agent install-info
 ```
 
-The exact command names may differ.
-
-### Human-readable output should identify
+Human and JSON output should identify at least:
 
 ```text
-Atlas Agent tag/version
-Atlas Agent commit
+Agent tag/version/commit
 asset version
-Codex tag
-Codex commit
-Codex target
-Codex executable path
-Codex executable SHA-256
+Codex tag/commit/target
+Codex path/SHA
 CODEX_HOME
-asset-set SHA-256
-prompt-set SHA-256
+asset-set SHA
+prompt-set SHA
 Bubblewrap backend/version
 ```
 
-### Machine-readable output
-
-A JSON form should be available for diagnostics and future automation.
-
 ### Exit criterion
 
-A bug report can state the effective installation identity without asking the
-operator to reconstruct it from Git and shell variables.
+A bug report can state the effective runtime identity without shell archaeology.
 
 ---
 
 # NEXT — validate deployment on Memoria
 
-## P1 — Memoria external-project deployment
+## P1 — Why Memoria has two possible deployment objectives
 
-**Priority: immediate after the P0 minimum, but useful now with v0.1.1**
+Memoria is the first deliberate second-project deployment.
 
-Memoria is the first deliberate second-project deployment used to distinguish
-Atlas Agent product behavior from assumptions created by the Atlas development
-machine state.
+Two objectives are valid but must not be confused.
 
-There are two valid objectives, and they must not be confused.
+### Objective A — use Atlas with Memoria as quickly as possible
 
----
-
-## P1.A — Fast path: use Atlas with Memoria immediately
-
-Objective:
-
-```text
-use the already-qualified v0.1.1 installation on this machine
-and initialize only the Memoria project state
-```
+Reuse the already-qualified v0.1.1 machine installation and create only Memoria
+project state.
 
 Reuse:
 
 ```text
-existing Atlas Agent v0.1.1 machine installation
-existing canonical v0.1.1 CODEX_HOME
-existing qualified Codex native binary
-existing user authentication source
+existing Agent v0.1.1 installation
+existing v0.1.1 CODEX_HOME
+existing qualified Codex binary
+existing user auth source
 existing Bubblewrap host installation
 ```
 
-Create independently for Memoria:
+Create independently:
 
 ```text
-project atlas-agent-policy.toml
-new .git/atlas-agent workflow state
-new repository witness
-new prompts
-new reports
-new project checkpoints
+Memoria atlas-agent-policy.toml
+Memoria .git/atlas-agent
+Memoria repository witness
+Memoria prompts/reports/checkpoints
 ```
 
-This is the fastest route when the objective is to start using Atlas Agent on
-Memoria rather than testing installation.
+This is the right path when the goal is simply to start using Atlas Agent.
 
-It is not sufficient evidence that the deployment guide works from scratch.
+It does not validate the deployment guide from a fresh Agent/CODEX_HOME state.
 
 ---
 
-## P1.B — Procedure-validation path: isolated Memoria installation prefix
+## P1.B — Preferred current experiment: isolated Memoria installation prefix
 
-Objective:
+To validate the v0.1.1 deployment procedure itself, create an independent Agent
+checkout and CODEX_HOME.
 
-```text
-validate the v0.1.1 deployment procedure itself
-without benefiting from the already-provisioned Atlas CODEX_HOME or Agent checkout
-```
-
-This is the preferred path for the current Memoria experiment.
-
-Use an independent prefix:
+Use:
 
 ```bash
 export ATLAS_BASE="$HOME/.local/share/atlas-agent-memoria-test"
@@ -513,127 +408,102 @@ Expected durable tree:
     └── v0.1.1/
 ```
 
-### What must be independent
+### Must be independent
 
 Do not reuse:
 
 ```text
-~/.local/share/atlas-agent/releases/atlas-agent-v0.1.1
-~/.local/share/atlas-agent/codex-homes/v0.1.1
-Atlas development repository workflow journal
-Atlas project's policy as project state
-Atlas project's prompt/report history
+existing Agent v0.1.1 checkout
+existing Atlas v0.1.1 CODEX_HOME
+Atlas development workflow journal
+Atlas project policy as Memoria project state
+Atlas prompts/reports/checkpoints
 ```
 
-The Memoria validation should perform a fresh:
+Perform fresh:
 
 ```text
-Atlas Agent checkout
+Agent checkout
 → tag/commit verification
-→ release-manifest reading
-→ canonical v0.1.1 asset source
+→ manifest reading
+→ v0.1.1 asset source validation
 → fresh CODEX_HOME provisioning
 → fresh auth symlink
 → executor-info
-→ Bubblewrap/helper qualification where practical
-→ Memoria project policy
-→ Memoria init
-→ Memoria doctor
+→ Bubblewrap/helper qualification
+→ Memoria policy
+→ Memoria init/doctor
 → first Memoria execution
 ```
 
-### What may intentionally be shared
+### May intentionally be shared
 
-The exact native Codex binary may be reused:
+Reuse the exact qualified Codex binary.
 
-```text
-$HOME/luna/codex-atlas/codex-rs/target/release/codex
-```
+Its identity is the validated SHA-256 of its bytes, not ownership by one
+installation prefix.
 
-Reason:
+Copying a roughly 1.3 GB identical file provides little additional evidence.
 
-```text
-its runtime identity is the validated SHA-256 of its bytes,
-not ownership by one Atlas Agent installation prefix
-```
-
-Duplicating a ~1.3 GB file provides little additional deployment evidence when
-both paths point to the same already-qualified bytes.
-
-The user authentication source may also be shared:
+Reuse the user auth source, normally:
 
 ```text
 ~/.codex/auth.json
 ```
 
-Each independent CODEX_HOME should create its own symlink to that user-owned
-mutable credential source.
+Each CODEX_HOME gets its own symlink to that mutable user-owned source.
 
-Bubblewrap and normal host libraries are machine prerequisites and are also
-shared.
+Bubblewrap and host libraries are normal shared machine prerequisites.
 
-### Why this test is stronger
+### What this experiment proves
 
-This arrangement prevents accidental success caused by:
-
-- a previously prepared Agent checkout;
-- a previously populated CODEX_HOME;
-- stale mutable Codex state from Atlas development;
-- hidden manual fixes performed during the v0.1.1 release marathon.
-
-At the same time it avoids testing irrelevant duplication of an executable
-whose exact bytes are already the qualified authority.
-
-### Result interpretation
-
-If the isolated-prefix procedure succeeds, we have evidence that:
+Success demonstrates that, on this already-qualified machine, the deployment
+guide is sufficient for:
 
 ```text
-the deployment guide is sufficient on this machine
-for a fresh Atlas Agent release checkout and fresh CODEX_HOME
+fresh Agent checkout
+fresh canonical CODEX_HOME
+fresh auth wiring
+fresh project initialization
 ```
 
-It does **not** yet prove virgin-machine deployment because the qualified Codex
-binary and authentication already exist on the host.
+It does **not** prove virgin-machine Codex artifact download or first-time user
+auth setup.
 
-That remaining gap is precisely why P0.1 and P0.2 exist.
+Those remaining claims belong to P0.1/P0.2.
 
 ---
 
-## P1.1 — Memoria first project initialization
+## P1.1 — Memoria project initialization
 
 Before `atlas-agent init`:
 
-- inspect Memoria's Git state;
-- identify existing modified/untracked files;
-- read repository instructions;
-- install and review Memoria's `atlas-agent-policy.toml`;
-- verify that the repository uses a supported real `.git/` directory;
-- verify there is no conflicting project-local `.codex/config.toml`;
-- establish a deliberate stable repository boundary.
+- inspect Memoria Git state;
+- understand existing modified/untracked files;
+- read project instructions;
+- establish/review Memoria `atlas-agent-policy.toml`;
+- verify a supported real `.git/` directory;
+- verify no conflicting project `.codex/config.toml`;
+- choose a deliberate stable repository boundary.
 
-Only then initialize the project workflow.
-
-### Required checks after init
+Then require:
 
 ```text
 doctor: OK
 state: MATCH
 repository witness: MATCH
-executor-info resolves the intended installation
+executor-info resolves intended installation
 ```
 
 ### Exit criterion
 
-Memoria has a new project-specific Atlas workflow with no imported Atlas
-journal/history and a clean, understandable initial witness.
+Memoria has its own clean workflow history with no imported Atlas journal.
 
 ---
 
-## P1.2 — Memoria first real task
+## P1.2 — First real Memoria task
 
-The first useful task should be bounded enough to audit but real enough to
-exercise project integration.
+Use a bounded real task, not only a synthetic smoke.
 
 Preferred cycle:
 
@@ -646,85 +516,73 @@ implementation / Luna
 → manual checkpoint
 ```
 
-The purpose is not to benchmark Luna or Sol.
-
-The purpose is to discover deployment and workflow assumptions outside the
-Atlas repository.
-
-### Record friction separately
-
-Classify observed problems as:
+Record friction separately as:
 
 ```text
 machine installation
 installation diagnostic
 project initialization
-repository topology
-repository witness
+repository topology/witness
 policy/defaults
 prompt ergonomics
-runtime execution
-result diagnostics
+runtime execution/result diagnostics
 checkpoint workflow
 documentation
-Memoria-specific project behavior
+Memoria-specific behavior
 ```
 
-Do not modify Atlas Agent for a Memoria-specific inconvenience unless the same
-problem plausibly affects other projects.
+Do not change Atlas Agent for a Memoria-specific inconvenience unless it
+plausibly generalizes.
+
+### Exit criterion
+
+One useful Memoria change completes the full implementation/review/checkpoint
+cycle under a fresh project workflow.
 
 ---
 
-## P1.3 — Stabilization pass after Memoria
+## P1.3 — Bounded stabilization after Memoria
 
-**Priority: high but strictly bounded**
+Fix only generic problems demonstrated by the deployment.
 
-After the first Memoria cycle, fix only generic problems demonstrated by the
-external deployment.
+Likely categories:
 
-Possible outcomes include:
-
-- better error messages;
-- safer defaults;
-- installer fixes;
-- install-doctor checks;
-- documentation corrections;
-- project bootstrap ergonomics;
-- narrow support for a common Git topology if strongly justified.
+```text
+error messages
+installer/doctor checks
+safe defaults
+documentation corrections
+project bootstrap ergonomics
+common repository assumptions
+```
 
 Avoid broad redesign.
 
 ### Exit criterion
 
-A second clean Memoria initialization/deployment path no longer requires
-undocumented maintainer knowledge.
+Repeating the Memoria deployment no longer requires undocumented maintainer
+knowledge.
 
 ---
 
-# THEN — close the remaining narrow Agent semantic debt
+# THEN — narrow remaining Agent debt
 
-## P2 — Distinguish execution health from task success
+## P2 — Execution health versus task success
 
-**Priority: medium-high, deliberately narrow**
+**Priority: medium-high, narrow scope**
 
-The current lifecycle can establish that a subprocess completed successfully.
-
-It cannot always prove that the intended semantic task succeeded.
-
-These are different statements:
+Keep separate:
 
 ```text
 Codex process exited 0
-Atlas execution lifecycle completed
+Atlas lifecycle completed
 model tool calls succeeded
-requested project task succeeded
-review accepted the result
+requested task succeeded
+review accepted result
+checkpoint finalized result
 ```
 
-### Required direction
-
-Introduce the smallest structured result contract that can distinguish at
-least:
+Introduce the smallest structured result contract needed to distinguish:
 
 ```text
 execution_health
@@ -733,60 +591,43 @@ reported_task_outcome
 review/checkpoint status
 ```
 
-Do not build a general workflow orchestrator.
+Do not build a general orchestrator.
 
-Do not make model self-reporting the sole authority for execution health.
+Do not make model self-reporting the authority for process health.
 
 ### Exit criterion
 
-Operator-facing status can explain the difference between:
-
-```text
-COMPLETED because execution infrastructure succeeded
-```
-
-and:
-
-```text
-task accepted as successful by the project workflow
-```
+Operator status clearly explains infrastructure completion versus project-task
+acceptance.
 
 ---
 
-## P2.1 — Freeze Atlas Agent feature expansion
+## P2.1 — Freeze broad Agent feature expansion
 
-Once P0/P1/P2 are sufficiently complete, Atlas Agent enters a maintenance-first
-phase.
-
-New Agent work should normally require one of:
+After P0/P1/P2, Agent work should normally require one of:
 
 ```text
 repeated external-project friction
 security-policy enforcement gap
 release/install reliability defect
-blocking inability to develop Atlas Core
-material observability problem
+blocking Atlas Core limitation
+material observability defect
 ```
 
-"Would be convenient" is insufficient by itself.
+Convenience alone is not enough.
 
 ---
 
 # THEN — return priority to Atlas Core
 
-## P3 — Re-center development on Atlas
-
-**Priority: strategic**
+## P3 — Re-center on Atlas
 
 Atlas is not an agent orchestrator.
 
-Its core purpose is to represent, qualify, search, select, compose, and
-eventually execute reusable semantic computational components.
-
-The development stack remains conceptually:
+Its conceptual stack remains:
 
 ```text
-applications / user intent
+applications / intent
 → semantic specification
 → Atlas Semantic Core
 → qualified component catalogue
@@ -796,70 +637,52 @@ applications / user intent
 → CPU / GPU / VM / other backends
 ```
 
-Atlas Agent is infrastructure below the development process, not a layer in
-this semantic architecture.
+Agent infrastructure must fade into the development background.
 
 ---
 
-## P3.1 — External corpora and qualification pressure
+## P3.1 — External corpora and component qualification
 
-**Priority: first major Atlas Core direction after Agent stabilization**
+**Priority: first major Core direction after Agent stabilization**
 
-Use more external technical corpora and reusable computational components to
-exercise the semantic model.
+Use external technical corpora and reusable computational components to pressure
+the semantic model.
 
-The objective is not corpus size for its own sake.
-
-The objective is to force real questions about:
+Exercise real questions about:
 
 ```text
 identity
 contracts
-preconditions
-postconditions
+pre/postconditions
 effects
 algebraic properties
 precision/error
 determinism
-memory
-cost
+memory/cost
 alternative implementations
 applicability
-provenance
-evidence
+provenance/evidence
 versioning
 ```
 
-### Why before major semantic expansion
-
-Core V1 already implements a substantial vertical slice.
-
-External material should reveal which extensions are actually necessary.
-
-Do not generalize the ontology merely because an abstraction seems elegant.
+Core V1 is already substantial enough that real material should drive the next
+semantic extensions.
 
 ### Exit criterion
 
-At least several independent external component families can be admitted,
-qualified, queried, and compared without special-case code for their domain.
+Several independent external component families can be admitted, qualified,
+queried, and compared without domain-specific branches.
 
 ---
 
-## P3.2 — Component search and candidate discovery
+## P3.2 — Semantic candidate search/discovery
 
 **Priority: high**
 
-Make Atlas useful as a semantic catalogue rather than only a persisted reasoning
-fixture.
+Given a declared intention/problem, find candidate realizations from qualified
+stored components.
 
-Given a declared intention/problem, Atlas should be able to identify candidate
-realizations from stored qualified components.
-
-The initial focus should remain explainable and exact.
-
-### Required properties
-
-Search must not silently conflate:
+Do not conflate:
 
 ```text
 identity
@@ -870,13 +693,12 @@ admissibility
 optimality
 ```
 
-The system should explain why a candidate was found and why it was included or
-excluded from a decision scope.
+Discovery should explain why candidates were found, included, or excluded.
 
 ### Exit criterion
 
-A real external query produces multiple qualified candidates and a structured
-explanation of discovery and filtering.
+A real external query produces multiple qualified candidates and structured
+discovery/filtering evidence.
 
 ---
 
@@ -884,50 +706,38 @@ explanation of discovery and filtering.
 
 **Priority: high**
 
-Extend the existing grounded-decision machinery under pressure from real
-component choices.
+Use real cases with alternative realizations, shared resources/preprocessing,
+context-dependent costs, and explicit applicability constraints.
 
-Prefer cases where:
+Prefer the smallest decision machinery justified by observed cases.
 
-- multiple realizations satisfy one intent;
-- resources or preprocessing can be shared;
-- costs differ by context;
-- applicability depends on explicit properties;
-- composition changes total cost or feasibility.
-
-Do not start by implementing every backend from the specification.
-
-Use the smallest decision machinery justified by observed cases.
+Do not implement every solver backend in advance.
 
 ### Exit criterion
 
-Atlas selects or composes a non-trivial real component solution that can be
-reproduced from persisted semantic evidence.
+Atlas selects or composes a non-trivial real solution reproducibly from
+persisted semantic evidence.
 
 ---
 
-## P3.4 — Black-box Core V1 conformance façade
+## P3.4 — Black-box Core V1 conformance
 
 **Priority: high once external consumers appear**
 
-The Core V1 profile already requires conformance tests that do not depend on
-SQLite internals or implementation classes.
+Create a small stable façade independent of SQLite/classes.
 
-Create a small stable black-box façade around the semantics that external
-implementations or future backends must preserve.
-
-### Initial conformance focus
+Initial conformance focus:
 
 ```text
 nominal identity
 value validation
-order and uniqueness semantics
+order/uniqueness semantics
 participant-scoped property resolution
 multivalued relations
 TRUE/FALSE/UNKNOWN
 negative assertion distinction
-provenance and dependencies
-snapshots and stale semantics
+provenance/dependencies
+snapshots/stale
 grounding completeness
 selection correctness
 restart/reproduction
@@ -935,254 +745,170 @@ restart/reproduction
 
 ### Exit criterion
 
-Core V1 semantics can be validated through a public test surface independent of
-its SQLite storage implementation.
+Core V1 semantics can be tested through a public surface independent of storage
+implementation.
 
 ---
 
-## P3.5 — Materialization only after semantic selection is convincing
+## P3.5 — Materialization only when semantically motivated
 
-Do not prioritize MIR, RISC-V, WASM, GPU lowering, or other execution backends
-merely because they are technically attractive.
+Do not prioritize MIR, RISC-V, WASM, GPU lowering, or VM backends merely
+because they are attractive engineering projects.
 
-Those are downstream consumers of Atlas decisions.
-
-They become priority when Atlas can already select a meaningful semantic
-realization whose materialization needs to be demonstrated.
+They should demonstrate an already meaningful Atlas semantic decision.
 
 ---
 
-# LATER — release automation
+# LATER
 
-## P4 — Mechanize the release procedure
+## P4 — Selective release automation
 
-**Priority: medium**
-
-The v0.1.1 release procedure is intentionally explicit and manual.
-
-Do not immediately automate every gate.
-
-Automate steps that are deterministic and repeatedly expensive.
-
-Candidate automation:
+Automate deterministic, repeatedly expensive parts of the release procedure:
 
 ```text
-manifest validation
-asset identity generation/verification
-prompt/profile identity verification
-focused test bundles
-full-suite invocation
+manifest/asset/prompt validation
+test bundles
 Codex binary identity capture
 zero-token qualification
 release-state audit
-tag dereference verification
-remote publication verification
-artifact metadata generation
+tag/remote verification
+artifact metadata
 ```
 
-Human/operator gates should remain around decisions such as:
-
-```text
-release scope
-Sol review disposition
-security review disposition
-authenticated smoke interpretation
-final publication approval
-```
-
-### Exit criterion
-
-A release requires less manual bookkeeping while preserving the explicit audit
-trail and fail-closed gates learned from v0.1.1.
+Keep human gates around scope, independent review disposition, security review,
+authenticated smoke interpretation, and final publication.
 
 ---
 
-# LATER — targeted security closure
+## P5 — Targeted security enforcement review
 
-## P5 — Review enforcement against the security policy
-
-**Priority: medium; evidence-driven**
-
-The security policy now defines the authority model more clearly than the old
-implicit implementation assumptions.
-
-Perform focused audits for places where external configuration could enlarge
-capabilities beyond the controller-owned ceiling.
-
-Potential review areas:
+Audit concrete paths where external configuration might enlarge authority beyond
+the controller-owned ceiling:
 
 ```text
-project Codex configuration
-Codex rule/config discovery
-hooks and MCP/tool surfaces
+project Codex config/rules
+hooks/MCP/tool surfaces
 environment inheritance
 credential exposure
 network enforcement
-filesystem grant mapping
+filesystem grants
 repo metadata write authority
 runtime substitution
 ```
 
-### Constraint
+Do not build a general security framework.
 
-Do not turn this into a general security framework project.
-
-Fix concrete mismatches between documented authority and mechanical
-enforcement.
-
-### Exit criterion
-
-No known configuration path can enlarge the effective capability grant beyond
-the Atlas policy ceiling under the documented baseline threat model.
+Fix documented policy/enforcement mismatches.
 
 ---
 
-# LATER — operator ergonomics
+## P6 — Evidence-driven operator ergonomics
 
-## P6 — Simplify common project operations under evidence
-
-**Priority: medium-low until Memoria evidence exists**
-
-Possible improvements:
+Possible work after Memoria evidence:
 
 ```text
-project bootstrap command
+project bootstrap
 policy template installation
-prompt creation helpers
-clearer status summaries
-better error remediation text
+prompt helpers
+clearer status/remediation
 installation/project path display
 workflow-history navigation
 ```
 
-These should be prioritized from observed friction, not hypothetical UX work.
-
-Do not hide important authority decisions merely to reduce command count.
+Do not hide authority decisions merely to reduce command count.
 
 ---
 
-# LATER — Linux platform breadth
+## P7 — Broader Linux targets/topologies
 
-## P7 — Additional Linux targets and Git topologies
-
-**Priority: low until x86_64 golden path is stable**
-
-Candidates:
+Later candidates:
 
 ```text
 Linux ARM64
 linked Git worktrees
-other supported repository layouts
+other repository layouts
 container-hosted operation
-additional Bubblewrap versions/distributions
+additional Bubblewrap environments
 ```
 
-Each target requires qualification of the complete execution boundary, not
-merely proof that upstream Codex can run there.
+Each target requires qualification of the complete Atlas execution boundary.
 
-### Linked worktree note
-
-Workflow journal path discovery already understands `git rev-parse --git-path`,
-but the current Bubblewrap execution backend requires a real repository-root
-`.git/` directory.
-
-Support should be added only with an explicit sandbox design for Git metadata
-ownership, not by weakening the current topology check.
+Linked-worktree support needs an explicit Git-metadata sandbox design, not a
+weakened topology check.
 
 ---
 
-# LATER — other operating systems
+## P8 — Other operating systems
 
-## P8 — macOS, Windows, and alternate isolation backends
+macOS, Windows, and alternate isolation backends are deferred until the Linux
+golden path is stable and Atlas Core work is again primary.
 
-**Priority: deferred**
-
-Codex portability does not imply Atlas execution-boundary portability.
-
-A new OS requires a new Atlas isolation backend with equivalent explicit
-capability semantics and qualification.
-
-Do not block Linux usability or Atlas Core progress on this work.
+Codex portability alone does not establish Atlas boundary portability.
 
 ---
 
-# LATER — broader Atlas semantic capabilities
+## P9 — Broader Atlas semantics under demonstrated need
 
-## P9 — Expand semantics only under demonstrated need
-
-Core V1 intentionally leaves many areas open:
+Candidate directions remain:
 
 ```text
-quantification and intervals
+quantification/intervals
 rich state transitions
-temporal planning and lifetimes
+temporal planning/lifetimes
 reactive truth maintenance
 quantitative uncertainty
-CP-SAT / SMT / MILP backends
+CP-SAT / SMT / MILP
 multiobjective decisions
 information acquisition / Semantic Recovery
-code materialization and validation
+code materialization/validation
 general semantic equivalence
-distributed stores and replication
+distributed stores/replication
 concurrent update policies
 ```
 
-These are not one backlog to implement sequentially.
+These are not a sequential implementation backlog.
 
-They are candidate directions.
-
-Promote one to active roadmap status only when a real use case requires it or
-an experiment establishes a strong architectural reason.
+Promote one only when real use cases or experiments justify it.
 
 ---
 
-## 10. Suggested release sequence
+## 4. Suggested near-term release sequence
 
-The following sequence is intentionally indicative rather than a version-number
-promise.
-
-### Atlas Agent v0.1.1 — completed baseline
+### v0.1.1 — completed baseline
 
 ```text
 qualified runtime
 versioned assets/prompts
 stable Bubblewrap helper execution
-release manifest
-release procedure
-manual deployable Linux path
+release manifest/procedure
+manual Linux deployment path
 ```
 
-### Next Agent tranche — installable Linux product
+### Next Agent tranche
 
-Possible release identity:
-
-```text
-v0.1.2
-```
-
-Candidate contents:
+Likely scope:
 
 ```text
 qualified Codex artifact distribution
 atlas-agent install
 atlas-agent install-doctor
-version/install-info surface
-Memoria-derived generic deployment fixes
+version/install-info
+Memoria-derived generic fixes
 ```
 
-If the installer introduces sufficiently large product semantics, choosing
-`v0.2.0` instead remains reasonable.
+`v0.1.2` is plausible.
 
-The number should follow the actual change, not determine its scope in advance.
+`v0.2.0` is also reasonable if installation introduces sufficiently large
+product semantics.
 
-### Following phase
+Version number should follow actual scope, not determine it in advance.
 
-Do not plan another large Agent release by default.
+After this tranche, do not plan another large Agent release by default.
 
-Move priority to:
+Return priority to:
 
 ```text
-Atlas external corpora
+external corpora
 component qualification
 search/discovery
 selection/composition
@@ -1191,206 +917,154 @@ Core V1 conformance
 
 ---
 
-## 11. Definition of "Atlas Agent sufficiently finished for now"
+## 5. Stopping criterion for Atlas Agent expansion
 
-Atlas Agent can enter maintenance-first mode when all of the following are true:
+Atlas Agent is sufficiently finished for the current phase when:
 
 ```text
-one published Linux x86_64 Agent release installs without dev-checkout knowledge
-exact Codex binary retrieval and SHA verification are automated
-canonical CODEX_HOME provisioning is automated
-user authentication is connected without secret copying
-install-doctor validates static installation state
-install-doctor performs a zero-token runtime probe
-an optional authenticated smoke works
-project init/doctor remain separate from installation diagnostics
-Memoria has completed at least one real implementation/review/checkpoint cycle
+published Linux x86_64 release installs without dev-checkout knowledge
+Codex artifact retrieval/SHA verification are automated
+CODEX_HOME provisioning is automated
+auth is connected without secret copying
+install-doctor validates static state
+install-doctor performs zero-token runtime probe
+optional authenticated smoke works
+project init/doctor remain separate from installation diagnosis
+Memoria completes a real implementation/review/checkpoint cycle
 no undocumented Atlas-development state is required
-execution health versus task outcome is understandable to the operator
+execution health versus task outcome is understandable
 ```
 
-This is a stopping criterion.
-
-It is deliberately not a claim that Atlas Agent is feature-complete forever.
+This is a stopping rule, not a permanent feature-completeness claim.
 
 ---
 
-## 12. Definition of a successful Memoria deployment experiment
+## 6. Successful Memoria procedure-validation experiment
 
-The current preferred experiment is the isolated-prefix procedure-validation
-path.
+Preferred current path: isolated installation prefix.
 
 Success requires:
 
 ```text
-fresh Atlas Agent v0.1.1 checkout under atlas-agent-memoria-test
+fresh v0.1.1 Agent checkout under atlas-agent-memoria-test
 clean tag/commit validation
 fresh v0.1.1 CODEX_HOME under atlas-agent-memoria-test
-canonical asset provisioning succeeds
-fresh auth symlink points to the existing user auth source
-shared Codex binary matches the release SHA
-executor-info reports the intended native runtime
+canonical asset provisioning
+fresh auth symlink to existing user auth
+shared Codex binary matches release SHA
+executor-info resolves intended runtime
 Bubblewrap/helper execution succeeds
-Memoria policy is established before init
+Memoria policy exists before init
 Memoria gets a new workflow journal
-Memoria doctor reports a coherent initial state
-first real task executes through Luna
-independent Sol review executes
-checkpoint completes without importing Atlas project history
+Memoria doctor reports coherent state
+first real Luna task completes
+independent Sol review completes
+checkpoint completes without imported Atlas history
 ```
 
-Any undocumented step needed to make this succeed is deployment friction and
-should be recorded.
+Any undocumented step needed to make this work is deployment friction.
 
----
-
-## 13. What the Memoria experiment intentionally does not test
-
-It does not prove:
+The experiment intentionally does not prove:
 
 ```text
-virgin-machine Codex artifact download
-first-time user authentication setup
-Linux ARM64 support
-macOS or Windows support
-linked-worktree support
+virgin-machine Codex download
+first-time authentication setup
+Linux ARM64
+macOS/Windows
+linked worktrees
 reproducible Codex builds
-multi-user system installation
+multi-user installation
 container distribution
 ```
 
-Those claims require separate qualification.
-
-The experiment remains valuable because it isolates the newly documented
-release-checkout and CODEX_HOME provisioning path from Atlas's previously
-prepared installation state.
-
 ---
 
-## 14. Shared versus duplicated state for multiple projects on one machine
+## 7. Shared versus duplicated state on one machine
 
-Normal long-term operation should prefer sharing qualified machine-level state.
-
-### Share normally
+Normal steady state should share:
 
 ```text
-installed Atlas Agent release checkout, when using the same release
+installed Agent release when same version is used
 exact qualified Codex executable
 user authentication source
-Bubblewrap binary and host runtime
+Bubblewrap and host runtime
 ```
 
-### Version separately by release
+Version separately by release:
 
 ```text
-canonical Atlas Codex CODEX_HOME
-release manifests
+canonical CODEX_HOME
 release assets/prompts
+release manifest
 ```
 
-### Always isolate by project
+Always isolate by project:
 
 ```text
-atlas-agent-policy.toml as project policy
+atlas-agent-policy.toml
 .git/atlas-agent journal
 repository witness
-accepted/running/completed prompts
-execution reports
-checkpoints
+prompts/reports/checkpoints
 project-specific allowed-untracked configuration
 ```
 
-### Test installations may deliberately duplicate machine state
+A deployment test may deliberately duplicate Agent checkout and CODEX_HOME.
 
-An isolated deployment test may create a new Agent checkout and CODEX_HOME even
-when equivalent qualified state already exists.
-
-That duplication is testing instrumentation, not the recommended steady-state
+That duplication is test instrumentation, not the recommended steady-state
 layout.
 
 ---
 
-## 15. Roadmap decision rule
+## 8. Roadmap decision rule
 
-Before adding an item above P6, ask:
+Before promoting new Agent work, ask:
 
 ```text
-Does this block reliable installation?
-Does this block external-project use?
-Does this reveal an enforcement gap?
-Does this block Atlas Core semantic work?
-Has the problem occurred in more than one context?
+Does it block reliable installation?
+Does it block external-project use?
+Does it reveal an enforcement gap?
+Does it block Atlas Core work?
+Has the problem appeared in more than one context?
 ```
 
-If all answers are no, defer the work unless it is exceptionally small and
-clearly reduces future maintenance.
+If all answers are no, defer it unless exceptionally small and clearly
+maintenance-reducing.
+
+Avoid these traps:
+
+- hardening indefinitely before using the system;
+- growing Atlas Agent into an orchestrator;
+- automating all release gates before repeated evidence;
+- generalizing Atlas semantics from imagined future domains;
+- treating more execution backends as proof of semantic value.
 
 ---
 
-## 16. Avoided roadmap traps
-
-### Trap: continuously hardening the Agent before using it
-
-Security work without a concrete policy/enforcement mismatch can consume
-unbounded effort.
-
-The current policy defines a baseline and optional hardening path.
-
-Use it.
-
-### Trap: building an orchestrator
-
-Atlas Agent should not grow planners, queues, background autonomy, role graphs,
-or general multi-agent scheduling merely because they are possible.
-
-Those features need an actual Atlas development requirement.
-
-### Trap: automating release before understanding repeated release patterns
-
-v0.1.1 produced the first precise release procedure.
-
-A few manual releases provide evidence about what should be automated.
-
-### Trap: generalizing Atlas semantics from imagined future domains
-
-Use external corpora and components first.
-
-Let failures drive semantic extension.
-
-### Trap: treating more backends as proof of Atlas value
-
-A RISC-V, WASM, GPU, or VM backend can be technically successful while Atlas's
-semantic selection remains unproven.
-
-Backends should demonstrate a semantic decision, not replace one.
-
----
-
-## 17. Current priority summary
+## 9. Current priority summary
 
 ```text
 P0.1  qualified Codex artifact distribution
 P0.2  atlas-agent install
 P0.3  atlas-agent install-doctor
-P0.4  version / install identity reporting
+P0.4  version/install identity reporting
 
 P1    isolated-prefix Memoria deployment
-P1.1  Memoria project initialization
-P1.2  first real implementation → review → checkpoint cycle
-P1.3  bounded generic stabilization from observed friction
+P1.1  Memoria initialization
+P1.2  real implementation → review → checkpoint
+P1.3  bounded generic stabilization
 
 P2    execution-health versus task-success contract
-P2.1  freeze broad Agent feature expansion
+P2.1  freeze broad Agent expansion
 
-P3.1  external corpora and component qualification
-P3.2  semantic candidate search/discovery
+P3.1  external corpora/component qualification
+P3.2  semantic candidate discovery
 P3.3  real selection/composition
 P3.4  black-box Core V1 conformance
-P3.5  materialization only when semantically motivated
+P3.5  materialization when semantically motivated
 
 P4    selective release automation
 P5    targeted security enforcement review
-P6    evidence-driven operator ergonomics
+P6    evidence-driven ergonomics
 P7    broader Linux targets/topologies
 P8    other OS isolation backends
 P9    broader Atlas semantics under demonstrated need
@@ -1398,30 +1072,26 @@ P9    broader Atlas semantics under demonstrated need
 
 ---
 
-## 18. Immediate next concrete sequence
-
-The practical sequence from the current repository state is:
+## 10. Immediate concrete sequence
 
 ```text
 1. keep v0.1.1 immutable
-2. use docs/deploy-existing-project.md against Memoria with an isolated prefix
-3. record every undocumented/manual friction point
-4. reuse the already-qualified Codex binary by exact SHA
-5. provision a completely fresh Memoria-test CODEX_HOME
+2. deploy v0.1.1 for Memoria under atlas-agent-memoria-test
+3. reuse the exact already-qualified Codex binary by SHA
+4. create a completely fresh Agent checkout and CODEX_HOME
+5. record every undocumented deployment step
 6. initialize a completely fresh Memoria workflow
 7. complete one real Luna/Sol/checkpoint cycle
-8. convert repeated deployment friction into P0 installer/doctor requirements
+8. turn generic friction into installer/doctor requirements
 9. implement the minimum install + install-doctor tranche
 10. repeat Memoria deployment using the new commands
-11. stop broad Agent expansion
-12. return primary development effort to Atlas Core external semantic use cases
+11. freeze broad Agent expansion
+12. return primary development effort to Atlas Core
 ```
 
 ---
 
-## 19. Guiding end state
-
-The desired near-term experience is intentionally unremarkable.
+## 11. Guiding end state
 
 For a new machine:
 
@@ -1434,7 +1104,7 @@ For a new project:
 
 ```bash
 cd project
-# establish project policy
+# establish/review project policy
 atlas-agent init
 atlas-agent doctor
 ```
@@ -1446,20 +1116,20 @@ atlas-agent ingest
 atlas-agent dispatch
 ```
 
-The operator should not need to know:
+The operator should not need to understand:
 
 ```text
 where the Codex fork was built
-how sealed memfd runtime authority works
-why current_exe needed a stable path
-how asset-set hashes are constructed
-how release tag objects dereference
-how Bubblewrap exec-server startup is qualified
-how v0.1.1 was debugged
+sealed memfd authority
+current_exe stable-path mechanics
+asset-set hash construction
+annotated-tag dereference
+Bubblewrap exec-server qualification
+v0.1.1 debugging history
 ```
 
-Those remain maintainers' concerns captured by the release procedure and
-machine diagnostics.
+Those are maintainer concerns captured by release engineering and machine
+diagnostics.
 
 When this is true, Atlas Agent has achieved its immediate purpose:
 
