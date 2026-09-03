@@ -1,8 +1,5 @@
 import hashlib
 import json
-from tools.atlas_agent.policy import load_policy, resolve_policy
-from tools.atlas_agent.prompt import parse_prompt
-
 import pytest
 
 from test_agent_operator_ergonomics import CodexFake, agent, jsonl
@@ -75,35 +72,26 @@ def test_unpublishable_context_does_not_strand_authoritative_recovery(tmp_path):
     _, w = make_repo(tmp_path)
     raw = accepted(w)
     prompt_sha = hashlib.sha256(raw).hexdigest()
-    snapshot = resolve_policy(load_policy(w.root/"atlas-agent-policy.toml"), parse_prompt(raw))
     supplement = w._parent_context({"generations": {}}, 1)[0].decode()
     execution_id = "123e4567-e89b-12d3-a456-426614174000"
     context = w.base / "reports" / "contexts"
     context.mkdir(parents=True)
     (context / (execution_id + ".txt")).mkdir()
-    owner = {
+    # Use the public launcher boundary to construct the owner.  In particular,
+    # start_run resolves and archives the policy authority rather than leaving
+    # a hand-built modern snapshot with no historical policy binding.
+    execution = {
         "execution_id": execution_id, "executor": "fake", "started_at": "2026-08-26T00:00:00Z",
         "pid": None, "report_dir": "reports/executions/" + execution_id,
         "permission_envelope": {"sandbox_mode": "workspace-write", "approval_policy": "never",
                                  "approvals_reviewer": "user", "strict_config": True,
                                  "ignore_rules": True, "network_access": False},
-        "prompt_input": "accepted_prompt_plus_atlas_context",
-        "context_path": "reports/contexts/" + execution_id + ".txt",
-        "effective_prompt_path": "reports/contexts/" + execution_id + "-effective.txt",
-        "context_sha256": hashlib.sha256(supplement.encode()).hexdigest(),
-        "effective_prompt_sha256": hashlib.sha256(raw + supplement.encode()).hexdigest(),
-        "provenance_version": 2, "execution_input_sha256": hashlib.sha256(raw + supplement.encode()).hexdigest(),
-        "report_provenance": {"status": "unavailable"},
-        "owner_schema": "atlas-agent-execution-owner/2",
-        "policy_snapshot": snapshot,
     }
-    w.journal.append("TRANSITION_PREPARED", transaction_id="tx", logical_event="RUN_STARTED",
-                     source="accepted/" + next(p.name for p in (w.base / "accepted").iterdir()),
-                     destination="running/implementation/g000001-" + prompt_sha + ".txt",
-                     prompt_sha256=prompt_sha, generation=1, action="implementation",
-                     witness=w._state()["generations"]["1"]["witness"],
-                     network_access=False,
-                     execution=owner, context_supplement=supplement)
+    def crash_after_prepare(stage, _transaction):
+        if stage == "prepared":
+            raise RuntimeError("simulated crash after authoritative preparation")
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        w.start_run(1, hook=crash_after_prepare, execution=execution)
     state = w.recover()
     assert state["generations"]["1"]["status"] == "RUNNING"
 

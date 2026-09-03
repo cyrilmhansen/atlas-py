@@ -19,11 +19,29 @@ def canonical_context_identifier(value):
     """Return the representation permitted in a supplement, or omit it."""
     return value if isinstance(value,str) and _CONTEXT_LINE.fullmatch(value) else None
 def canonical_execution_result(record):
-    """Select the durable executor result used for historical context."""
+    """Return the terminal executor result, rejecting contradictory aliases."""
     terminal=(record.get("result") if isinstance(record.get("result"),dict) else {})
-    if isinstance(terminal.get("executor_result"),dict): return terminal["executor_result"]
-    if isinstance(record.get("execution_result"),dict): return record["execution_result"]
-    return {}
+    # ``result`` itself is also a supported terminal representation.  The
+    # old implementation only compared the executor_result aliases and could
+    # therefore accept a rehashed envelope with a different outcome.
+    layers=[terminal]
+    values=[value for value in (
+        terminal.get("executor_result"),
+        record.get("executor_result"),
+        record.get("execution_result"),
+    ) if isinstance(value,dict)]
+    layers.extend(values)
+    authoritative={"execution_id","outcome","session_id","execution_input_sha256"}
+    for key in authoritative:
+        present=[value[key] for value in layers if key in value]
+        if any(value != present[0] for value in present[1:]):
+            raise JournalError("contradictory executor result representations")
+    # Preserve the historical nested form, while retaining authoritative
+    # claims which were emitted only on the enclosing form.
+    result={}
+    for value in reversed(layers):
+        result.update(value)
+    return result
 def encode_context_supplement(form):
     """Encode the single canonical parent-context representation."""
     if form["kind"] == "none": return CONTEXT_HEADER+"- unavailable: no immediate parent artifact\n"
@@ -80,7 +98,7 @@ def _witness(value, line):
     if untracked!=sorted(untracked,key=lambda x:x["path"]) or len({x["path"] for x in untracked})!=len(untracked): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","historical_policy_path","historical_policy_sha256","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
     provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
     present=provenance & set(value)
@@ -252,6 +270,19 @@ class Journal:
                             or raw["payload"]["network_access"] is not archived_prompt.network_access
                         ):
                             raise JournalError(f"prompt network archive mismatch at line {n}")
+                        if raw["payload"].get("session_mode") != archived_prompt.session_mode:
+                            raise JournalError(f"prompt session mode archive mismatch at line {n}")
+                        archived_target=archived_prompt.reuse_execution_id
+                        journal_target=raw["payload"].get("reuse_execution_id")
+                        if journal_target != archived_target:
+                            raise JournalError(f"prompt reuse target archive mismatch at line {n}")
+                    elif raw["event"] == "PROMPT_ACCEPTED":
+                        # A legacy fresh prompt cannot gain a reuse target
+                        # through mutable journal metadata.
+                        if archived_prompt.session_mode == "fresh" and raw["payload"].get("reuse_execution_id") is not None:
+                            raise JournalError(f"prompt reuse target archive mismatch at line {n}")
+                        if raw["payload"].get("session_mode") != archived_prompt.session_mode:
+                            raise JournalError(f"prompt session mode archive mismatch at line {n}")
                 # Once a generation has been accepted, its action is bound to
                 # the archived prompt above.  Do not let a later lifecycle
                 # payload select checkpoint semantics by relabelling itself.
@@ -270,6 +301,7 @@ class Journal:
                         generations[p["generation"]]={
                             "generation":p["generation"],
                             "action":p["action"],
+                            "session_mode":p["session_mode"],
                             "status":"ACCEPTED",
                             "prompt_schema":p.get("prompt_schema"),
                             "network_access": (
@@ -387,11 +419,27 @@ class Journal:
                 validate_snapshot(snapshot)
             except PolicyError as error:
                 raise JournalError(f"modern policy snapshot invalid at line {n}") from error
+            requested = snapshot.get("session_mode_requested", snapshot.get("session_mode"))
+            resolved = snapshot.get("session_mode_resolved", snapshot.get("session_mode"))
+            if requested != started.get("session_mode") or resolved != snapshot.get("session_mode"):
+                raise JournalError(f"session mode provenance mismatch at line {n}")
             if (
                 not isinstance(snapshot,dict)
                 or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
             ):
                 raise JournalError(f"modern policy snapshot invalid at line {n}")
+            if (
+                terminal_event and event == "RUN_COMPLETED"
+                and requested == "reuse" and resolved == "reuse"
+            ):
+                observed=(p.get("result") or {}).get("executor_result")
+                expected_thread=snapshot.get("requested_thread_id")
+                if (
+                    not isinstance(observed,dict)
+                    or not isinstance(expected_thread,str)
+                    or observed.get("session_id") != expected_thread
+                ):
+                    raise JournalError(f"historical reuse thread mismatch at line {n}")
 
             envelope=execution.get("permission_envelope")
             if not isinstance(envelope,dict):
@@ -436,6 +484,11 @@ class Journal:
         if event=="CHECKPOINT_INTENT" and any(type(p[k]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p[k]) for k in ("parent_head","tree_sha")): raise JournalError(f"checkpoint intent invalid at line {n}")
         if event=="CHECKPOINT_ABORTED" and type(p["reason"]) is not str: raise JournalError(f"checkpoint abort invalid at line {n}")
         if "executor_result" in p and type(p["executor_result"]) is not dict: raise JournalError(f"executor result invalid at line {n}")
+        if event in {"RUN_COMPLETED", "RUN_INTERRUPTED"}:
+            try:
+                canonical_execution_result(p)
+            except JournalError as error:
+                raise JournalError(f"{error} at line {n}") from error
         if "fallback_artifacts" in p:
             fallback=p["fallback_artifacts"]
             if type(fallback) is not list or not fallback or len(fallback)!=len(set(fallback)) or not set(fallback)<={"stdout.log","stderr.log","result.json","usage.json"}: raise JournalError(f"fallback artifacts invalid at line {n}")

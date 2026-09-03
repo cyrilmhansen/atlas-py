@@ -83,7 +83,7 @@ def load_presentation_usage(path: Path, generation_record, max_bytes=PRESENTATIO
     if type(record) is not dict:
         return None
     required={"schema","execution_id","generation","prompt_sha256","action","checkpoint","thread_id","codex_version","requested_model","requested_reasoning","observed_model","reasoning_effort","run","context_window","context_used","context_remaining","quota_before","quota_after","quota_status","sources","status","parser_malformed_lines","captured_at"}
-    optional={"policy_config_sha256","profile","session_mode","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"}
+    optional={"policy_config_sha256","profile","session_mode","session_mode_requested","session_mode_resolved","reuse_fallback_reason","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"}
     if not required.issubset(record) or not set(record).issubset(required | optional):
         return None
     execution=generation_record.get("execution")
@@ -101,7 +101,7 @@ def load_presentation_usage(path: Path, generation_record, max_bytes=PRESENTATIO
         return None
     snapshot=execution.get("policy_snapshot")
     if isinstance(snapshot,dict):
-        identity={"policy_config_sha256":"policy_config_sha256","profile":"profile","session_mode":"session_mode","reused_from_execution_id":"reused_from_execution_id","reuse_depth":"reuse_depth"}
+        identity={"policy_config_sha256":"policy_config_sha256","profile":"profile","session_mode":"session_mode","session_mode_requested":"session_mode_requested","session_mode_resolved":"session_mode_resolved","reuse_fallback_reason":"reuse_fallback_reason","reused_from_execution_id":"reused_from_execution_id","reuse_depth":"reuse_depth"}
         if any(record.get(field) != snapshot.get(source) for field,source in identity.items() if source in snapshot):
             return None
     if not all(_presentation_number(record.get(key)) for key in ("context_window","context_used","context_remaining")):
@@ -223,7 +223,7 @@ def _append_usage_event(runtime_root, record):
         "metrics": record.get("run"),
         "status": record["status"],
     }
-    for key in ("policy_config_sha256", "profile", "session_mode", "reused_from_execution_id", "reuse_depth", "cold_policy", "freshness_verification"):
+    for key in ("policy_config_sha256", "profile", "session_mode", "session_mode_requested", "session_mode_resolved", "reuse_fallback_reason", "reused_from_execution_id", "reuse_depth", "cold_policy", "freshness_verification"):
         if key in record:
             event[key] = record[key]
     # This journal is append-only but intentionally non-authoritative; a
@@ -275,7 +275,7 @@ def collect_usage(spec, result, report_dir: Path, requested_model=None, requeste
         "captured_at": _now(),
     }
     if policy_snapshot:
-        for key in ("action", "checkpoint", "policy_config_sha256", "profile", "requested_model", "requested_reasoning_effort", "session_mode", "cold_policy", "freshness_verification"):
+        for key in ("action", "checkpoint", "policy_config_sha256", "profile", "requested_model", "requested_reasoning_effort", "session_mode", "session_mode_requested", "session_mode_resolved", "reuse_fallback_reason", "cold_policy", "freshness_verification"):
             if key in policy_snapshot:
                 record[key if key != "requested_reasoning_effort" else "requested_reasoning"] = policy_snapshot[key]
         for key in ("reused_from_execution_id", "reuse_depth"):

@@ -58,6 +58,30 @@ def validate_spool(root,canonical_state):
                 # journal's runtime-relative reports/... path before comparing.
                 execution_rel=report_dir.relative_to("reports")
                 for name in ("execution.json","stdout.log","stderr.log","result.json","usage.json"): expected_execution_files.add(str(execution_rel/name))
+                policy_path=execution.get("historical_policy_path")
+                # Owner schema/2 existed before policy archives.  Require the
+                # archive only for the prompt epoch which introduced it.
+                modern=(execution.get("owner_schema")=="atlas-agent-execution-owner/2"
+                        and rec.get("prompt_schema")=="atlas-agent-prompt/2")
+                if modern and not isinstance(policy_path,str):
+                    errors.append(f"missing historical policy archive g{g}")
+                if policy_path is not None:
+                    pp=Path(policy_path)
+                    if (pp.is_absolute() or "\\" in str(pp) or "." in pp.parts
+                            or ".." in pp.parts or not str(pp).startswith("reports/")):
+                        errors.append(f"invalid historical policy path g{g}")
+                    else:
+                        expected_execution_files.add(str(pp.relative_to("reports")))
+                        expected_name=f"reports/policies/{execution.get('execution_id')}.json"
+                        if modern and str(pp)!=expected_name:
+                            errors.append(f"historical policy binding mismatch g{g}")
+                        artifact=base/pp
+                        try:
+                            if artifact.is_symlink() or hashlib.sha256(artifact.read_bytes()).hexdigest()!=execution.get("historical_policy_sha256"):
+                                errors.append(f"historical policy archive mismatch g{g}")
+                            json.loads(artifact.read_text(encoding="utf-8"))
+                        except (OSError,UnicodeError,json.JSONDecodeError):
+                            errors.append(f"historical policy archive invalid g{g}")
                 for field in ("context_path", "effective_prompt_path"):
                     value=execution.get(field)
                     if value is not None:
@@ -91,9 +115,13 @@ def validate_spool(root,canonical_state):
                 # never lifecycle authority.  Their paths are checked above,
                 # but absence or corruption must not invalidate the spool.
                 try: result_data=json.loads(result_file.read_text(encoding="utf-8"))
-                except (OSError,UnicodeError,json.JSONDecodeError): result_data=None
+                except (OSError,UnicodeError,json.JSONDecodeError):
+                    result_data=None
+                    if rec["status"]!="RUNNING" and modern:
+                        errors.append(f"result artifact invalid g{g}")
                 if result_data is not None and rec["status"]!="RUNNING":
-                    if not isinstance(result_data,dict): errors.append(f"result artifact invalid g{g}"); result_data=None
+                    if not isinstance(result_data,dict):
+                        errors.append(f"result artifact invalid g{g}"); result_data=None
                 if isinstance(result_data,dict) and rec["status"]!="RUNNING":
                     for key,value in owner.items():
                         if result_data.get(key)!=value: errors.append(f"result owner mismatch g{g}: {key}")
@@ -102,6 +130,29 @@ def validate_spool(root,canonical_state):
                     if outcome=="failed" and exit_code==0: errors.append(f"result failed/exit mismatch g{g}")
                     if outcome=="timeout" and result_data.get("timed_out") is not True: errors.append(f"result timeout mismatch g{g}")
                     if rec["status"]=="COMPLETED" and (outcome!="success" or exit_code!=0): errors.append(f"completed result mismatch g{g}")
+                    # result.json is the terminal artifact, not a presentation
+                    # copy.  Its observed session must agree with the
+                    # journal's canonical terminal claim.
+                    try:
+                        from .journal import canonical_execution_result
+                        journal_result=canonical_execution_result(rec)
+                        artifact_result=canonical_execution_result({"result": result_data})
+                        # Interrupted fallback artifacts are deliberately
+                        # reconstructed and may be the first terminal
+                        # executor representation.  Completed modern runs,
+                        # however, bind every authoritative claim.
+                        if rec["status"]=="COMPLETED":
+                            for field in ("execution_id", "outcome", "session_id",
+                                          "execution_input_sha256"):
+                                if (field in journal_result or field in artifact_result) and \
+                                        journal_result.get(field) != artifact_result.get(field):
+                                    errors.append(f"result {field} binding mismatch g{g}")
+                        if (modern and rec["status"]=="COMPLETED"
+                                and any(field not in artifact_result for field in
+                                        ("execution_id", "execution_input_sha256"))):
+                            errors.append(f"result authority incomplete g{g}")
+                    except Exception:
+                        errors.append(f"result executor representation invalid g{g}")
                 if rec["status"]!="RUNNING" and isinstance(result_data,dict) and result_data.get("telemetry_status")=="failed":
                     required_execution_files.discard(str(execution_rel/"usage.json"))
         if result and result.get("report_path") is not None:

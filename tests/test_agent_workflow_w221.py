@@ -47,6 +47,33 @@ def accepted(w, **kwargs):
     raw=prompt(w, **kwargs); w.ingest(); return raw
 
 
+def test_sandbox_descriptor_failure_does_not_orphan_policy_archive(tmp_path):
+    _, w = make_repo(tmp_path)
+    accepted(w)
+
+    class DescriptorFailure(FakeExecutor):
+        def sandbox_descriptor(self):
+            raise RuntimeError("sandbox setup failed")
+
+    with pytest.raises(RuntimeError, match="sandbox setup failed"):
+        w.execute(1, DescriptorFailure())
+
+    policies = w.base / "reports" / "policies"
+    assert not policies.exists() or not list(policies.iterdir())
+    events = w.journal.read()
+    assert not any(event["event"] == "RUN_STARTED" for event in events)
+    assert not any(
+        event["event"] == "TRANSITION_PREPARED"
+        and "execution" in event["payload"]
+        for event in events
+    )
+    assert w._state()["generations"]["1"]["status"] == "ACCEPTED"
+    w._preflight()
+
+    w.execute(1, FakeExecutor(observed_thread_id="normal-thread"))
+    assert w._state()["generations"]["1"]["status"] == "COMPLETED"
+
+
 def test_policy_valid_closed_and_hash_semantics(tmp_path):
     path=tmp_path/"policy.toml"; path.write_text(POLICY); data=load_policy(path); first=policy_config_sha256(data)
     equivalent=path.read_text().replace('schema = "atlas-agent-policy/1"','schema = "atlas-agent-policy/1" # same').replace('max_hot_reuse_hops = 3','max_hot_reuse_hops=3')
@@ -744,7 +771,13 @@ def test_reuse_exact_target_compatibility_lineage_and_limits(tmp_path):
     accepted(w,generation=2,session="reuse",target=eid); second=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-luna",observed_reasoning="medium"); w.execute(2,second)
     snap=w._state()["generations"]["2"]["execution"]["policy_snapshot"]; assert snap["reused_from_execution_id"]==eid and snap["reuse_depth"]==1
     accepted(w,generation=3,session="reuse",target=eid)
-    with pytest.raises(WorkflowError,match="REUSE_TARGET_STALE"): w.execute(3,FakeExecutor(observed_thread_id="thread-A"))
+    w.execute(3,FakeExecutor(observed_thread_id="thread-B"))
+    record=w._state()["generations"]["3"]
+    assert record["status"]=="COMPLETED"
+    snapshot=record["execution"]["policy_snapshot"]
+    assert snapshot["session_mode_requested"]=="reuse"
+    assert snapshot["session_mode"]=="fresh"
+    assert snapshot["reuse_fallback_reason"]=="advanced_reuse_lineage"
 
 
 def test_reuse_missing_unknown_and_tainted_target_fail_before_launch(tmp_path):
@@ -789,13 +822,15 @@ def test_policy_witness_is_revalidated_after_prepare_before_run_started(tmp_path
 def test_running_reuse_blocks_second_branch_from_same_thread(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w); w.execute(1,FakeExecutor(observed_thread_id="thread-T")); first=w._state()["generations"]["1"]["execution"]
     accepted(w,generation=2,session="reuse",target=first["execution_id"])
-    snapshot=dict(first["policy_snapshot"],session_mode="reuse",reused_from_execution_id=first["execution_id"],requested_thread_id="thread-T",reuse_depth=1)
     metadata={
-        "execution_id":"running-e2",
+        # start_run is the same authority boundary used by a launcher.  Do
+        # not copy g1's policy snapshot: the resolver must derive g2's
+        # reuse lineage and bind it to the archived policy.
+        "execution_id":"223e4567-e89b-12d3-a456-426614174000",
         "executor":"codex",
         "started_at":"now",
         "pid":None,
-        "report_dir":"reports/executions/running-e2",
+        "report_dir":"reports/executions/223e4567-e89b-12d3-a456-426614174000",
         "permission_envelope":{
             "sandbox_mode":"workspace-write",
             "approval_policy":"never",
@@ -804,13 +839,17 @@ def test_running_reuse_blocks_second_branch_from_same_thread(tmp_path):
             "ignore_rules":True,
             "network_access":False,
         },
-        "owner_schema":"atlas-agent-execution-owner/2",
-        "policy_snapshot":snapshot,
     }
     w.start_run(2,execution=metadata)
-    report=w.base/"reports"/"executions"/"running-e2"; report.mkdir(parents=True); (report/"execution.json").write_text(json.dumps({**metadata,"generation":2,"prompt_sha256":w._state()["generations"]["2"]["prompt_sha256"],"action":"implementation","command":[],"version":"fake/1"}))
+    g2=w._state()["generations"]["2"]
+    assert g2["status"]=="RUNNING"
+    assert g2["execution"]["policy_snapshot"]["session_mode"]=="reuse"
+    w._prepare_execution_publication({
+        "execution":g2["execution"], "generation":2,
+        "prompt_sha256":g2["prompt_sha256"], "action":g2["action"],
+    })
     accepted(w,generation=3,session="reuse",target=first["execution_id"]); probe=FakeExecutor()
-    with pytest.raises(WorkflowError,match="REUSE_TARGET_STALE"): w.execute(3,probe)
+    with pytest.raises(WorkflowError,match="REUSE_LINEAGE_TAINTED"): w.execute(3,probe)
     assert probe.launched==0
 
 

@@ -35,6 +35,11 @@ class DispatchPresenter:
         snapshot=event.get("policy_snapshot") or {}; envelope=event.get("permission_envelope") or {}
         print("Atlas dispatch")
         print(f"g{event['generation']} · {event['action']} · {event.get('session_mode') or snapshot.get('session_mode') or 'session unavailable'}")
+        if snapshot.get("session_mode_requested"):
+            print(f"session requested: {snapshot['session_mode_requested']}")
+            print(f"session resolved: {snapshot.get('session_mode', 'session unavailable')}")
+        if snapshot.get("reuse_fallback_reason"):
+            print(f"reuse fallback: {snapshot['reuse_fallback_reason']}")
         if snapshot.get("profile"): print(f"profile {snapshot['profile']}")
         model=snapshot.get("requested_model"); reasoning=snapshot.get("requested_reasoning_effort")
         if model or reasoning:
@@ -71,6 +76,11 @@ class DispatchPresenter:
     def _finished(self,event):
         print("Atlas dispatch result")
         print(f"g{event['generation']} · {event['action']} · {event['status']}")
+        if event.get("session_mode_requested"):
+            print(f"session requested: {event['session_mode_requested']}")
+            print(f"session resolved: {event.get('session_mode', 'session unavailable')}")
+        if event.get("reuse_fallback_reason"):
+            print(f"reuse fallback: {event['reuse_fallback_reason']}")
         duration=_duration(event.get("started_at"),event.get("finished_at"))
         if duration is not None: print(f"elapsed {_elapsed(duration)}")
         if event.get("execution_id"): print(f"execution {event['execution_id']}")
@@ -134,7 +144,14 @@ def main(argv=None):
             try: w._validate_historical_provenance(events)
             except WorkflowError: semantic="SEMANTIC_INVALID"
             print("Atlas agent workflow\njournal: OK\nstate: "+(semantic if semantic!="MATCH" else ("MATCH" if w._state_file().exists() and w._state()==state else "MISMATCH")))
-            for g,x in sorted(state["generations"].items(),key=lambda z:int(z[0])): print(f"generation {g}  {x['checkpoint']}  {x['action']}  status {x['status']}")
+            for g,x in sorted(state["generations"].items(),key=lambda z:int(z[0])):
+                line=f"generation {g}  {x['checkpoint']}  {x['action']}  status {x['status']}"
+                execution=x.get("execution") or {}; snapshot=execution.get("policy_snapshot") or {}
+                if snapshot.get("session_mode_requested"):
+                    line += f"  session requested {snapshot['session_mode_requested']}  session resolved {snapshot.get('session_mode', 'unavailable')}"
+                if snapshot.get("reuse_fallback_reason"):
+                    line += f"  reuse fallback {snapshot['reuse_fallback_reason']}"
+                print(line)
             print("repository witness:","MATCH" if state["latest_repository_witness"]==witness(w.root,w.allowed) else "MISMATCH")
         else:
             for row in w.history():
@@ -144,6 +161,11 @@ def main(argv=None):
                 if row.get("execution_id"): fields.append("exec "+row["execution_id"][:12])
                 fields.append("report "+("yes" if row["report_available"] else "no"))
                 if row.get("commit_sha"): fields.append("commit "+row["commit_sha"][:12])
+                if row.get("session_mode_requested"):
+                    fields.append("session requested "+row["session_mode_requested"])
+                    fields.append("session resolved "+row.get("session_mode", "unavailable"))
+                if row.get("reuse_fallback_reason"):
+                    fields.append("reuse fallback "+row["reuse_fallback_reason"])
                 print(" · ".join(fields))
     except (WorkflowError,ValueError,OSError,RuntimeError) as e: print(f"error: {e}",file=sys.stderr); return 1
     return 0

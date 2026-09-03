@@ -17,8 +17,17 @@ class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
 
 SESSION_VALIDATION_ERRORS=frozenset({"FRESHNESS_UNVERIFIED","FRESHNESS_VIOLATION","REUSE_THREAD_UNVERIFIED","REUSE_THREAD_MISMATCH","OBSERVED_MODEL_MISMATCH","OBSERVED_REASONING_MISMATCH","REUSE_SESSION_UNAVAILABLE"})
+SAFE_REUSE_FALLBACKS={
+    "REUSE_TARGET_INCOMPATIBLE": "incompatible_policy",
+    "REUSE_GENERATION_GAP_EXCEEDED": "max_reuse_generation_gap",
+    "REUSE_HOT_HOPS_EXCEEDED": "max_hot_reuse_hops",
+    "REUSE_LINEAGE_ADVANCED": "advanced_reuse_lineage",
+}
 SUPPLEMENT_MAX_BYTES=4096
 _SAFE_CONTEXT_VALUE=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+# Launcher-supplied historical IDs predate UUID generation.  Keep their
+# bounded, filename-safe form, while excluding every path syntax.
+_EXECUTION_ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 
 def _context_value(value):
     """Return a bounded line-safe identifier, or None for optional metadata."""
@@ -159,6 +168,41 @@ class Workflow:
             os.replace(staged,path); fsync_dir(path.parent)
         finally:
             if staged.exists(): staged.unlink()
+    def _publish_policy_archive(self, policy, execution_id):
+        """Publish the immutable policy authority for one execution.
+
+        A link (rather than replace) makes an existing name an explicit
+        compare-only collision, including symlinks.
+        """
+        if not isinstance(execution_id,str) or not _EXECUTION_ID.fullmatch(execution_id):
+            raise WorkflowError("BAD_EXECUTION_METADATA")
+        directory=self.base/"reports"/"policies"
+        if (self.base/"reports").is_symlink() or directory.is_symlink() or directory.parent.is_symlink():
+            raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+        directory.mkdir(parents=True, exist_ok=True)
+        fsync_dir(directory)
+        raw=json.dumps(policy,sort_keys=True,separators=(",",":")).encode("utf-8")
+        path=directory/(execution_id+".json")
+        if path.is_symlink() or path.exists():
+            try:
+                if path.read_bytes()!=raw: raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+            except OSError as error:
+                raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID") from error
+            fsync_dir(directory)
+        else:
+            fd,tmp=tempfile.mkstemp(prefix="policy-",dir=directory)
+            staged=Path(tmp)
+            try:
+                with os.fdopen(fd,"wb") as stream:
+                    stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+                try: os.link(staged,path)
+                except FileExistsError:
+                    if path.is_symlink() or path.read_bytes()!=raw:
+                        raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+                fsync_dir(directory)
+            finally:
+                if staged.exists(): staged.unlink()
+        return str(path.relative_to(self.base)), hashlib.sha256(raw).hexdigest()
     def _execution_artifact(self,transaction):
         return {**transaction["execution"],"generation":transaction["generation"],"prompt_sha256":transaction["prompt_sha256"],"action":transaction["action"]}
     def _publish_missing_execution_file(self,path,data):
@@ -243,6 +287,17 @@ class Workflow:
         """Validate journaled context before trusting or committing RUN_STARTED."""
         supplement=transaction.get("context_supplement")
         execution=transaction.get("execution")
+        record=state.get("generations", {}).get(str(transaction.get("generation")))
+        snapshot=execution.get("policy_snapshot") if isinstance(execution, dict) else None
+        if state.get("validation_epoch", 1) >= 2 and isinstance(record, dict) and isinstance(snapshot, dict):
+            try:
+                validate_snapshot(snapshot)
+            except PolicyError as error:
+                raise WorkflowError("POLICY_SNAPSHOT_PROVENANCE_INVALID") from error
+            requested=snapshot.get("session_mode_requested", snapshot.get("session_mode"))
+            resolved=snapshot.get("session_mode_resolved", snapshot.get("session_mode"))
+            if requested != record.get("session_mode") or resolved != snapshot.get("session_mode"):
+                raise WorkflowError("SESSION_MODE_PROVENANCE_MISMATCH")
         if supplement is None or not isinstance(execution,dict): return
         if state.get("validation_epoch", 1) >= 2 and "execution_input_sha256" in execution and execution.get("execution_input_sha256") != execution.get("effective_prompt_sha256"):
             raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
@@ -277,10 +332,131 @@ class Workflow:
             if event["event"] == "RUN_STARTED" and "context_supplement" in event["payload"]:
                 before=replay_journal([e for e in events if e["seq"] < event["seq"]])
                 self._validate_authoritative_provenance(event["payload"],before)
+            # The owner snapshot is a claim about a decision, not the
+            # decision's source.  Recompute that decision from the archived
+            # prompt and the prefix of the journal before accepting history.
+            if event["event"] == "RUN_STARTED" and isinstance(event["payload"].get("execution"), dict):
+                before=replay_journal([e for e in events if e["seq"] < event["seq"]])
+                self._validate_historical_session_plan(before, event["payload"])
         for event in events:
             if event["event"] in {"RUN_COMPLETED", "RUN_INTERRUPTED"}:
                 before=replay_journal([e for e in events if e["seq"] < event["seq"]])
                 self._validate_terminal_transition(event["event"], event["payload"], before)
+                if isinstance((event["payload"].get("execution") or {}).get("policy_snapshot"), dict):
+                    self._validate_historical_session_plan(before, event["payload"])
+                    terminal_payload=dict(event["payload"])
+                    terminal_payload["_terminal_event"]=event["event"]
+                    self._validate_historical_thread(before, terminal_payload)
+
+    def _validate_historical_thread(self, state, payload):
+        """Check terminal thread identity against the historical prefix."""
+        execution=payload.get("execution") or {}
+        snapshot=execution.get("policy_snapshot") or {}
+        observed=canonical_execution_result(payload)
+        thread=observed.get("session_id")
+        if not isinstance(thread,str) or not thread:
+            if payload.get("_terminal_event") == "RUN_COMPLETED":
+                raise WorkflowError("COMPLETED_SESSION_ID_MISSING")
+            return                    # interruption may precede session establishment
+        mode=snapshot.get("session_mode")
+        if mode == "reuse":
+            if thread != snapshot.get("requested_thread_id"):
+                raise WorkflowError("REUSE_THREAD_MISMATCH")
+        elif mode == "fresh":
+            if thread in self._known_thread_ids(state):
+                raise WorkflowError("FRESHNESS_VIOLATION")
+
+    def _historical_policy(self, execution):
+        """Load the policy artifact captured when this execution started."""
+        path_name=execution.get("historical_policy_path")
+        digest=execution.get("historical_policy_sha256")
+        if not path_name and not digest:
+            return None  # pre-archive records are handled by their epoch rules
+        if (not isinstance(path_name,str) or
+                path_name != f"reports/policies/{execution.get('execution_id')}.json" or
+                not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{64}",digest)):
+            raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+        try:
+            path=self.base/path_name
+            policy_dir=self.base/"reports"/"policies"
+            if (path.is_symlink() or (self.base/"reports").is_symlink()
+                    or policy_dir.is_symlink() or policy_dir.parent.is_symlink()):
+                raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+            raw=path.read_bytes()
+            data=json.loads(raw.decode("utf-8"))
+            from .policy import validate_policy
+            validate_policy(data)
+        except (OSError, UnicodeError, json.JSONDecodeError, PolicyError) as error:
+            raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID") from error
+        if hashlib.sha256(raw).hexdigest()!=digest:
+            raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+        return data
+
+    def _validate_historical_session_plan(self, state, payload):
+        """Validate the derived session plan for one modern execution.
+
+        This deliberately calls the same resolver used before RUN_STARTED.
+        Consequently a rehashed journal cannot select a different recognised
+        fallback, depth, or target merely by changing its owner metadata.
+        """
+        execution=payload.get("execution") or {}
+        snapshot=execution.get("policy_snapshot")
+        if execution.get("owner_schema") != "atlas-agent-execution-owner/2":
+            return
+        record=state.get("generations", {}).get(str(payload.get("generation")))
+        if not isinstance(record, dict) or not isinstance(snapshot, dict):
+            raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID")
+        if record.get("prompt_schema") != "atlas-agent-prompt/2":
+            return
+        try:
+            validate_snapshot(snapshot)
+        except PolicyError as error:
+            raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID") from error
+        archive=self.base/"prompts"/(record["prompt_sha256"]+".txt")
+        try:
+            prompt=parse_prompt(archive.read_bytes())
+        except (OSError, PromptError) as error:
+            raise WorkflowError("PROMPT_ARCHIVE_CORRUPT") from error
+        # Policy resolution is deterministic from the accepted policy
+        # snapshot inputs.  Do not use presentation/history copies here.
+        try:
+            policy=self._historical_policy(execution)
+            if policy is None:
+                # Epoch-2 owner metadata without an archive is not an
+                # independently reconstructible policy authority.  In
+                # particular, never reinterpret it using today's TOML.
+                raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
+            base=resolve_policy(policy,prompt)
+        except (PolicyError, WorkflowError) as error:
+            raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID") from error
+        # Do not permit a rehashed owner to change qualified policy identity.
+        # The archive is independent of the journal's policy_snapshot.
+        if self._historical_policy(execution) is not None:
+            for key,value in base.items():
+                if key not in {"session_mode","session_mode_requested",
+                               "session_mode_resolved","reuse_fallback_reason",
+                               "reused_from_execution_id","requested_thread_id",
+                               "reuse_depth"} and snapshot.get(key) != value:
+                    raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
+        expected=base
+        if prompt.session_mode == "reuse":
+            try:
+                expected=self._reuse_snapshot(state,record,base)
+            except WorkflowError as error:
+                reason=SAFE_REUSE_FALLBACKS.get(str(error))
+                if reason is None:
+                    raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID") from error
+                expected=dict(base)
+                expected.update({"session_mode":"fresh",
+                                 "session_mode_requested":"reuse",
+                                 "session_mode_resolved":"fresh",
+                                 "reuse_fallback_reason":reason})
+        keys=("session_mode_requested","session_mode","session_mode_resolved",
+              "reused_from_execution_id","requested_thread_id","reuse_depth",
+              "reuse_fallback_reason")
+        for key in keys:
+            if snapshot.get(key) != expected.get(key):
+                raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
 
     def _validate_terminal_transition(self, event, payload, state):
         record=state["generations"].get(str(payload.get("generation")))
@@ -472,38 +648,152 @@ class Workflow:
     def _reuse_snapshot(self, state, record, snapshot):
         target_id=record.get("reuse_execution_id")
         if not target_id: raise WorkflowError("REUSE_TARGET_MISSING")
+        # The accepted prompt, rather than the execution owner, names the
+        # reuse authority.  This check is also used during replay.
+        prompt_path=self.base/"prompts"/(record["prompt_sha256"]+".txt")
+        try:
+            accepted_prompt=parse_prompt(prompt_path.read_bytes())
+        except (OSError, PromptError) as error:
+            raise WorkflowError("PROMPT_ARCHIVE_CORRUPT") from error
+        if accepted_prompt.prompt_schema == "atlas-agent-prompt/2" and (
+                accepted_prompt.session_mode != "reuse" or
+                accepted_prompt.reuse_execution_id != target_id):
+            raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
         candidates=[]
         for candidate in state["generations"].values():
             owner=candidate.get("execution")
             if owner and owner.get("execution_id")==target_id: candidates.append((candidate,owner))
         if len(candidates)!=1: raise WorkflowError("REUSE_TARGET_UNKNOWN")
         target, owner=candidates[0]; target_result=self._execution_result(target)
-        if target["status"]!="COMPLETED" or target_result.get("outcome")!="success": raise WorkflowError("REUSE_TARGET_STALE")
-        thread_id=target_result.get("session_id")
-        if not isinstance(thread_id,str) or not thread_id: raise WorkflowError("REUSE_TARGET_NO_THREAD")
         target_snapshot=owner.get("policy_snapshot")
-        if owner.get("owner_schema")!="atlas-agent-execution-owner/2" or not isinstance(target_snapshot,dict): raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
-        if (
+        if owner.get("owner_schema")!="atlas-agent-execution-owner/2" or not isinstance(target_snapshot,dict):
+            raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
+        try:
+            validate_snapshot(target_snapshot)
+        except PolicyError as error:
+            # A damaged owner is not equivalent to a policy rollover.  Keep
+            # this fail-closed so reuse fallback cannot conceal tampering.
+            raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID") from error
+        if target_snapshot.get("schema") != "atlas-agent-policy-snapshot/2":
+            raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
+        target_prompt_path=self.base/"prompts"/(target["prompt_sha256"]+".txt")
+        try:
+            target_prompt=parse_prompt(target_prompt_path.read_bytes())
+            target_policy=self._historical_policy(owner)
+            if target_policy is None:
+                raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
+            if target_policy is not None:
+                qualified=resolve_policy(target_policy,target_prompt)
+                for key,value in qualified.items():
+                    if key not in {"session_mode","session_mode_requested",
+                                   "session_mode_resolved","reuse_fallback_reason",
+                                   "reused_from_execution_id","requested_thread_id",
+                                   "reuse_depth"} and target_snapshot.get(key)!=value:
+                        raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
+        except (OSError, PromptError, PolicyError) as error:
+            raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID") from error
+        thread_id=target_result.get("session_id")
+        if not isinstance(thread_id,str) or not thread_id:
+            raise WorkflowError("REUSE_TARGET_NO_THREAD")
+        target_requested=target_snapshot.get("session_mode_requested", target_snapshot.get("session_mode"))
+        target_resolved=target_snapshot.get("session_mode_resolved", target_snapshot.get("session_mode"))
+        if target_requested == "reuse" and target_resolved == "reuse":
+            if target_snapshot.get("requested_thread_id") != thread_id:
+                raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
+        # A reuse target's depth is historical lineage, never an integer
+        # supplied by the target's mutable snapshot.  Walk only the existing
+        # chain and require every edge to be prompt-authorised.
+        def lineage_depth(current, seen):
+            owner=current.get("execution") or {}
+            snap=owner.get("policy_snapshot") or {}
+            if snap.get("session_mode_resolved", snap.get("session_mode")) != "reuse":
+                return 0
+            edge=snap.get("reused_from_execution_id")
+            if not isinstance(edge,str) or edge in seen:
+                raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            prompt_file=self.base/"prompts"/(current["prompt_sha256"]+".txt")
+            try: historical_prompt=parse_prompt(prompt_file.read_bytes())
+            except (OSError, PromptError) as error:
+                raise WorkflowError("REUSE_LINEAGE_TAINTED") from error
+            if historical_prompt.session_mode != "reuse" or historical_prompt.reuse_execution_id != edge:
+                raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            parents=[r for r in state["generations"].values()
+                     if (r.get("execution") or {}).get("execution_id")==edge]
+            if len(parents)!=1 or parents[0]["generation"]>=current["generation"]:
+                raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            return 1+lineage_depth(parents[0],seen|{edge})
+        target_depth=lineage_depth(target,set())
+        incompatible = (
             target_snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
             or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
-        ):
-            raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
+        )
         for key in ("action","profile","executor","requested_model","requested_reasoning_effort","sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
-            if target_snapshot.get(key)!=snapshot.get(key): raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
-        generation=record["generation"]
-        if generation-target["generation"]>snapshot["max_reuse_generation_gap"]: raise WorkflowError("REUSE_TARGET_STALE")
-        depth=target_snapshot.get("reuse_depth",0)+1
-        if depth>snapshot["max_hot_reuse_hops"]: raise WorkflowError("REUSE_TARGET_STALE")
+            incompatible = incompatible or target_snapshot.get(key)!=snapshot.get(key)
+        # Integrity of the later thread lineage is authoritative over every
+        # ordinary stale/policy fallback decision.
+        advanced=False
         for candidate in state["generations"].values():
+            if candidate["generation"]<=target["generation"] or candidate["generation"]==record["generation"]: continue
             candidate_owner=candidate.get("execution") or {}
             candidate_snapshot=candidate_owner.get("policy_snapshot") or {}
-            if candidate["status"]=="RUNNING" and candidate_snapshot.get("requested_thread_id")==thread_id:
-                raise WorkflowError("REUSE_TARGET_STALE")
-            if candidate["generation"]<=target["generation"]: continue
+            candidate_has_owner=bool(candidate_owner)
+            if candidate_has_owner:
+                if candidate_owner.get("owner_schema") != "atlas-agent-execution-owner/2":
+                    # Only descendants which can affect this thread need an
+                    # owner; unrelated legacy history remains compatible.
+                    candidate_snapshot={}
+                else:
+                    try:
+                        validate_snapshot(candidate_snapshot)
+                    except PolicyError as error:
+                        raise WorkflowError("REUSE_LINEAGE_TAINTED") from error
+                    requested=candidate_snapshot.get("session_mode_requested", candidate_snapshot.get("session_mode"))
+                    resolved=candidate_snapshot.get("session_mode_resolved", candidate_snapshot.get("session_mode"))
+                    if requested == "reuse" and resolved == "reuse" and candidate_snapshot.get("requested_thread_id") != self._execution_result(candidate).get("session_id"):
+                        # A contradictory historical terminal observation is
+                        # integrity failure, never a safe fallback.
+                        raise WorkflowError("REUSE_LINEAGE_TAINTED")
             result=self._execution_result(candidate)
-            if result.get("session_id")!=thread_id and candidate_snapshot.get("requested_thread_id")!=thread_id: continue
-            if candidate["status"]!="COMPLETED" or result.get("outcome")!="success": raise WorkflowError("REUSE_LINEAGE_TAINTED")
-            raise WorkflowError("REUSE_TARGET_STALE")
+            relevant=(result.get("session_id")==thread_id or
+                      candidate_snapshot.get("requested_thread_id")==thread_id)
+            if not relevant:
+                continue
+            if not candidate_has_owner or candidate_owner.get("owner_schema") != "atlas-agent-execution-owner/2":
+                raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            requested=candidate_snapshot.get("session_mode_requested",
+                                              candidate_snapshot.get("session_mode"))
+            resolved=candidate_snapshot.get("session_mode_resolved",
+                                            candidate_snapshot.get("session_mode"))
+            if requested == "reuse" and resolved == "reuse":
+                edge=candidate_snapshot.get("reused_from_execution_id")
+                try:
+                    descendant_prompt=parse_prompt(
+                        (self.base/"prompts"/(candidate["prompt_sha256"]+".txt")).read_bytes())
+                except (OSError, PromptError) as error:
+                    raise WorkflowError("REUSE_LINEAGE_TAINTED") from error
+                parents=[r for r in state["generations"].values()
+                         if (r.get("execution") or {}).get("execution_id")==edge]
+                if (descendant_prompt.session_mode != "reuse" or
+                        descendant_prompt.reuse_execution_id != edge or
+                        len(parents)!=1 or
+                        parents[0]["generation"]>=candidate["generation"] or
+                        self._execution_result(parents[0]).get("session_id") !=
+                        candidate_snapshot.get("requested_thread_id")):
+                    raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            if candidate["status"]!="COMPLETED" or result.get("outcome")!="success":
+                raise WorkflowError("REUSE_LINEAGE_TAINTED")
+            advanced=True
+        if advanced:
+            raise WorkflowError("REUSE_LINEAGE_ADVANCED")
+        if target["status"]!="COMPLETED":
+            raise WorkflowError("REUSE_LINEAGE_TAINTED")
+        if target_result.get("outcome")!="success":
+            raise WorkflowError("REUSE_LINEAGE_TAINTED")
+        if incompatible: raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
+        generation=record["generation"]
+        if generation-target["generation"]>snapshot["max_reuse_generation_gap"]: raise WorkflowError("REUSE_GENERATION_GAP_EXCEEDED")
+        depth=target_depth+1
+        if depth>snapshot["max_hot_reuse_hops"]: raise WorkflowError("REUSE_HOT_HOPS_EXCEEDED")
         snapshot=dict(snapshot); snapshot.update({"reused_from_execution_id":target_id,"requested_thread_id":thread_id,"reuse_depth":depth})
         return snapshot
     @staticmethod
@@ -539,11 +829,56 @@ class Workflow:
             if execution is not None:
                 execution_id=execution.get("execution_id")
                 report_dir=Path(execution.get("report_dir",""))
-                if type(execution_id) is not str or not execution_id or report_dir.is_absolute() or ".." in report_dir.parts or not str(report_dir).startswith("reports/executions/"):
+                if (type(execution_id) is not str or not execution_id
+                        or (x.get("prompt_schema") == "atlas-agent-prompt/2"
+                            and x["action"] != "checkpoint"
+                            and not _EXECUTION_ID.fullmatch(execution_id))
+                        or report_dir.is_absolute() or "\\" in str(report_dir)
+                        or ".." in report_dir.parts or not str(report_dir).startswith("reports/executions/")):
                     raise WorkflowError("BAD_EXECUTION_METADATA")
                 if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()):
                     raise WorkflowError("EXECUTION_ID_COLLISION")
                 if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+            historical_policy_path=None
+            if (execution is not None and x.get("prompt_schema") == "atlas-agent-prompt/2"
+                    and x["action"] != "checkpoint"):
+                # start_run is also a supported modern launcher boundary.  It
+                # must acquire exactly the same policy authority as execute,
+                # rather than leaving replay to consult today's TOML.
+                if not isinstance(execution.get("execution_id"), str):
+                    raise WorkflowError("BAD_EXECUTION_METADATA")
+                policy=self._policy_for(x)
+                prompt=parse_prompt(self._find(self.base/"accepted",generation,x["prompt_sha256"]).read_bytes())
+                try: derived=resolve_policy(policy,prompt)
+                except PolicyError as error: raise WorkflowError(str(error)) from error
+                if prompt.session_mode=="reuse":
+                    try: derived=self._reuse_snapshot(s,x,derived)
+                    except WorkflowError as error:
+                        reason=SAFE_REUSE_FALLBACKS.get(str(error))
+                        if reason is None: raise
+                        derived=dict(derived)
+                        derived.update({"session_mode":"fresh","session_mode_requested":"reuse",
+                                        "session_mode_resolved":"fresh",
+                                        "reuse_fallback_reason":reason})
+                supplied=execution.get("policy_snapshot")
+                if supplied is not None:
+                    try: validate_snapshot(supplied)
+                    except PolicyError as error:
+                        raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH") from error
+                    immutable={"action","checkpoint","profile","executor","requested_model",
+                               "requested_reasoning_effort","sandbox_mode","network_access",
+                               "web_search","apps_enabled","session_storage","policy_config_sha256"}
+                    if any(supplied.get(key)!=derived.get(key) for key in immutable):
+                        raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
+                    # The caller's complete plan is retained, but its
+                    # reuse lineage is checked again during recovery/replay.
+                    derived=supplied
+                execution.update({"owner_schema":"atlas-agent-execution-owner/2",
+                                  "policy_snapshot":derived})
+                historical_policy_path, historical_policy_sha256=self._publish_policy_archive(
+                    policy, execution["execution_id"])
+                execution.update({"historical_policy_path":historical_policy_path,
+                                  "historical_policy_sha256":historical_policy_sha256})
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
             if x.get("prompt_schema") == "atlas-agent-prompt/2":
                 network_access=x.get("network_access")
@@ -565,7 +900,25 @@ class Workflow:
                                       "effective_prompt_sha256":effective,"execution_input_sha256":effective})
                     payload["context_supplement"]=context
                 payload["execution"]=execution
-            move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",payload,hook)
+            try:
+                if execution is not None and x.get("prompt_schema") == "atlas-agent-prompt/2" and x["action"] != "checkpoint":
+                    self._validate_historical_session_plan(s, payload)
+            except BaseException:
+                if historical_policy_path:
+                    p=self.base/historical_policy_path
+                    if p.is_file() and not p.is_symlink():
+                        p.unlink()
+                        fsync_dir(p.parent)
+                raise
+            try:
+                move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",payload,hook)
+            except BaseException:
+                if historical_policy_path:
+                    p=self.base/historical_policy_path
+                    if p.exists() and not any((e["payload"].get("execution") or {}).get("execution_id")==execution.get("execution_id") for e in self.journal.read()):
+                        p.unlink()
+                        fsync_dir(p.parent)
+                raise
             try:
                 s=replay_journal(self.journal.read()); self._save(s)
                 post_start_error=None
@@ -651,7 +1004,7 @@ class Workflow:
             if isinstance(executor_result,dict): result={**executor_result,**result}
             snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
             usage={"schema":USAGE_SCHEMA,"execution_id":execution.get("execution_id"),"generation":record["generation"],"prompt_sha256":record["prompt_sha256"],"action":record["action"],"checkpoint":record.get("checkpoint"),"thread_id":executor_result.get("session_id") if isinstance(executor_result,dict) else None,"codex_version":executor_result.get("version") if isinstance(executor_result,dict) else None,"requested_model":snapshot.get("requested_model"),"requested_reasoning":snapshot.get("requested_reasoning_effort"),"observed_model":executor_result.get("observed_model") if isinstance(executor_result,dict) else None,"reasoning_effort":executor_result.get("observed_reasoning") if isinstance(executor_result,dict) else None,"run":None,"context_window":None,"context_used":None,"context_remaining":None,"quota_before":None,"quota_after":None,"quota_status":"unavailable","sources":["unavailable"],"status":"unavailable","parser_malformed_lines":0,"captured_at":((executor_result or {}).get("finished_at") if isinstance(executor_result,dict) else None) or execution.get("started_at") or "unavailable"}
-            for key in ("policy_config_sha256","asset_version","asset_set_sha256","prompt_set_sha256","profile","session_mode","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"):
+            for key in ("policy_config_sha256","asset_version","asset_set_sha256","prompt_set_sha256","profile","session_mode","session_mode_requested","session_mode_resolved","reuse_fallback_reason","reused_from_execution_id","reuse_depth","cold_policy","freshness_verification"):
                 if key in snapshot: usage[key]=snapshot[key]
             files={"stdout.log":b"","stderr.log":b"","result.json":(json.dumps(result,sort_keys=True,indent=2)+"\n").encode(),"usage.json":(json.dumps(usage,sort_keys=True,indent=2)+"\n").encode()}
             for name in fallback: self._publish_missing_execution_file(directory/name,files[name])
@@ -791,8 +1144,23 @@ class Workflow:
                 try: snapshot=resolve_policy(policy,prompt)
                 except PolicyError as error: raise WorkflowError(str(error)) from error
                 if prompt.session_mode=="reuse":
-                    try: snapshot=self._reuse_snapshot(s,x,snapshot)
-                    except WorkflowError: raise
+                    try:
+                        snapshot=self._reuse_snapshot(s,x,snapshot)
+                    except WorkflowError as error:
+                        # Only policy/liveness boundaries are preferences.  A
+                        # missing target, malformed owner, or tainted lineage
+                        # remains fail-closed (provenance must not be hidden by
+                        # silently opening a new session).
+                        reason=SAFE_REUSE_FALLBACKS.get(str(error))
+                        if reason is None:
+                            raise
+                        snapshot=dict(snapshot)
+                        snapshot.update({
+                            "session_mode": "fresh",
+                            "session_mode_requested": "reuse",
+                            "session_mode_resolved": "fresh",
+                            "reuse_fallback_reason": reason,
+                        })
                 if snapshot["executor"]=="manual": raise WorkflowError("CHECKPOINT_MANUAL_REQUIRED")
             if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
             executor=executor or AtlasBubblewrapExecutor()
@@ -815,6 +1183,8 @@ class Workflow:
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+            if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
+            if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             sandbox_descriptor = (
                 prepared.runtime_handle
                 if isinstance(prepared.runtime_handle, dict)
@@ -830,17 +1200,43 @@ class Workflow:
             metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
             if snapshot:
                 metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
-            if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
-            if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+            context_supplement=context.decode("utf-8")
             execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-            start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context.decode("utf-8")}
+            start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
             if snapshot is not None:
                 start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
             self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
+            if snapshot and policy is not None:
+                # This is the historical policy authority used by replay.
+                # It is deliberately keyed by execution id, not by mutable
+                # owner fields in the journal.  All fallible preparation and
+                # provenance validation above must finish before publication.
+                policy_path_name, policy_hash = self._publish_policy_archive(policy, execution_id)
+                metadata.update({
+                    "historical_policy_path":policy_path_name,
+                    "historical_policy_sha256":policy_hash,
+                })
+                execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
+                start_payload["execution"]=metadata
             def publish_owner(stage,transaction):
                 if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)
-            move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",start_payload,publish_owner)
+            try:
+                move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",start_payload,publish_owner)
+            except BaseException:
+                # Keep the artifact if TRANSITION_PREPARED was durable (it is
+                # then needed by recovery); otherwise it is an orphan.
+                try:
+                    durable=any(
+                        e["event"] == "TRANSITION_PREPARED" and
+                        (e["payload"].get("execution") or {}).get("execution_id") == execution_id
+                        for e in self.journal.read()
+                    )
+                except Exception:
+                    durable=True
+                if not durable and "historical_policy_path" in metadata:
+                    (self.base/metadata["historical_policy_path"]).unlink(missing_ok=True)
+                raise
             # RUN_STARTED is durable before reconstruction/projection.  From
             # this boundary every BaseException must pass through the same
             # durable terminalization path as executor failures.
@@ -881,7 +1277,11 @@ class Workflow:
             self._publish_execution_artifact(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
             execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
             prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
-            launch={"kind":"dispatch_started","generation":generation,"action":x["action"],"session_mode":x.get("session_mode"),"execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+            launch={"kind":"dispatch_started","generation":generation,"action":x["action"],
+                    "session_mode":snapshot.get("session_mode") if snapshot else x.get("session_mode"),
+                    "session_mode_requested":snapshot.get("session_mode_requested") if snapshot else x.get("session_mode"),
+                    "reuse_fallback_reason":snapshot.get("reuse_fallback_reason") if snapshot else None,
+                    "execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
             if hasattr(executor, "sandbox_descriptor"):
                 launch["sandbox"] = executor.sandbox_descriptor()
             if snapshot: launch["policy_snapshot"]=snapshot
@@ -1019,6 +1419,9 @@ class Workflow:
         for record in sorted(state["generations"].values(),key=lambda value:value["generation"]):
             execution=record.get("execution") or {}; result=self._execution_result(record)
             row={"generation":record["generation"],"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"report_available":self._report_available(record) if execution else False}
+            snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
+            for key in ("session_mode_requested","session_mode","reuse_fallback_reason"):
+                if key in snapshot: row[key]=snapshot[key]
             if isinstance(result,dict):
                 if result.get("started_at"): row["started_at"]=result["started_at"]
                 if result.get("finished_at"): row["finished_at"]=result["finished_at"]
@@ -1029,6 +1432,9 @@ class Workflow:
     def _dispatch_summary(self,generation,state):
         record=state["generations"][str(generation)]; result=record.get("result") or {}; executor_result=result.get("executor_result") or record.get("execution_result") or {}; execution=record.get("execution") or {}
         summary={"kind":"dispatch_finished","generation":generation,"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"thread_id":executor_result.get("session_id"),"interruption_reason":self._interruption_reason(generation) if record["status"]=="INTERRUPTED" else None,"report_available":self._report_available(record) if execution else False}
+        snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
+        for key in ("session_mode_requested","session_mode","reuse_fallback_reason"):
+            if key in snapshot: summary[key]=snapshot[key]
         for key in ("started_at","finished_at"):
             if executor_result.get(key): summary[key]=executor_result[key]
         report_dir=execution.get("report_dir")
@@ -1105,6 +1511,7 @@ class Workflow:
                 if not se and not de: raise WorkflowError("RECOVERY_MISSING_BOTH")
                 if p["logical_event"]=="RUN_STARTED" and "execution" in p:
                     self._validate_authoritative_provenance(p,prior)
+                    self._validate_historical_session_plan(prior,p)
                     self._prepare_execution_publication(p)
                 if se: os.replace(src,dst); fsync_dir(src.parent); fsync_dir(dst.parent)
                 terminal=dict(p); event=terminal.pop("logical_event")

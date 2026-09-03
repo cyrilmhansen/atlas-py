@@ -17,6 +17,12 @@ _PROFILE_KEYS = {
     "manual": {"executor", "allowed_session_modes"},
 }
 _BASE_KEYS = {"schema", "policy_schema", "policy_config_sha256", "action", "checkpoint", "profile", "executor", "session_mode", "network_access_requested", "network_access", "web_search", "apps_enabled", "session_storage", "max_hot_reuse_hops", "max_reuse_generation_gap"}
+SAFE_REUSE_FALLBACK_REASONS = frozenset({
+    "incompatible_policy",
+    "max_reuse_generation_gap",
+    "max_hot_reuse_hops",
+    "advanced_reuse_lineage",
+})
 
 
 def _toml_string(value):
@@ -155,6 +161,12 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
         "profile": profile,
         "executor": cfg["executor"],
         "session_mode": prompt.session_mode,
+        # session_mode is the effective authority used by the executor.
+        # Keep the prompt's request alongside it so a policy rollover is
+        # reconstructible without consulting presentation output.
+        "session_mode_requested": prompt.session_mode,
+        "session_mode_resolved": prompt.session_mode,
+        "reuse_fallback_reason": None,
         "network_access_requested": prompt.network_access if prompt.prompt_schema == "atlas-agent-prompt/2" else False,
         "network_access": network_access,
         "web_search": "live" if network_access else "disabled",
@@ -220,6 +232,9 @@ def validate_snapshot(snapshot):
     }
     optional = {
         "reused_from_execution_id", "requested_thread_id", "reuse_depth",
+        "session_mode_requested",
+        "session_mode_resolved",
+        "reuse_fallback_reason",
         "cold_policy", "freshness_verification", "codex_profile",
         "asset_set_sha256", "prompt_set_sha256", "asset_version",
     } | runtime_keys
@@ -265,6 +280,24 @@ def validate_snapshot(snapshot):
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot hash")
     if snapshot.get("action") not in ACTIONS or snapshot.get("session_mode") not in SESSIONS or snapshot.get("executor") not in {"codex", "manual"}:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot identity")
+    if "session_mode_requested" in snapshot and snapshot["session_mode_requested"] not in SESSIONS:
+        raise PolicyError("POLICY_SCHEMA_INVALID", "requested session mode")
+    requested = snapshot.get("session_mode_requested", snapshot["session_mode"])
+    resolved = snapshot.get("session_mode_resolved", snapshot["session_mode"])
+    if requested not in SESSIONS or resolved not in SESSIONS or resolved != snapshot["session_mode"]:
+        raise PolicyError("POLICY_SCHEMA_INVALID", "session mode provenance")
+    fallback = snapshot.get("reuse_fallback_reason")
+    if fallback is not None and (
+        requested != "reuse" or resolved != "fresh"
+        or type(fallback) is not str or fallback not in SAFE_REUSE_FALLBACK_REASONS
+    ):
+        raise PolicyError("POLICY_SCHEMA_INVALID", "reuse fallback")
+    if requested == "fresh" and resolved != "fresh":
+        raise PolicyError("POLICY_SCHEMA_INVALID", "session mode provenance")
+    if requested == "reuse" and resolved == "reuse" and fallback is not None:
+        raise PolicyError("POLICY_SCHEMA_INVALID", "reuse fallback")
+    if requested == "reuse" and resolved == "fresh" and not fallback:
+        raise PolicyError("POLICY_SCHEMA_INVALID", "reuse fallback")
     if type(snapshot.get("network_access")) is not bool or type(snapshot.get("network_access_requested")) is not bool:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot network")
     for key in ("max_hot_reuse_hops", "max_reuse_generation_gap"):
