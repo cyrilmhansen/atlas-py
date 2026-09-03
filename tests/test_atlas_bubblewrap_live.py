@@ -161,7 +161,7 @@ def test_live_pid_namespace_reaps_setsid_descendant(tmp_path):
             process.kill(); process.wait(timeout=3)
 
 
-def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path, monkeypatch):
+def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path):
     """The real server must create its sandbox launcher from /opt/atlas-codex."""
     if shutil.which("bwrap") is None:
         pytest.skip("bubblewrap unavailable")
@@ -174,9 +174,6 @@ def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    codex_home = tmp_path / "codex-home"
-    codex_home.mkdir(mode=0o700)
-    (codex_home / "config.toml").write_text("suppress_unstable_features_warning = true\n")
     snapshot = {
         "schema": "atlas-agent-policy-snapshot/2",
         "codex_binary_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
@@ -184,16 +181,6 @@ def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path, monkeypatch):
     spec = ExecutionSpec(1, "0" * 64, "patch_review", repo / "prompt", repo,
                         "live-runtime", tmp_path / "report", tmp_path / "runtime",
                         policy_snapshot=snapshot)
-
-    original_mount = executor._mount_command
-    def observable_mount(spec, scratch, runtime_path, listen="ws://127.0.0.1:0"):
-        command = original_mount(spec, scratch, runtime_path, listen)
-        for i in range(len(command) - 1):
-            if command[i:i + 2] == ["--dir", "/home/atlas/.codex"]:
-                command[i:i + 2] = ["--bind", str(codex_home), "/home/atlas/.codex"]
-                break
-        return command
-    monkeypatch.setattr(executor, "_mount_command", observable_mount)
 
     fd = executor._sealed_runtime_fd(snapshot)
     runtime = tmp_path / "scratch" / "control" / "live-runtime.runtime"
@@ -205,7 +192,12 @@ def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path, monkeypatch):
                    ("user namespace", "operation not permitted", "permission denied")):
                 pytest.skip(str(error))
             raise
-        links = list(codex_home.glob("tmp/arg0/*/codex-linux-sandbox"))
+        # CODEX_HOME is the run-private scratch directory mounted by the
+        # executor.  Do not replace that mount with the qualified canonical
+        # home just to make the old observation path work.
+        execution_home = executor._scratch
+        assert execution_home is not None
+        links = list(execution_home.glob("tmp/arg0/*/codex-linux-sandbox"))
         assert runtime.exists()
         assert links and links[0].is_symlink()
         assert os.readlink(links[0]) == "/opt/atlas-codex"

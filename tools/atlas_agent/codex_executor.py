@@ -1,5 +1,5 @@
 from __future__ import annotations
-import fcntl, hashlib, json, os, re, select, shutil, signal, stat, subprocess, threading, time
+import fcntl, hashlib, json, os, re, select, shutil, signal, stat, subprocess, tempfile, threading, time
 from dataclasses import replace
 from pathlib import Path
 from .executor import ExecutorError, ExecutionResult, ExecutionSpec, PreparedExecution, utc_now, validate_permission_envelope
@@ -24,6 +24,9 @@ def _toml_basic_string(value: str) -> str:
     return '"' + "".join(escaped) + '"'
 
 class CodexExecutor:
+    # Native Codex does not provide Atlas cross-execution isolation: its
+    # sandbox runs under the same UID and can reach sibling /tmp homes.
+    native_isolation_guaranteed = False
     SHUTDOWN_GRACE_SECONDS=5
     SHUTDOWN_KILL_SECONDS=5
     def __init__(self, executable="codex", model=None, sandbox="read-only", ephemeral=True,
@@ -44,6 +47,9 @@ class CodexExecutor:
         self.ignore_rules=ignore_rules; self.strict_config=strict_config; self.network_access=network_access
         self.timeout_seconds=timeout_seconds
         self.progress_callback=progress_callback; self.heartbeat_seconds=heartbeat_seconds
+        self._runtime_home = None
+        self._persistent_state = None
+        self._active_snapshot = None
     def _envelope(self):
         return {"sandbox_mode":self.sandbox,"approval_policy":self.approval_policy,"approvals_reviewer":self.approvals_reviewer,"strict_config":self.strict_config,"ignore_rules":self.ignore_rules,"network_access":self.network_access}
     def _validate_policy(self):
@@ -53,8 +59,387 @@ class CodexExecutor:
         if isinstance(self.heartbeat_seconds,bool) or not isinstance(self.heartbeat_seconds,(int,float)) or self.heartbeat_seconds <= 0: raise ExecutorError("INVALID_HEARTBEAT_INTERVAL")
     def _environment(self):
         env = dict(os.environ)
-        env["CODEX_HOME"] = str(self.codex_home)
+        env["CODEX_HOME"] = str(self._runtime_home or self.codex_home)
         return env
+
+    def _prepare_runtime_home(self, execution_id=None):
+        """Create a fresh asset namespace beside persistent Codex state.
+
+        Qualified files are copied into this namespace for native execution.
+        In particular, none of the paths below may be a symlink into the
+        qualified home: Codex is allowed to write its state, but that state
+        must not have an alias back to release assets.
+        """
+        persistent = self.codex_home.parent / (self.codex_home.name + ".runtime")
+        runtime = Path(tempfile.mkdtemp(prefix="atlas-codex-", dir="/tmp"))
+        try:
+            persistent = persistent if self._active_snapshot.get("session_storage") == "persist" else None
+            if persistent is not None:
+                persistent.mkdir(mode=0o700, exist_ok=True)
+                self._trusted_directory(persistent)
+                sessions = persistent / "sessions"
+                sessions.mkdir(mode=0o700, exist_ok=True)
+                self._trusted_directory(sessions)
+            self._trusted_directory(runtime)
+            config = runtime / "config.toml"
+            data = (self.codex_home / "config.toml").read_bytes()
+            expected = self._active_snapshot.get("codex_config_sha256")
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ExecutorError("CODEX_CONFIG_DIGEST_MISMATCH")
+            config.write_bytes(data)
+            os.chmod(config, 0o600)
+
+            # Refresh every qualified asset on every execution.  Removing a
+            # prior copied asset cannot affect the canonical home.
+            names = ("models-atlas-shell-only.json", "atlas-agent-prompts")
+            profile = self._active_snapshot["codex_profile"] + ".config.toml"
+            names += (profile,)
+            for name in names:
+                target = runtime / name
+                source = self.codex_home / name
+                if name == "atlas-agent-prompts":
+                    if not source.exists():
+                        continue
+                    prompt_files = (source / "common.md", source / "state_audit.md")
+                    if (source.is_symlink() or
+                            any(path.is_symlink() or not path.is_file()
+                                for path in prompt_files)):
+                        raise ExecutorError("CODEX_PROMPT_SET_INVALID")
+                if target.is_symlink() or target.is_file():
+                    target.unlink()
+                elif target.is_dir():
+                    shutil.rmtree(target)
+                if source.is_dir():
+                    shutil.copytree(source, target, symlinks=False)
+                elif source.is_file():
+                    shutil.copy2(source, target)
+            # Sessions and other Codex state are copied from the persistent
+            # state namespace, never from the qualified home.
+            if persistent is not None:
+                self._copy_persistent_directory(
+                    persistent / "sessions", runtime / "sessions"
+                )
+            auth = runtime / "auth.json"
+            source_auth = self.codex_home / "auth.json"
+            if auth.is_symlink():
+                auth.unlink()
+            source_auth = self._validated_auth_source(
+                source_auth, self._protected_authority_paths()
+            )
+            if source_auth is not None and not auth.exists():
+                shutil.copyfile(source_auth, auth, follow_symlinks=False)
+        except ExecutorError:
+            try:
+                shutil.rmtree(runtime)
+            except OSError:
+                pass
+            raise
+        except (OSError, RuntimeError) as error:
+            try:
+                shutil.rmtree(runtime)
+            except OSError:
+                pass
+            raise ExecutorError("CODEX_RUNTIME_STATE_UNTRUSTED") from error
+        self._runtime_home = runtime
+        self._persistent_state = persistent
+
+    @classmethod
+    def _copy_persistent_directory(cls, source, destination):
+        """Copy hostile persistent state without resolving any source path.
+
+        Both the source walk and each open are descriptor-relative.  O_NOFOLLOW
+        makes a replacement symlink fail closed instead of turning this
+        controller into a reader of an arbitrary host path.
+        """
+        source_fd = cls._open_nofollow_directory(source)
+        try:
+            destination.mkdir(mode=0o700)
+            destination_fd = os.open(
+                destination, os.O_RDONLY | os.O_DIRECTORY |
+                getattr(os, "O_NOFOLLOW", 0)
+            )
+            try:
+                cls._copy_persistent_directory_fd(source_fd, destination_fd)
+            finally:
+                os.close(destination_fd)
+        finally:
+            os.close(source_fd)
+
+    @classmethod
+    def _copy_persistent_directory_fd(cls, source_fd, destination_fd):
+        for name in os.listdir(source_fd):
+            info = os.stat(name, dir_fd=source_fd, follow_symlinks=False)
+            if stat.S_ISLNK(info.st_mode) or not (
+                    stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                raise ExecutorError("CODEX_RUNTIME_STATE_UNTRUSTED")
+            if stat.S_ISDIR(info.st_mode):
+                os.mkdir(name, 0o700, dir_fd=destination_fd)
+                child_source = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY |
+                    getattr(os, "O_NOFOLLOW", 0), dir_fd=source_fd
+                )
+                child_destination = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY |
+                    getattr(os, "O_NOFOLLOW", 0), dir_fd=destination_fd
+                )
+                try:
+                    cls._copy_persistent_directory_fd(
+                        child_source, child_destination
+                    )
+                finally:
+                    os.close(child_destination)
+                    os.close(child_source)
+                continue
+            input_fd = os.open(
+                name, os.O_RDONLY | os.O_NONBLOCK |
+                getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=source_fd
+            )
+            try:
+                if not stat.S_ISREG(os.fstat(input_fd).st_mode):
+                    raise ExecutorError("CODEX_RUNTIME_STATE_UNTRUSTED")
+                output_fd = os.open(
+                    name, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                    getattr(os, "O_NOFOLLOW", 0), 0o600,
+                    dir_fd=destination_fd
+                )
+                try:
+                    while True:
+                        data = os.read(input_fd, 1024 * 1024)
+                        if not data:
+                            break
+                        view = memoryview(data)
+                        while view:
+                            view = view[os.write(output_fd, view):]
+                finally:
+                    os.close(output_fd)
+            finally:
+                os.close(input_fd)
+
+    def _cleanup_runtime_home(self):
+        runtime = self._runtime_home
+        self._runtime_home = None
+        self._persistent_state = None
+        if runtime is not None:
+            try:
+                shutil.rmtree(runtime)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                raise ExecutorError("CODEX_RUNTIME_CLEANUP_FAILED") from error
+
+    def _persist_runtime_state(self):
+        """Publish only reusable Codex state; effective config is excluded."""
+        if not self._active_snapshot or self._active_snapshot.get("session_storage") != "persist":
+            return
+        runtime = self._runtime_home
+        if runtime is None:
+            return
+        persistent = self._persistent_state
+        if persistent is None:
+            return
+        sessions = runtime / "sessions"
+        if not sessions.is_dir() or sessions.is_symlink():
+            return
+        try:
+            # Open every destination directory without following a symlink.
+            # In particular, do not use Path.mkdir/copy2 on a path which a
+            # model-controlled process could replace between validation/use.
+            root_fd = self._open_nofollow_directory(persistent)
+            try:
+                destination_fd = self._open_nofollow_child_directory(root_fd, "sessions")
+                try:
+                    self._publish_directory(sessions, destination_fd)
+                finally:
+                    os.close(destination_fd)
+            finally:
+                os.close(root_fd)
+        except (OSError, RuntimeError) as error:
+            raise ExecutorError("CODEX_RUNTIME_STATE_PERSIST_FAILED") from error
+
+    @staticmethod
+    def _open_nofollow_directory(path):
+        """Open an absolute directory by walking all components O_NOFOLLOW."""
+        path = Path(path)
+        if not path.is_absolute():
+            raise ExecutorError("CODEX_RUNTIME_STATE_PERSIST_FAILED")
+        fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for component in path.parts[1:]:
+                next_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY |
+                                  getattr(os, "O_NOFOLLOW", 0), dir_fd=fd)
+                os.close(fd)
+                fd = next_fd
+            return fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    @staticmethod
+    def _open_nofollow_child_directory(parent_fd, name):
+        flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            return os.open(name, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+            return os.open(name, flags, dir_fd=parent_fd)
+
+    @classmethod
+    def _publish_directory(cls, source_dir, destination_fd):
+        for source in source_dir.iterdir():
+            name = source.name
+            if source.is_symlink():
+                raise ExecutorError("CODEX_RUNTIME_STATE_PERSIST_FAILED")
+            if source.is_dir():
+                child_fd = cls._open_nofollow_child_directory(destination_fd, name)
+                try:
+                    cls._publish_directory(source, child_fd)
+                finally:
+                    os.close(child_fd)
+            elif source.is_file():
+                # O_EXCL|O_NOFOLLOW means an attacker cannot turn an existing
+                # or newly-created destination name into an alias.
+                try:
+                    existing = os.stat(name, dir_fd=destination_fd,
+                                       follow_symlinks=False)
+                except FileNotFoundError:
+                    existing = None
+                if existing is not None:
+                    if stat.S_ISLNK(existing.st_mode) or not stat.S_ISREG(existing.st_mode):
+                        raise ExecutorError("CODEX_RUNTIME_STATE_PERSIST_FAILED")
+                    os.unlink(name, dir_fd=destination_fd)
+                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                             getattr(os, "O_NOFOLLOW", 0), 0o600,
+                             dir_fd=destination_fd)
+                try:
+                    with source.open("rb") as input_file:
+                        while True:
+                            data = input_file.read(1024 * 1024)
+                            if not data:
+                                break
+                            os.write(fd, data)
+                finally:
+                    os.close(fd)
+            else:
+                raise ExecutorError("CODEX_RUNTIME_STATE_PERSIST_FAILED")
+
+    def _protected_authority_paths(self):
+        """Locations whose inode must never become mutable execution state."""
+        snapshot = self._active_snapshot or {}
+        paths = [
+            self.codex_home / "config.toml",
+            self.codex_home / "models-atlas-shell-only.json",
+            self.codex_home / f"{snapshot.get('codex_profile', '')}.config.toml",
+            self.codex_home / "atlas-agent-prompts" / "common.md",
+            self.codex_home / "atlas-agent-prompts" / "state_audit.md",
+        ]
+        if self.executable:
+            paths.append(Path(self.executable))
+        return paths
+
+    @staticmethod
+    def _validated_auth_source(auth, protected_paths=()):
+        """Return auth only when it is mutable state, not a qualified asset."""
+        try:
+            info = auth.lstat()
+            if not stat.S_ISREG(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+                return None
+            source = auth if stat.S_ISREG(info.st_mode) else auth.resolve(strict=True)
+            source_fd = os.open(
+                source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            )
+            try:
+                source_info = os.fstat(source_fd)
+            finally:
+                os.close(source_fd)
+            if not stat.S_ISREG(source_info.st_mode):
+                return None
+            home = auth.parent.resolve(strict=True)
+            protected = list(protected_paths)
+            # Retain the old pathname guard for all canonical-home content,
+            # while the identity checks below also catch hard links.
+            if source != auth and (source == home or home in source.parents):
+                raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+            identities = {(source_info.st_dev, source_info.st_ino)}
+            for candidate in protected:
+                try:
+                    candidate_fd = os.open(
+                        candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                    )
+                    try:
+                        candidate_info = os.fstat(candidate_fd)
+                    finally:
+                        os.close(candidate_fd)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    continue
+                if stat.S_ISREG(candidate_info.st_mode):
+                    if (candidate_info.st_dev, candidate_info.st_ino) in identities:
+                        raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+            for candidate in home.rglob("*"):
+                if candidate == auth or candidate.is_symlink() or not candidate.is_file():
+                    continue
+                candidate_stat = candidate.stat()
+                if (candidate_stat.st_dev, candidate_stat.st_ino) in identities:
+                    raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+            return source
+        except FileNotFoundError:
+            return None
+        except ExecutorError:
+            raise
+        except (OSError, RuntimeError):
+            raise ExecutorError("CODEX_AUTH_SOURCE_INVALID")
+
+    @staticmethod
+    def _open_auth_source(auth, protected_paths=()):
+        """Open and validate the exact auth object that will be imported.
+
+        The returned descriptor is the object used for the subsequent copy;
+        callers must not reopen its pathname.
+        """
+        auth = Path(auth)
+        try:
+            info = auth.lstat()
+            if stat.S_ISREG(info.st_mode):
+                source = auth
+            elif stat.S_ISLNK(info.st_mode):
+                source = auth.resolve(strict=True)
+            else:
+                return None
+            fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                source_info = os.fstat(fd)
+                if not stat.S_ISREG(source_info.st_mode):
+                    raise ExecutorError("CODEX_AUTH_SOURCE_INVALID")
+                home = auth.parent.resolve(strict=True)
+                if source != auth and (source == home or home in source.parents):
+                    raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+                identity = (source_info.st_dev, source_info.st_ino)
+                for candidate in protected_paths:
+                    try:
+                        candidate_info = Path(candidate).stat()
+                    except (FileNotFoundError, OSError):
+                        continue
+                    if (stat.S_ISREG(candidate_info.st_mode) and
+                            (candidate_info.st_dev, candidate_info.st_ino) == identity):
+                        raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+                for candidate in home.rglob("*"):
+                    if candidate == auth or candidate.is_symlink() or not candidate.is_file():
+                        continue
+                    candidate_info = candidate.stat()
+                    if (candidate_info.st_dev, candidate_info.st_ino) == identity:
+                        raise ExecutorError("CODEX_AUTH_SOURCE_PROTECTED")
+                return fd, source, identity
+            except BaseException:
+                os.close(fd)
+                raise
+        except FileNotFoundError:
+            return None
+        except ExecutorError:
+            raise
+        except (OSError, RuntimeError) as error:
+            raise ExecutorError("CODEX_AUTH_SOURCE_INVALID") from error
     @staticmethod
     def _trusted_directory(path):
         path=Path(path)
@@ -298,7 +683,8 @@ class CodexExecutor:
                 f'model_reasoning_effort="{snapshot["requested_reasoning_effort"]}"',
             ]
             if snapshot["action"] == "state_audit":
-                role_path = self.codex_home / "atlas-agent-prompts" / "state_audit.md"
+                role_home = self._runtime_home or self.codex_home
+                role_path = role_home / "atlas-agent-prompts" / "state_audit.md"
                 try:
                     role_instructions = role_path.read_text(encoding="utf-8")
                 except (OSError, UnicodeError) as error:
@@ -319,17 +705,26 @@ class CodexExecutor:
             raise ExecutorError("POLICY_SNAPSHOT_BINDING_MISMATCH")
         snapshot=self._require_executable_snapshot(prepared.policy_snapshot)
         self._validate_runtime_identity(snapshot)
-
-        expected=self._build_command(prepared.spec,snapshot)
-        if prepared.command!=expected:
-            raise ExecutorError("PREPARED_COMMAND_MISMATCH")
+        self._active_snapshot = snapshot
+        try:
+            self._prepare_runtime_home(prepared.spec.execution_id)
+            expected=self._build_command(prepared.spec,snapshot)
+            if prepared.command!=expected:
+                raise ExecutorError("PREPARED_COMMAND_MISMATCH")
+        except BaseException:
+            self._cleanup_runtime_home()
+            raise
 
         owned=False
-        if runtime_fd is None:
-            runtime_fd=self._sealed_runtime_fd(snapshot)
-            owned=True
-        else:
-            self._validate_sealed_runtime_fd(runtime_fd,snapshot)
+        try:
+            if runtime_fd is None:
+                runtime_fd=self._sealed_runtime_fd(snapshot)
+                owned=True
+            else:
+                self._validate_sealed_runtime_fd(runtime_fd,snapshot)
+        except BaseException:
+            self._cleanup_runtime_home()
+            raise
 
         command=list(expected)
         command[0]=f"/proc/self/fd/{runtime_fd}"
@@ -514,17 +909,36 @@ class CodexExecutor:
         try: prompt.close()
         except Exception as error: state["close_error"] = error
     def run_execution(self,prepared,_runtime_binary_fd=None):
+        if (prepared.spec.input_mode == "bytes-v1" and
+                hashlib.sha256(prepared.spec.prompt_bytes).hexdigest() !=
+                prepared.spec.expected_input_sha256):
+            raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
         command,pass_fds,owned_fd=self._validated_runtime_command(
             prepared,_runtime_binary_fd
         )
+        if (not self.native_isolation_guaranteed and
+                self.executable and
+                Path(self.executable).read_bytes()[:4] == b"\x7fELF"):
+            try:
+                self._cleanup_runtime_home()
+            finally:
+                if owned_fd is not None:
+                    os.close(owned_fd)
+            raise ExecutorError("CODEX_NATIVE_CROSS_EXECUTION_ISOLATION_UNAVAILABLE")
         try:
             return self._run_execution_inner(
                 prepared,command,pass_fds
             )
         finally:
-            if owned_fd is not None:
-                try: os.close(owned_fd)
-                except OSError: pass
+            try:
+                self._persist_runtime_state()
+            finally:
+                try:
+                    self._cleanup_runtime_home()
+                finally:
+                    if owned_fd is not None:
+                        try: os.close(owned_fd)
+                        except OSError: pass
 
     def _run_execution_inner(self,prepared,launch_command,pass_fds):
         spec=prepared.spec; spec.report_dir.mkdir(parents=True,exist_ok=True)

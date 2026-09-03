@@ -72,6 +72,10 @@ class IOCodexExecutor(CodexExecutor):
     and Popen doubles.
     """
 
+    # This test double supplies its own command boundary; it is not testing
+    # the native Codex isolation decision.
+    native_isolation_guaranteed = True
+
     def _validated_runtime_command(self, prepared, runtime_fd=None):
         return list(prepared.command), (), None
 

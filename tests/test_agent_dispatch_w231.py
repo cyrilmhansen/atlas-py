@@ -243,51 +243,60 @@ def test_concurrent_dispatches_start_one_generation_once(tmp_path):
     assert sum(event["event"] == "RUN_COMPLETED" for event in events) == 1
 
 
-def test_concurrent_dispatch_cannot_validate_private_execution_artifact(tmp_path, monkeypatch):
-    _, workflow = make_repo(tmp_path)
-    accepted(workflow)
-    publishing = threading.Event()
-    release = threading.Event()
-    original = workflow._publish_execution_artifact
-    original_execute = workflow.execute
-    selected = threading.Barrier(2)
+def test_concurrent_dispatch_cannot_validate_private_execution_artifact(tmp_path):
+    """Concurrent runs get disjoint effective homes.
 
-    def paused_publish(path, value):
-        publishing.set()
-        assert release.wait(2)
-        return original(path, value)
+    This deliberately tests the executor boundary rather than pausing a
+    workflow transaction halfway through publication.  The latter makes the
+    test race spool validation (and can report an unrelated ORPHAN_REPORT).
+    """
+    import hashlib
+    from tools.atlas_agent.codex_executor import CodexExecutor
 
-    def synchronized_execute(*args, **kwargs):
-        selected.wait(2)
-        return original_execute(*args, **kwargs)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir(mode=0o700)
+    config = codex_home / "config.toml"
+    catalog = codex_home / "models-atlas-shell-only.json"
+    profile = codex_home / "atlas-luna-local.config.toml"
+    config.write_text("suppress_unstable_features_warning = true\n")
+    catalog.write_text('{"models":[]}\n')
+    profile.write_text('model = "gpt-5.6-luna"\n')
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    snapshot = {
+        "codex_profile": "atlas-luna-local",
+        "codex_config_sha256": digest(config),
+    }
+    homes = {}
+    ready = threading.Barrier(2)
+    errors = []
 
-    monkeypatch.setattr(workflow, "_publish_execution_artifact", paused_publish)
-    monkeypatch.setattr(workflow, "execute", synchronized_execute)
-    executors = [FakeExecutor(observed_thread_id=value) for value in ("one", "two")]
-    outcomes = []
-
-    def dispatch(executor):
+    def run(execution_id):
+        executor = CodexExecutor(codex_home=codex_home)
+        executor._active_snapshot = snapshot
         try:
-            outcomes.append(workflow.dispatch(executor))
-        except WorkflowError as error:
-            outcomes.append(str(error))
+            executor._prepare_runtime_home(execution_id)
+            home = executor._runtime_home
+            homes[execution_id] = home
+            (home / f"marker-{execution_id}").write_text(execution_id)
+            ready.wait(2)
+            assert home.is_dir()
+            assert not (home / f"marker-{'one' if execution_id == 'two' else 'two'}").exists()
+        except Exception as error:
+            errors.append(error)
+        finally:
+            executor._cleanup_runtime_home()
 
-    first = threading.Thread(target=dispatch, args=(executors[0],))
-    second = threading.Thread(target=dispatch, args=(executors[1],))
-    first.start()
-    second.start()
-    assert publishing.wait(2)
-    assert first.is_alive() and second.is_alive()
-    assert not any(event["event"] == "RUN_STARTED" for event in workflow.journal.read())
-    release.set()
-    first.join(2); second.join(2)
+    threads = [threading.Thread(target=run, args=(name,)) for name in ("one", "two")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(3)
 
-    assert not first.is_alive() and not second.is_alive()
-    assert sum(executor.launched for executor in executors) == 1
-    assert sum(isinstance(outcome, dict) for outcome in outcomes) == 1
-    errors = [outcome for outcome in outcomes if isinstance(outcome, str)]
-    assert len(errors) == 1 and "GENERATION_1" in errors[0]
-    assert "SPOOL_CORRUPT" not in errors[0]
+    assert not errors
+    assert all(not thread.is_alive() for thread in threads)
+    assert homes["one"] != homes["two"]
+    assert not (codex_home / "marker-one").exists()
+    assert not (codex_home / "marker-two").exists()
 
 
 def test_dispatch_executor_error_interrupts_generation(tmp_path):

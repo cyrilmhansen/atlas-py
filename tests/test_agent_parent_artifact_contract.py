@@ -255,7 +255,6 @@ def test_policy_interruption_replays_available_report_and_rejects_tampering(tmp_
         '[features.tool_registry]\n'
         'allowed_tools = ["exec_command", "write_stdin", "apply_patch"]\n'
     )
-
     def sha(path):
         return hashlib.sha256(path.read_bytes()).hexdigest()
 

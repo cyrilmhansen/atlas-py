@@ -286,6 +286,7 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
 
 def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeypatch):
     import hashlib
+    import os
     from tools.atlas_agent.codex_executor import CodexExecutor
     from tools.atlas_agent.executor import ExecutionSpec, ExecutorError
 
@@ -355,7 +356,32 @@ def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeyp
         str(executable),"--profile","atlas-luna-local","exec"
     )
     assert "--ignore-user-config" not in prepared.command
-    assert ex._environment()["CODEX_HOME"]==str(codex_home)
+    command, handles, owned = ex._validated_runtime_command(prepared)
+    os.close(handles[0])
+    runtime_home = Path(ex._environment()["CODEX_HOME"])
+    assert runtime_home != codex_home
+    assert runtime_home.parent == Path("/tmp")
+    runtime_root = codex_home.parent / (codex_home.name + ".runtime")
+    (runtime_root / "sessions").mkdir(parents=True, exist_ok=True)
+    (runtime_root / "sessions" / "state").write_text("retained")
+    runtime_home.joinpath("config.toml").write_text('trust = "trusted"\n')
+    ex._cleanup_runtime_home()
+    command, handles, owned = ex._validated_runtime_command(prepared)
+    os.close(handles[0])
+    later_home = Path(ex._environment()["CODEX_HOME"])
+    assert later_home.joinpath("config.toml").read_bytes() == config.read_bytes()
+    assert config.read_bytes() == b"suppress_unstable_features_warning = true\n"
+    assert later_home.joinpath("sessions", "state").read_text() == "retained"
+    assert not later_home.joinpath("atlas-luna-local.config.toml").is_symlink()
+    ex._cleanup_runtime_home()
+    other = dict(spec.__dict__, execution_id="later")
+    later = ex.prepare_execution(ExecutionSpec(**other))
+    _, later_handles, _ = ex._validated_runtime_command(later)
+    os.close(later_handles[0])
+    assert ex._environment()["CODEX_HOME"] != str(runtime_home)
+    assert Path(ex._environment()["CODEX_HOME"]).joinpath("config.toml").read_bytes() == config.read_bytes()
+    ex._cleanup_runtime_home()
+    assert not runtime_home.exists()
 
     # A CLI-compatible but unpinned executable cannot substitute for the fork.
     fake=root/"fake-codex"
@@ -627,6 +653,70 @@ def test_pinned_runtime_fd_is_sealed_and_digest_bound(tmp_path):
             os.write(fd,b"x")
     finally:
         os.close(fd)
+
+
+def test_persistent_session_import_rejects_aliases_and_special_state(tmp_path):
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutorError
+
+    source = tmp_path / "sessions"
+    (source / "nested").mkdir(parents=True)
+    (source / "nested" / "ok").write_text("ordinary")
+    destination = tmp_path / "runtime-sessions"
+    CodexExecutor._copy_persistent_directory(source, destination)
+    assert (destination / "nested" / "ok").read_text() == "ordinary"
+
+    canonical = tmp_path / "canonical.toml"
+    canonical.write_bytes(b"trusted canonical bytes")
+    host_file = tmp_path / "host-secret"
+    host_file.write_bytes(b"otherwise readable host bytes")
+    for name, target in (("canonical", canonical), ("host", host_file)):
+        hostile = tmp_path / f"hostile-{name}"
+        hostile.mkdir()
+        (hostile / "alias").symlink_to(target)
+        with pytest.raises(ExecutorError, match="CODEX_RUNTIME_STATE_UNTRUSTED"):
+            CodexExecutor._copy_persistent_directory(
+                hostile, tmp_path / f"runtime-{name}"
+            )
+        assert not (tmp_path / f"runtime-{name}" / "alias").exists()
+        assert canonical.read_bytes() == b"trusted canonical bytes"
+        assert host_file.read_bytes() == b"otherwise readable host bytes"
+
+
+@pytest.mark.parametrize("filename", ["codex", "renamed-codex"])
+def test_native_elf_requires_explicit_isolation_capability(tmp_path, filename,
+                                                           monkeypatch):
+    import shutil
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec, ExecutorError, PreparedExecution
+
+    executable = tmp_path / filename
+    shutil.copyfile("/bin/true", executable)
+    executable.chmod(0o700)
+
+    class UnrelatedOverride(CodexExecutor):
+        def _environment(self):
+            return super()._environment()
+
+    monkeypatch.setattr(
+        CodexExecutor, "_validated_runtime_command",
+        lambda self, prepared, runtime_fd=None: (list(prepared.command), (), None),
+    )
+    spec = ExecutionSpec(1, "a" * 64, "implementation", tmp_path / "prompt",
+                         tmp_path, "execution", tmp_path / "report")
+    prepared = PreparedExecution(spec, "codex", (str(executable),), "test", {})
+    for executor in (CodexExecutor(executable=str(executable)),
+                     UnrelatedOverride(executable=str(executable))):
+        with pytest.raises(
+                ExecutorError,
+                match="CODEX_NATIVE_CROSS_EXECUTION_ISOLATION_UNAVAILABLE"):
+            executor.run_execution(prepared)
+
+
+def test_bubblewrap_explicitly_guarantees_native_isolation():
+    from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor
+    assert AtlasBubblewrapExecutor.native_isolation_guaranteed is True
+
 
 def test_network_resolution_and_checkpoint_are_prelaunch(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w,network=True); fake=FakeExecutor(observed_thread_id="thread-network")

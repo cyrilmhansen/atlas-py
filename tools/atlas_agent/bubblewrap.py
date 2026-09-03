@@ -17,6 +17,8 @@ import time
 import signal
 import threading
 import select
+import tempfile
+import fcntl
 from dataclasses import replace
 from pathlib import Path
 
@@ -296,6 +298,32 @@ class ScratchStore:
                 try: os.fsync(control_fd)
                 except OSError: pass
 
+    def materialize_config(self, scratch: Path, execution_id: str, source: Path,
+                           expected_sha256: str) -> Path:
+        """Copy qualified config bytes into the writable, per-run tree."""
+        scratch = Path(scratch)
+        authority = self._authorities.get(str(scratch))
+        if authority is None or scratch.parent != self.runs:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_NOT_OWNED")
+        destination = scratch / "config.toml"
+        try:
+            data = Path(source).read_bytes()
+            if hashlib.sha256(data).hexdigest() != expected_sha256:
+                raise AtlasSandboxError("CODEX_CONFIG_DIGEST_MISMATCH")
+            destination.write_bytes(data)
+            os.chmod(destination, 0o600)
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha256:
+                raise AtlasSandboxError("ATLAS_SANDBOX_CONFIG_COPY_FAILED")
+            return destination
+        except AtlasSandboxError:
+            try: destination.unlink()
+            except FileNotFoundError: pass
+            raise
+        except OSError as error:
+            try: destination.unlink()
+            except FileNotFoundError: pass
+            raise AtlasSandboxError("ATLAS_SANDBOX_CONFIG_COPY_FAILED") from error
+
     def remove_runtime(self, path: Path) -> None:
         """Unlink only the exact runtime inode created by materialize_runtime."""
         path = Path(path)
@@ -316,6 +344,7 @@ class ScratchStore:
             raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_REMOVE_FAILED") from error
 
 class AtlasBubblewrapExecutor(CodexExecutor):
+    native_isolation_guaranteed = True
     """Codex executor whose remote execution environment is Atlas/bwrap."""
 
     SANDBOX_VERSION = "atlas-bwrap/1"
@@ -333,6 +362,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         self.scratch_store = ScratchStore(Path(scratch_root))
         self._server = None; self._server_stdin = None; self._server_url = None; self._scratch = None
         self._descriptor = None
+        self._effective_config = None
+        self._validated_prompts = None
+        self._runtime_state = None
+        self._auth_target = None
+        self._auth_identity = None
+        self._defer_publication = False
         self._run_lock = threading.Lock()
 
     def _validate_policy(self):
@@ -392,8 +427,11 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_GIT_TOPOLOGY_UNSUPPORTED")
         return git_dir
 
-    def _mount_command(self, spec, scratch: Path, runtime_path: Path | int, listen="ws://127.0.0.1:0") -> list[str]:
+    def _mount_command(self, spec, scratch: Path, runtime_path: Path | int,
+                       listen="ws://127.0.0.1:0", effective_config: Path | None = None) -> list[str]:
         root = spec.repository_root.resolve()
+        if self.sandbox == "workspace-write":
+            self._validate_writable_namespace(root)
         git_dir = self._git_dir(root)
         mode = "read-only" if self.sandbox == "read-only" else "read-write"
         if isinstance(listen, int): listen=f"ws://127.0.0.1:{listen}"
@@ -408,14 +446,35 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/dev/shm",
                 "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/home",
                 "--dir", "/home/atlas", "--dir", "/home/atlas/.codex", "--dir", "/var", "--dir", "/var/tmp",
-                "--bind", str(scratch), "/var/tmp",
-                # The controller-private runtime is never mounted as scratch;
-                # only its read-only bind is exposed at the Codex pathname.
+                "--dir", "/var/tmp/atlas-agent",
+                # Only this execution's directory is writable in the
+                # namespace.  Binding the scratch root would expose sibling
+                # executions' effective homes.
+                "--bind", str(scratch), "/var/tmp/atlas-agent",
+                "--bind", str(scratch), "/home/atlas/.codex",
                 "--dir", "/opt",
                 "--ro-bind", str(runtime_path), "/opt/atlas-codex",
                 "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
                 "--chdir", str(root)]
+        profile = (spec.policy_snapshot or {}).get("codex_profile")
+        # In production these files are copied into scratch before launch.
+        # Keep direct callers useful by projecting qualified files read-only
+        # when they supplied an unmaterialized scratch directory.
+        config = effective_config or self._effective_config
+        if config is not None and not (scratch / "config.toml").exists():
+            args += ["--bind", str(config), "/home/atlas/.codex/config.toml"]
+        if isinstance(profile, str) and re.fullmatch(
+                r"atlas-[a-z0-9-]+-(?:local|web)", profile) and not (
+                    scratch / f"{profile}.config.toml").exists():
+            args += ["--ro-bind", str(self.codex_home / "models-atlas-shell-only.json"),
+                     "/home/atlas/.codex/models-atlas-shell-only.json",
+                     "--ro-bind", str(self.codex_home / f"{profile}.config.toml"),
+                     f"/home/atlas/.codex/{profile}.config.toml"]
+        if not (scratch / "atlas-agent-prompts").exists():
+            prompts = self.codex_home / "atlas-agent-prompts"
+            if prompts.is_dir():
+                args += ["--ro-bind", str(prompts), "/home/atlas/.codex/atlas-agent-prompts"]
         args += ["--ro-bind" if mode == "read-only" else "--bind", str(root), str(root)]
         # This nested readonly bind is the important implementation guard.
         if mode == "read-write":
@@ -424,14 +483,214 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                  "--environment-id", f"atlas-{spec.execution_id}", "--exit-on-stdin-close"]
         return args
 
+    def _validate_writable_namespace(self, repository_root: Path) -> None:
+        """Reject a workspace bind which contains controller authority."""
+        repository_root = repository_root.resolve()
+        protected = [self.codex_home.resolve()]
+        protected_containment = []
+        git_dir = repository_root / ".git"
+        git_authority = [git_dir.resolve()] if git_dir.is_dir() else []
+        if self.executable:
+            protected.append(Path(self.executable).resolve())
+        protected.append(self.scratch_store.root.resolve())
+        # This namespace is controller-owned even for an ephemeral request:
+        # a later persistent request must not inherit an unsafe topology.
+        protected.append(
+            (self.codex_home.parent / (self.codex_home.name + ".runtime")).resolve()
+        )
+        # Resolve the mutable auth destination through the same authority
+        # checks used when it is imported.  A writable repository must not
+        # overlap either the destination or its containing tree: otherwise a
+        # repository bind can reach around the private-auth boundary.
+        auth = self.codex_home / "auth.json"
+        if auth.exists() or auth.is_symlink():
+            source = self._validated_auth_source(
+                auth, self._protected_authority_paths()
+            )
+            if source is not None:
+                source = source.resolve(strict=True)
+                protected.append(source)
+                # The containing directory is a topology boundary, but is
+                # not itself a controller root whose contents need scanning.
+                protected_containment.append(source.parent)
+        # Path spelling is not an authority boundary.  In particular, a
+        # repository can contain a hard link to a qualified file.  Compare
+        # the identities of all static workspace entries with the controller
+        # files and directories before constructing the writable bind.
+        protected_regular = set()
+        protected_directories = set()
+        authority_roots = git_authority + protected + self._protected_authority_paths()
+        for location in authority_roots:
+            try:
+                info = location.stat()
+            except (FileNotFoundError, OSError):
+                continue
+            identity = (info.st_dev, info.st_ino)
+            if stat.S_ISREG(info.st_mode):
+                protected_regular.add(identity)
+            elif stat.S_ISDIR(info.st_mode):
+                # Protect every directory object below an authority root, not
+                # just the root itself.  An empty persistent directory has no
+                # regular-file inode to identify, but it is still authority
+                # when the same object is observable from the workspace.
+                # Walk controller roots once, without following hostile
+                # symlink directories.
+                for current, dirs, files in os.walk(location, followlinks=False):
+                    current_info = Path(current).stat()
+                    protected_directories.add(
+                        (current_info.st_dev, current_info.st_ino)
+                    )
+                    for name in dirs:
+                        candidate = Path(current) / name
+                        try:
+                            candidate_info = candidate.stat()
+                        except OSError:
+                            continue
+                        if stat.S_ISDIR(candidate_info.st_mode):
+                            protected_directories.add(
+                                (candidate_info.st_dev, candidate_info.st_ino)
+                            )
+                    for name in files:
+                        candidate = Path(current) / name
+                        try:
+                            candidate_info = candidate.stat()
+                        except OSError:
+                            continue
+                        if stat.S_ISREG(candidate_info.st_mode):
+                            protected_regular.add(
+                                (candidate_info.st_dev, candidate_info.st_ino)
+                            )
+        try:
+            for current, dirs, files in os.walk(repository_root, followlinks=False):
+                current_path = Path(current)
+                current_info = current_path.stat()
+                if (current_info.st_dev, current_info.st_ino) in protected_directories:
+                    raise AtlasSandboxError("ATLAS_SANDBOX_AUTHORITY_WORKSPACE_OVERLAP")
+                for name in files:
+                    candidate = current_path / name
+                    info = candidate.stat()
+                    if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) in protected_regular:
+                        raise AtlasSandboxError("ATLAS_SANDBOX_AUTHORITY_WORKSPACE_OVERLAP")
+                for name in list(dirs):
+                    candidate = current_path / name
+                    # A normal Git workspace necessarily contains its own
+                    # metadata directory.  It is mounted read-only below,
+                    # so do not mistake that expected nested authority for
+                    # controller state overlapping the writable workspace.  Do
+                    # this exception by pathname, not resolved identity:
+                    # another name (including an alias) for a .git descendant
+                    # remains protected.
+                    if candidate == git_dir:
+                        dirs.remove(name)
+                        continue
+                    try:
+                        info = candidate.stat()
+                    except FileNotFoundError:
+                        continue
+                    if (info.st_dev, info.st_ino) in protected_directories:
+                        raise AtlasSandboxError("ATLAS_SANDBOX_AUTHORITY_WORKSPACE_OVERLAP")
+                    # Keep scanning all other entries: aliases to protected
+                    # Git files, and aliases to every other authority root,
+                    # remain rejected above/below.
+        except AtlasSandboxError:
+            raise
+        except OSError as error:
+            raise AtlasSandboxError("ATLAS_SANDBOX_AUTHORITY_WORKSPACE_OVERLAP") from error
+        for location in protected + protected_containment:
+            if (location == repository_root or location in repository_root.parents or
+                    repository_root in location.parents):
+                raise AtlasSandboxError("ATLAS_SANDBOX_AUTHORITY_WORKSPACE_OVERLAP")
+
     def _start_server(self, spec, runtime_fd: int) -> None:
+        # Nothing imported into the private home is publishable until the
+        # server and outer client both complete successfully.
+        self._defer_publication = True
         self._scratch = self.scratch_store.create(str(spec.execution_id))
         try:
+            # The scratch directory is the one, and only, mutable Codex home.
+            # Set this before the outer client is started; its CODEX_HOME and
+            # the exec-server's /home/atlas/.codex are the same inode tree.
+            self._runtime_home = self._scratch
             snapshot = spec.policy_snapshot or {}
             runtime_path = self.scratch_store.materialize_runtime(
                 self._scratch, str(spec.execution_id), runtime_fd,
                 snapshot.get("codex_binary_sha256"),
             )
+            expected_config = snapshot.get("codex_config_sha256")
+            self._runtime_state = None
+            self._auth_target = None
+            self._auth_identity = None
+            if snapshot.get("session_storage") == "persist":
+                # This is Atlas-owned mutable state, deliberately beside (not
+                # inside) the qualified home.  It retains Codex sessions and
+                # other normal runtime state without making the operator HOME
+                # visible to the namespace.
+                state = self.codex_home.parent / (self.codex_home.name + ".runtime")
+                try:
+                    state.mkdir(mode=0o700, exist_ok=True)
+                    self._trusted_directory(state)
+                    sessions = state / "sessions"
+                    sessions.mkdir(mode=0o700, exist_ok=True)
+                    self._trusted_directory(sessions)
+                    # Migrate the short-lived implementation's layout:
+                    # config is execution state, never persistent state.
+                    old_config = state / "config.toml"
+                    if old_config.is_file() or old_config.is_symlink():
+                        old_config.unlink()
+                except (OSError, ExecutorError) as error:
+                    raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_STATE_UNTRUSTED") from error
+                # Persistent sessions are imported into the private scratch
+                # home.  The namespace must never acquire a writable bind to
+                # the controller's persistent directory.
+                self._copy_persistent_directory(state / "sessions",
+                                                self._scratch / "sessions")
+                self._runtime_state = state / "sessions"
+            auth = self.codex_home / "auth.json"
+            if auth.exists() or auth.is_symlink():
+                opened_auth = self._open_auth_source(
+                    auth, self._protected_authority_paths()
+                )
+                if opened_auth is not None:
+                    source_fd, source, source_identity = opened_auth
+                    try:
+                        with os.fdopen(source_fd, "rb") as input_file, \
+                                (self._scratch / "auth.json").open("wb") as output:
+                            shutil.copyfileobj(input_file, output)
+                    except OSError as error:
+                        raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID") from error
+                    self._auth_target = source
+                    self._auth_identity = source_identity
+            effective_config = None
+            if isinstance(expected_config, str):
+                effective_config = self.scratch_store.materialize_config(
+                    self._scratch, str(spec.execution_id),
+                    self.codex_home / "config.toml", expected_config)
+            self._validated_prompts = None
+            # Qualified prompt/profile/catalog inputs are copied into this
+            # execution's private effective home.  They are never aliases
+            # below a writable mount.
+            try:
+                source_prompts = self.codex_home / "atlas-agent-prompts"
+                asset_names = ("models-atlas-shell-only.json",
+                               f"{snapshot.get('codex_profile')}.config.toml")
+                if all((self.codex_home / name).is_file() for name in asset_names):
+                    for name in asset_names:
+                        shutil.copyfile(self.codex_home / name, self._scratch / name,
+                                        follow_symlinks=False)
+                    if (source_prompts.is_symlink() or
+                            any((source_prompts / name).is_symlink()
+                                for name in ("common.md", "state_audit.md"))):
+                        raise AtlasSandboxError("CODEX_PROMPT_SET_INVALID")
+                    target_prompts = self._scratch / "atlas-agent-prompts"
+                    shutil.copytree(source_prompts, target_prompts, symlinks=False)
+            except AtlasSandboxError:
+                raise
+            except OSError as error:
+                raise AtlasSandboxError("CODEX_ASSET_COPY_FAILED") from error
+            # Keep the small, existing test/fake override of _mount_command
+            # source-compatible while passing the effective config to the
+            # production implementation.
+            self._effective_config = effective_config
             command = self._mount_command(spec, self._scratch, runtime_path)
             self._server = subprocess.Popen(
                 command,
@@ -511,6 +770,28 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 raise
             raise AtlasSandboxError(f"ATLAS_SANDBOX_EXEC_SERVER_LAUNCH_FAILED: {error}") from error
 
+    def _prepare_runtime_home(self, execution_id=None):
+        """Use the server scratch home; do not create a second runtime copy."""
+        if self._scratch is None:
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_HOME_UNAVAILABLE")
+        self._runtime_home = self._scratch
+
+    def _cleanup_runtime_home(self):
+        # ScratchStore owns this directory and publication occurs only after
+        # the server has been reaped.
+        self._runtime_home = None
+        self._persistent_state = None
+
+    @staticmethod
+    def _publication_success(result):
+        """Publication is allowed only for an unambiguously successful run."""
+        return (
+            result is not None and
+            getattr(result, "timed_out", True) is False and
+            getattr(result, "exit_code", None) == 0 and
+            getattr(result, "outcome", None) == "success"
+        )
+
     def _stop_server(self) -> None:
         server, stdin, scratch = self._server, self._server_stdin, self._scratch
         errors = []
@@ -575,9 +856,16 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             if server.stderr is not None:
                 try: server.stderr.close()
                 except BaseException as error: record("teardown", error)
+        if reaped and not errors and not self._defer_publication:
+            try:
+                self._persist_runtime_state()
+                self._publish_auth()
+            except BaseException as error:
+                record("publication", error)
         if reaped and scratch is not None:
             try:
                 self.scratch_store.cleanup(scratch)
+                self._runtime_home = None
             except BaseException as error:
                 record("cleanup", error)
         if reaped and not errors:
@@ -597,6 +885,87 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             for label, secondary in errors[1:]:
                 primary.add_note(f"{label}: {type(secondary).__name__}: {secondary}")
             raise primary
+
+    def _persist_runtime_state(self):
+        """Publish the private session tree only after bwrap has exited."""
+        if (self._defer_publication or
+                (self._active_snapshot or {}).get("session_storage") != "persist" or
+                self._runtime_state is None or self._scratch is None):
+            return
+        sessions = self._scratch / "sessions"
+        if not sessions.is_dir() or sessions.is_symlink():
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_STATE_UNTRUSTED")
+        try:
+            root_fd = self._open_nofollow_directory(self._runtime_state.parent)
+            try:
+                destination_fd = self._open_nofollow_child_directory(root_fd, "sessions")
+                try:
+                    self._publish_directory(sessions, destination_fd)
+                finally:
+                    os.close(destination_fd)
+            finally:
+                os.close(root_fd)
+        except (OSError, RuntimeError) as error:
+            raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_STATE_PERSIST_FAILED") from error
+
+    def _publish_auth(self):
+        """Atomically publish private auth, retaining an external symlink."""
+        if self._auth_target is None or self._scratch is None:
+            return
+        auth = self.codex_home / "auth.json"
+        source = self._validated_auth_source(
+            auth, self._protected_authority_paths()
+        )
+        if source is None:
+            raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID")
+        try:
+            target = source.resolve(strict=True)
+            target_stat = target.stat()
+        except (OSError, RuntimeError) as error:
+            raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID") from error
+        if (target != self._auth_target.resolve(strict=True) or
+                (target_stat.st_dev, target_stat.st_ino) != self._auth_identity):
+            raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID")
+        # Serialize only Atlas publishers.  The lock lives outside the
+        # child-visible run directory and is never writable in the sandbox.
+        lock_dir = self.scratch_store.control
+        try:
+            lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError:
+            # Unit/in-process callers may not have initialized the default
+            # scratch root yet.  The canonical-home parent is controller
+            # state and is not part of the child-visible mount plan.
+            lock_dir = self.codex_home.parent / ".atlas-agent-auth-locks"
+            lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        lock_path = lock_dir / ("auth-" + hashlib.sha256(str(target).encode()).hexdigest() + ".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            source = self._validated_auth_source(auth, self._protected_authority_paths())
+            if source is None or source.resolve(strict=True) != target:
+                raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID")
+            target_stat = target.stat()
+            if (target_stat.st_dev, target_stat.st_ino) != self._auth_identity:
+                raise AtlasSandboxError("CODEX_AUTH_SOURCE_INVALID")
+            # Recheck the identity guard while holding the publication lock.
+            self._validated_auth_source(auth, self._protected_authority_paths())
+            # The target is re-resolved and replaced in its own parent, so the
+            # canonical auth symlink itself is not overwritten.
+            parent = target.parent
+            fd, temporary = tempfile.mkstemp(prefix=".atlas-auth-", dir=parent)
+            try:
+                os.close(fd)
+                os.chmod(temporary, 0o600)
+                shutil.copyfile(self._scratch / "auth.json", temporary,
+                                follow_symlinks=False)
+                os.replace(temporary, target)
+            except (OSError, RuntimeError) as error:
+                try: os.unlink(temporary)
+                except OSError: pass
+                raise AtlasSandboxError("CODEX_AUTH_PUBLISH_FAILED") from error
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
 
     def _environment(self):
         if not isinstance(self._server_url, str) or not re.fullmatch(r"ws://127\.0\.0\.1:[1-9][0-9]{0,4}", self._server_url):
@@ -619,9 +988,6 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         prepared = super().prepare_execution(spec)
         if spec.action in {"patch_review", "state_audit"} and self.network_access:
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH")
-        native = _native_codex(self.executable)
-        if native is None:
-            raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
         # super().prepare_execution() already authenticated and executed
         # the sealed Codex image for its version before RUN_STARTED.
         if not isinstance(prepared.version,str) or not prepared.version:
@@ -635,6 +1001,9 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_MODE_MISMATCH")
         self.scratch_store.ensure_root()
         self._validate_disk_scratch()
+        native = _native_codex(self.executable)
+        if native is None:
+            raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
         self._descriptor = {
             "schema": self.SANDBOX_VERSION, "provider": "atlas", "backend": "bubblewrap",
             "filesystem_mode": self.sandbox, "filesystem_enforcement": "atlas-bwrap",
@@ -683,6 +1052,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         primary=teardown=None
         result=None
         runtime_fd=None
+        self._defer_publication = True
         try:
             # Configuration is revalidated at the final boundary.  The
             # sealed memfd remains the controller-side execution source;
@@ -702,6 +1072,15 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             primary=error
 
         try:
+            # Only a normally completed client execution may publish.  A
+            # timeout, protocol failure, or client exception leaves the
+            # private home disposable even when the server is successfully
+            # reaped.
+            # Codex reports timeout and nonzero exits as ordinary results.
+            # They are still failed executions and must never publish.
+            self._defer_publication = (
+                primary is not None or not self._publication_success(result)
+            )
             self._stop_server()
         except BaseException as error:
             teardown=error

@@ -10,7 +10,7 @@ import pytest
 
 from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor, AtlasSandboxError, ScratchStore, _native_codex
 from tools.atlas_agent.codex_executor import CodexExecutor
-from tools.atlas_agent.executor import ExecutionSpec, PreparedExecution
+from tools.atlas_agent.executor import ExecutionSpec, ExecutorError, PreparedExecution
 
 
 def _spec(tmp_path):
@@ -138,6 +138,8 @@ def test_implementation_mount_keeps_git_metadata_readonly(tmp_path, monkeypatch)
     spec = _spec(tmp_path)
     spec = spec.__class__(**{**spec.__dict__, "action": "implementation"})
     executor = AtlasBubblewrapExecutor(sandbox="workspace-write", scratch_root=tmp_path / "scratch")
+    if _native_codex(executor.executable) is None:
+        pytest.skip("installed native Codex unavailable")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
     executor.prepare_execution(spec)
     command = executor._mount_command(spec, tmp_path / "scratch" / "execution-test", 32123)
@@ -175,6 +177,8 @@ def test_restricted_actions_reject_network_before_sandbox_launch(tmp_path, monke
 def test_descriptor_distinguishes_enforcement_layers(tmp_path, monkeypatch):
     _stub_codex_prepare(monkeypatch)
     executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    if _native_codex(executor.executable) is None:
+        pytest.skip("installed native Codex unavailable")
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
     executor.prepare_execution(_spec(tmp_path))
     descriptor = executor.sandbox_descriptor()
@@ -222,7 +226,52 @@ def test_materialized_runtime_sha_matches_sealed_fd(tmp_path, pinned_runtime_fd)
     assert hashlib.sha256(runtime.read_bytes()).hexdigest() == hashlib.sha256(
         os.pread(pinned_runtime_fd, 1024 * 1024, 0)
     ).hexdigest()
+
+
+def test_effective_config_is_a_writable_copy_of_qualified_config(tmp_path):
+    store = ScratchStore(tmp_path / "atlas-agent")
+    run = store.create("run-a")
+    canonical = tmp_path / "config.toml"
+    canonical.write_text("[projects]\n")
+    digest = hashlib.sha256(canonical.read_bytes()).hexdigest()
+    effective = store.materialize_config(run, "run-a", canonical, digest)
+    effective.write_text(effective.read_text() + 'trust = "trusted"\n')
+    assert canonical.read_text() == "[projects]\n"
+    assert hashlib.sha256(canonical.read_bytes()).hexdigest() == digest
     store.cleanup(run)
+
+
+def test_mount_plan_separates_effective_config_from_canonical_home(tmp_path):
+    spec = _spec(tmp_path)
+    executor = AtlasBubblewrapExecutor(codex_home=tmp_path / "canonical")
+    executor.codex_home.mkdir()
+    (executor.codex_home / "atlas-agent-prompts").mkdir()
+    (executor.codex_home / "atlas-agent-prompts" / "common.md").write_text("qualified")
+    spec = spec.__class__(**{
+        **spec.__dict__,
+        "policy_snapshot": {
+            **spec.policy_snapshot,
+            "codex_profile": "atlas-luna-local",
+        },
+    })
+    (executor.codex_home / "models-atlas-shell-only.json").write_text("{}")
+    (executor.codex_home / "atlas-luna-local.config.toml").write_text("{}")
+    effective = tmp_path / "effective-config.toml"
+    command = executor._mount_command(spec, tmp_path / "run", tmp_path / "runtime",
+                                      effective_config=effective)
+    bind = next(i for i in range(len(command) - 2)
+                if command[i:i + 3] == ["--bind", str(effective),
+                                        "/home/atlas/.codex/config.toml"])
+    assert command[bind:bind + 3] == [
+        "--bind", str(effective), "/home/atlas/.codex/config.toml"
+    ]
+    assert str(executor.codex_home) not in command[bind + 1:bind + 3]
+    prompt_source = str(executor.codex_home / "atlas-agent-prompts")
+    prompt_bind = command.index("--ro-bind", command.index(prompt_source) - 1)
+    assert command[prompt_bind:prompt_bind + 3] == [
+        "--ro-bind", str(executor.codex_home / "atlas-agent-prompts"),
+        "/home/atlas/.codex/atlas-agent-prompts",
+    ]
 
 
 def test_materialized_runtime_is_never_under_runs(tmp_path, pinned_runtime_fd):
@@ -251,6 +300,144 @@ def test_action_mode_is_bound_before_launch(tmp_path, monkeypatch):
     monkeypatch.setattr(executor, "_filesystem_class", lambda path: "disk")
     with pytest.raises(AtlasSandboxError, match="ACTION_MODE_MISMATCH"):
         executor.prepare_execution(spec)
+
+
+def _directory_authority_fixture(tmp_path):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    sessions = home.parent / "codex-home.runtime" / "sessions"
+    sessions.mkdir(parents=True)
+    executor = AtlasBubblewrapExecutor(codex_home=home, scratch_root=tmp_path / "scratch")
+    return repository, sessions, executor
+
+
+def test_empty_persistent_sessions_directory_alias_is_rejected(tmp_path):
+    repository, sessions, executor = _directory_authority_fixture(tmp_path)
+    (repository / "sessions-alias").symlink_to(sessions, target_is_directory=True)
+    with pytest.raises(AtlasSandboxError, match="AUTHORITY_WORKSPACE_OVERLAP"):
+        executor._validate_writable_namespace(repository)
+
+
+def test_nonempty_persistent_sessions_directory_alias_is_rejected(tmp_path):
+    repository, sessions, executor = _directory_authority_fixture(tmp_path)
+    (sessions / "session.json").write_text("{}")
+    (repository / "sessions-alias").symlink_to(sessions, target_is_directory=True)
+    with pytest.raises(AtlasSandboxError, match="AUTHORITY_WORKSPACE_OVERLAP"):
+        executor._validate_writable_namespace(repository)
+
+
+def test_descendant_git_authority_directory_alias_is_rejected(tmp_path):
+    repository, _, executor = _directory_authority_fixture(tmp_path)
+    authority = repository / ".git" / "atlas-agent"
+    authority.mkdir()
+    (repository / "git-authority-alias").symlink_to(authority, target_is_directory=True)
+    with pytest.raises(AtlasSandboxError, match="AUTHORITY_WORKSPACE_OVERLAP"):
+        executor._validate_writable_namespace(repository)
+
+
+def test_canonical_git_directory_remains_accepted_by_namespace_validation(tmp_path):
+    repository, _, executor = _directory_authority_fixture(tmp_path)
+    executor._validate_writable_namespace(repository)
+
+
+def test_disjoint_workspace_remains_accepted_by_namespace_validation(tmp_path):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    executor = AtlasBubblewrapExecutor(codex_home=home, scratch_root=tmp_path / "scratch")
+    executor._validate_writable_namespace(repository)
+
+
+def _external_auth_executor(tmp_path, repository, *, sandbox="workspace-write"):
+    home = tmp_path / "canonical"
+    home.mkdir()
+    target = tmp_path / "auth-tree" / "auth.json"
+    target.parent.mkdir()
+    target.write_bytes(b'{"token":"old"}')
+    (home / "auth.json").symlink_to(target)
+    return AtlasBubblewrapExecutor(codex_home=home, sandbox=sandbox), target
+
+
+def test_workspace_write_auth_namespace_is_disjoint_only(tmp_path):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    executor, target = _external_auth_executor(tmp_path, repository)
+    executor._validate_writable_namespace(repository)
+    repository_auth = repository / "auth-tree"
+    repository_auth.mkdir()
+    target = repository_auth / "auth.json"
+    target.write_bytes(b'{"token":"old"}')
+    (executor.codex_home / "auth.json").unlink()
+    (executor.codex_home / "auth.json").symlink_to(target)
+    # The repository bind must not contain the external auth destination or
+    # its parent tree.
+    with pytest.raises(AtlasSandboxError, match="AUTHORITY_WORKSPACE_OVERLAP"):
+        executor._validate_writable_namespace(repository)
+    assert target.read_bytes() == b'{"token":"old"}'
+
+
+def test_read_only_review_does_not_gain_auth_writes(tmp_path):
+    spec = _spec(tmp_path)
+    repository = spec.repository_root
+    executor, _ = _external_auth_executor(tmp_path, repository, sandbox="read-only")
+    command = executor._mount_command(spec, tmp_path / "scratch",
+                                      tmp_path / "runtime")
+    repo_index = next(i for i, value in enumerate(command)
+                      if value == str(repository) and command[i - 1] == "--ro-bind")
+    assert command[repo_index - 1] == "--ro-bind"
+
+
+def test_unchanged_external_auth_is_published(tmp_path):
+    executor, target = _external_auth_executor(tmp_path, tmp_path / "repo")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "auth.json").write_bytes(b'{"token":"new"}')
+    executor._scratch = scratch
+    executor._auth_target = target
+    identity = target.stat()
+    executor._auth_identity = (identity.st_dev, identity.st_ino)
+    executor._publish_auth()
+    assert target.read_bytes() == b'{"token":"new"}'
+
+
+def test_replaced_external_auth_is_not_overwritten(tmp_path):
+    executor, target = _external_auth_executor(tmp_path, tmp_path / "repo")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "auth.json").write_bytes(b'{"token":"private"}')
+    executor._scratch = scratch
+    executor._auth_target = target
+    identity = target.stat()
+    executor._auth_identity = (identity.st_dev, identity.st_ino)
+    replacement = target.with_name("replacement")
+    replacement.write_bytes(b'{"token":"refreshed"}')
+    replacement.replace(target)
+    with pytest.raises(AtlasSandboxError, match="CODEX_AUTH_SOURCE_INVALID"):
+        executor._publish_auth()
+    assert target.read_bytes() == b'{"token":"refreshed"}'
+
+
+def test_auth_retarget_to_canonical_authority_is_rejected(tmp_path):
+    executor, target = _external_auth_executor(tmp_path, tmp_path / "repo")
+    canonical = executor.codex_home / "config.toml"
+    canonical.write_bytes(b"qualified")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "auth.json").write_bytes(b'{"token":"private"}')
+    executor._scratch = scratch
+    executor._auth_target = target
+    identity = target.stat()
+    executor._auth_identity = (identity.st_dev, identity.st_ino)
+    target.unlink()
+    (executor.codex_home / "auth.json").unlink()
+    (executor.codex_home / "auth.json").symlink_to(canonical)
+    with pytest.raises(ExecutorError, match="CODEX_AUTH_SOURCE_PROTECTED"):
+        executor._publish_auth()
+    assert canonical.read_bytes() == b"qualified"
 
 
 @pytest.fixture
