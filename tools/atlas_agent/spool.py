@@ -5,7 +5,7 @@ from pathlib import Path
 from .journal import Journal
 try: import fcntl
 except ImportError: fcntl=None
-DIRS=("inbox","accepted","running/implementation","running/patch_review","running/state_audit","running/checkpoint","completed","rejected","interrupted","prompts","reports")
+DIRS=("inbox","accepted","running/implementation","running/patch_review","running/state_audit","running/checkpoint","completed","rejected","interrupted","cancelled","prompts","reports")
 @contextmanager
 def lock(path):
     if fcntl is None: raise RuntimeError("UNSUPPORTED_PLATFORM: W1 requires POSIX fcntl locking")
@@ -35,10 +35,10 @@ def validate_spool(root,canonical_state):
     """Fail closed unless every owned prompt is in exactly its lifecycle location."""
     errors=[]; seen=set(); base=Path(root); expected_archives=set(); expected_reports=set(); expected_execution_files=set(); required_execution_files=set()
     for g,rec in canonical_state.get("generations",{}).items():
-        expected={"ACCEPTED":base/"accepted","RUNNING":base/"running"/rec["action"],"COMPLETED":base/"completed","INTERRUPTED":base/"interrupted"}.get(rec["status"])
+        expected={"ACCEPTED":base/"accepted","RUNNING":base/"running"/rec["action"],"COMPLETED":base/"completed","INTERRUPTED":base/"interrupted","CANCELLED":base/"cancelled"}.get(rec["status"])
         if expected is None: errors.append(f"g{g}: unknown lifecycle"); continue
         matches=[]
-        for d in (base/"accepted",base/"running",base/"completed",base/"interrupted"):
+        for d in (base/"accepted",base/"running",base/"completed",base/"interrupted",base/"cancelled"):
             dirs=[d/rec["action"]] if d.name=="running" else [d]
             for dd in dirs:
                 for p in dd.glob(f"g{int(g):06d}-*.txt"):
@@ -159,7 +159,7 @@ def validate_spool(root,canonical_state):
             report=result.get("report_path")
             if type(report) is not str or report.startswith("/") or "\\" in report or ".." in Path(report).parts or not report or Path(report).name in {".",".."}: errors.append(f"invalid report path g{g}")
             else: expected_reports.add(report.removeprefix("reports/"))
-    for d in (base/"accepted",base/"completed",base/"interrupted"):
+    for d in (base/"accepted",base/"completed",base/"interrupted",base/"cancelled"):
         for p in d.glob("*.txt"):
             if p not in seen: errors.append(f"orphan or corrupt spool file: {p.name}")
     for d in (base/"running").glob("*") if (base/"running").exists() else []:

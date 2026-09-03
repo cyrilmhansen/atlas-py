@@ -99,8 +99,8 @@ class DispatchPresenter:
 
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
-    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","checkpoint","executor-info","execute","dispatch"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch"])
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
@@ -108,7 +108,13 @@ def main(argv=None):
         elif a.command=="rebuild-state": w.rebuild()
         elif a.command=="recover": w.recover()
         elif a.command=="start-run": w.start_run(a.generation)
-        elif a.command=="interrupt-run": w.interrupt_run(a.generation,a.reason)
+        elif a.command=="interrupt-run": w.interrupt_run(a.generation,a.reason if a.reason is not None else "manual interruption")
+        elif a.command=="cancel":
+            if a.generation is None: raise WorkflowError("generation is required")
+            if a.reason is None: raise WorkflowError("--reason is required")
+            result=w.cancel(a.generation,a.reason)
+            print(f"g{a.generation} · {result['result']} · {result['status']}")
+            print(f"reason {result['reason']}")
         elif a.command=="checkpoint":
             if a.generation is None: raise WorkflowError("generation is required")
             if a.message is None: raise WorkflowError("--message is required")
@@ -162,6 +168,8 @@ def main(argv=None):
                 if duration is not None: fields.append(_elapsed(duration))
                 if row.get("execution_id"): fields.append("exec "+row["execution_id"][:12])
                 fields.append("report "+("yes" if row["report_available"] else "no"))
+                if row.get("cancellation_reason") is not None:
+                    fields.append("reason "+row["cancellation_reason"])
                 if row.get("commit_sha"): fields.append("commit "+row["commit_sha"][:12])
                 if row.get("session_mode_requested"):
                     fields.append("session requested "+row["session_mode_requested"])

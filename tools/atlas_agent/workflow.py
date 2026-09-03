@@ -58,7 +58,7 @@ def replay_journal(events):
             tx=p["transaction_id"]
             if tx in state["outstanding_transactions"] or tx in state["committed_transactions"]: raise WorkflowError("JOURNAL_DUPLICATE_TRANSACTION")
             state["outstanding_transactions"][tx]=p
-        elif e["event"] in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}:
+        elif e["event"] in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}:
             tx=p["transaction_id"]; prepared=state["outstanding_transactions"].get(tx)
             if prepared is None: raise WorkflowError("JOURNAL_TERMINAL_WITHOUT_PREPARE")
             expected=dict(prepared); expected.pop("logical_event",None)
@@ -73,6 +73,15 @@ def replay_journal(events):
                 for key in ("prompt_schema", "network_access", "reuse_execution_id"):
                     if key in p: rec[key]=p[key]
                 state["generations"][g]=rec; state["parentage"][g]=p["parent"]; state["prompt_hashes"][g]=p["prompt_sha256"]; state["lifecycle"][g]="ACCEPTED"; state["checkpoint_action"][g]={"checkpoint":p["checkpoint"],"action":p["action"]}; state["latest_repository_witness"]=p["witness"]; continue
+            if e["event"]=="PROMPT_CANCELLED":
+                g=str(p["generation"]); rec=state["generations"].get(g)
+                if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"]:
+                    raise WorkflowError("JOURNAL_LIFECYCLE")
+                name=f"g{int(g):06d}-{rec['prompt_sha256']}.txt"
+                if p["source"] != f"accepted/{name}" or p["destination"] != f"cancelled/{name}":
+                    raise WorkflowError("JOURNAL_CANCELLATION_BINDING")
+                rec["status"]="CANCELLED"; rec["cancellation_reason"]=p["reason"]
+                state["lifecycle"][g]="CANCELLED"; continue
             if e["event"]=="RUN_STARTED":
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
@@ -569,6 +578,33 @@ class Workflow:
         hits=[p for p in folder.glob(f"g{g:06d}-*.txt") if p.is_file()]
         if len(hits)!=1 or sha(hits[0])!=digest: raise WorkflowError("SPOOL_CORRUPT")
         return hits[0]
+    def cancel(self, generation, reason, hook=None):
+        """Move an accepted prompt to the terminal cancelled spool."""
+        if type(reason) is not str or not reason.strip():
+            raise WorkflowError("CANCELLATION_REASON_REQUIRED")
+        with lock(self.base/"lock"):
+            s, x = self._record(generation)
+            if x["status"] == "CANCELLED":
+                if x.get("cancellation_reason") == reason:
+                    return {"generation": generation, "status": "CANCELLED",
+                            "result": "ALREADY_CANCELLED",
+                            "reason": x["cancellation_reason"]}
+                raise WorkflowError("CANCELLATION_REASON_MISMATCH")
+            if x["status"] != "ACCEPTED":
+                raise WorkflowError("GENERATION_ALREADY_STARTED")
+            if str(generation) in s.get("outstanding_checkpoints", {}):
+                raise WorkflowError("CHECKPOINT_INTENT_OUTSTANDING")
+            src = self._find(self.base/"accepted", generation, x["prompt_sha256"])
+            payload = {"generation": generation, "reason": reason}
+            self._validate_terminal_transition("PROMPT_CANCELLED", payload, s)
+            move_transaction(self.base, self.journal, src,
+                             self.base/"cancelled"/src.name, x["prompt_sha256"],
+                             "PROMPT_CANCELLED", payload, hook=hook)
+            state = replay_journal(self.journal.read())
+            self._save(state)
+            validate_spool(self.base, state)
+            return {"generation": generation, "status": "CANCELLED",
+                    "result": "CANCELLED", "reason": reason}
     def _policy_for(self, record):
         path=self.root/"atlas-agent-policy.toml"
         if not path.exists():
@@ -1423,6 +1459,8 @@ class Workflow:
         for record in sorted(state["generations"].values(),key=lambda value:value["generation"]):
             execution=record.get("execution") or {}; result=self._execution_result(record)
             row={"generation":record["generation"],"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"report_available":self._report_available(record) if execution else False}
+            if record["status"] == "CANCELLED":
+                row["cancellation_reason"] = record["cancellation_reason"]
             snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
             for key in ("session_mode_requested","session_mode","reuse_fallback_reason"):
                 if key in snapshot: row[key]=snapshot[key]
@@ -1495,7 +1533,7 @@ class Workflow:
                 current=self._state()
                 if current!=s:
                     last=events[-1] if events else None
-                    recoverable={"RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}
+                    recoverable={"RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}
                     if not last or last["event"] not in recoverable: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
                     transaction_id=last["payload"]["transaction_id"]
                     prepared=next((e for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==transaction_id),None)
@@ -1511,6 +1549,14 @@ class Workflow:
             prior=replay_journal([e for e in events if e["seq"]<first_prepare])
             if not self._state_file().exists() or self._state()!=prior: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
             for tx,p in list(s["outstanding_transactions"].items()):
+                if p["logical_event"] == "PROMPT_CANCELLED":
+                    rec=prior["generations"].get(str(p.get("generation")))
+                    name=f"g{int(p['generation']):06d}-{p['prompt_sha256']}.txt" if rec else ""
+                    if (not rec or rec["status"]!="ACCEPTED" or
+                            p["source"] != f"accepted/{name}" or
+                            p["destination"] != f"cancelled/{name}" or
+                            rec["prompt_sha256"] != p["prompt_sha256"]):
+                        raise WorkflowError("RECOVERY_CANCELLATION_BINDING")
                 src=self.base/p["source"]; dst=self.base/p["destination"]
                 se=src.exists(); de=dst.exists()
                 if se and sha(src)!=p["prompt_sha256"]: raise WorkflowError("RECOVERY_SOURCE_HASH_MISMATCH")

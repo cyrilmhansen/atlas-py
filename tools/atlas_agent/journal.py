@@ -9,7 +9,7 @@ from .model import SCHEMA
 from .policy import validate_snapshot, PolicyError
 class JournalError(RuntimeError): pass
 ZERO="0"*64
-EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED"}
+EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED"}
 HEX=re.compile(r"^[0-9a-f]{64}$")
 CONTEXT_PATH=re.compile(r"^reports/contexts/[A-Za-z0-9][A-Za-z0-9._-]*\.txt$")
 SAFE_CONTEXT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
@@ -288,20 +288,21 @@ class Journal:
                 # the archived prompt above.  Do not let a later lifecycle
                 # payload select checkpoint semantics by relabelling itself.
                 if raw["event"] in {"TRANSITION_PREPARED", "RUN_STARTED",
-                                    "RUN_COMPLETED", "RUN_INTERRUPTED"}:
+                                    "RUN_COMPLETED", "RUN_INTERRUPTED", "PROMPT_CANCELLED"}:
                     generation=raw["payload"].get("generation")
                     accepted=generations.get(generation)
-                    if accepted is not None and raw["payload"].get("action") != accepted["action"]:
+                    if accepted is not None and "action" in raw["payload"] and raw["payload"].get("action") != accepted["action"]:
                         raise JournalError(f"lifecycle action mismatch at line {n}")
                 self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
                 p=raw["payload"]
                 if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
-                elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}:
+                elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}:
                     prepared=outstanding.pop(p["transaction_id"],None)
                     if raw["event"]=="PROMPT_ACCEPTED":
                         generations[p["generation"]]={
                             "generation":p["generation"],
                             "action":p["action"],
+                            "prompt_sha256":p["prompt_sha256"],
                             "session_mode":p["session_mode"],
                             "status":"ACCEPTED",
                             "prompt_schema":p.get("prompt_schema"),
@@ -321,13 +322,18 @@ class Journal:
                             rec["status"]="COMPLETED" if raw["event"]=="RUN_COMPLETED" else "INTERRUPTED"
                             if "result" in p: rec["result"]=p["result"]
                             if "executor_result" in p: rec["execution_result"]=p["executor_result"]
+                    elif raw["event"]=="PROMPT_CANCELLED":
+                        rec=generations.get(p["generation"])
+                        if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"]:
+                            raise JournalError("JOURNAL_LIFECYCLE")
+                        rec["status"]="CANCELLED"; rec["cancellation_reason"]=p["reason"]
                 previous=raw["event_sha256"]; out.append(raw)
         if out and not initialized:
             raise JournalError("nonempty journal must have workflow initialization root")
         return out
     @staticmethod
     def _validate_payload(event,p,n,generations=None,validation_epoch=1):
-        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set()}[event]
+        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set()}[event]
         if not required<=set(p): raise JournalError(f"payload for {event} incomplete at line {n}")
         allowed={
             "WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness","validation_epoch"},
@@ -338,15 +344,16 @@ class Journal:
             "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness","network_access"},
             "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution","acquired_untracked"},
             "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts"},
+            "PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},
             "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
             "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
             "RECOVERY_PERFORMED":{"repaired"},
         }[event]
         if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement"}
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
-        if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
-        if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
-        if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"}: raise JournalError(f"logical event invalid at line {n}")
+        if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
+        if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
+        if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}: raise JournalError(f"logical event invalid at line {n}")
         if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED"}: _witness(p["witness"],n)
         if event == "RUN_STARTED" and "witness" in p: _witness(p["witness"],n)
         if event == "RUN_COMPLETED" and "acquired_untracked" in p:
@@ -356,13 +363,14 @@ class Journal:
                 any(type(path) is not str or not re.fullmatch(r"(?:[0-9a-f]{2})+", path) for path in acquired)):
                 raise JournalError(f"acquired ownership invalid at line {n}")
         if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str) or type(p.get("validation_epoch",1)) is not int or p.get("validation_epoch",1) not in {1,2}): raise JournalError(f"initialization payload invalid at line {n}")
-        if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
+        if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
         if event=="PROMPT_ACCEPTED":
             if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2"}: raise JournalError(f"prompt schema invalid at line {n}")
             if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
             if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
+        if event=="PROMPT_CANCELLED" and (type(p["reason"]) is not str or not p["reason"].strip()): raise JournalError(f"cancellation reason invalid at line {n}")
         started=(generations or {}).get(p.get("generation")) or (generations or {}).get(str(p.get("generation")))
         started_execution=started.get("execution") if isinstance(started,dict) else None
 
@@ -494,7 +502,7 @@ class Journal:
             fallback=p["fallback_artifacts"]
             if type(fallback) is not list or not fallback or len(fallback)!=len(set(fallback)) or not set(fallback)<={"stdout.log","stderr.log","result.json","usage.json"}: raise JournalError(f"fallback artifacts invalid at line {n}")
             if event=="TRANSITION_PREPARED" and p.get("logical_event")!="RUN_INTERRUPTED": raise JournalError(f"fallback artifacts invalid at line {n}")
-        if event in {"PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED"} and (type(p["source"]) is not str or type(p["destination"]) is not str): raise JournalError(f"transition paths invalid at line {n}")
+        if event in {"PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"} and (type(p["source"]) is not str or type(p["destination"]) is not str): raise JournalError(f"transition paths invalid at line {n}")
         if "witness" in p: _witness(p["witness"],n)
         if "execution" in p:
             _execution(p["execution"],n)
