@@ -1183,6 +1183,8 @@ class Workflow:
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+            if getattr(executor, "service_tier", None) is not None:
+                metadata["service_tier"] = executor.service_tier
             if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
             if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             sandbox_descriptor = (
@@ -1282,6 +1284,8 @@ class Workflow:
                     "session_mode_requested":snapshot.get("session_mode_requested") if snapshot else x.get("session_mode"),
                     "reuse_fallback_reason":snapshot.get("reuse_fallback_reason") if snapshot else None,
                     "execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+            if metadata.get("service_tier") is not None:
+                launch["service_tier"] = metadata["service_tier"]
             if hasattr(executor, "sandbox_descriptor"):
                 launch["sandbox"] = executor.sandbox_descriptor()
             if snapshot: launch["policy_snapshot"]=snapshot
@@ -1422,6 +1426,8 @@ class Workflow:
             snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
             for key in ("session_mode_requested","session_mode","reuse_fallback_reason"):
                 if key in snapshot: row[key]=snapshot[key]
+            if execution.get("service_tier") is not None:
+                row["service_tier"] = execution["service_tier"]
             if isinstance(result,dict):
                 if result.get("started_at"): row["started_at"]=result["started_at"]
                 if result.get("finished_at"): row["finished_at"]=result["finished_at"]
@@ -1435,6 +1441,8 @@ class Workflow:
         snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}
         for key in ("session_mode_requested","session_mode","reuse_fallback_reason"):
             if key in snapshot: summary[key]=snapshot[key]
+        if execution.get("service_tier") is not None:
+            summary["service_tier"] = execution["service_tier"]
         for key in ("started_at","finished_at"):
             if executor_result.get(key): summary[key]=executor_result[key]
         report_dir=execution.get("report_dir")

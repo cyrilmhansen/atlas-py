@@ -98,8 +98,9 @@ def _witness(value, line):
     if untracked!=sorted(untracked,key=lambda x:x["path"]) or len({x["path"] for x in untracked})!=len(untracked): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","historical_policy_path","historical_policy_sha256","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","historical_policy_path","historical_policy_sha256","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema","service_tier"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
+    if "service_tier" in value and value["service_tier"] != "fast": raise JournalError(f"execution service tier invalid at line {line}")
     provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
     present=provenance & set(value)
     if present and present != provenance: raise JournalError(f"execution provenance incomplete at line {line}")

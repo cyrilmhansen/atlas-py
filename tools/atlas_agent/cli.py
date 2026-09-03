@@ -47,6 +47,8 @@ class DispatchPresenter:
             if model: values.append(f"model {model}")
             if reasoning: values.append(f"reasoning {reasoning}")
             print(" · ".join(values))
+        if event.get("service_tier") == "fast":
+            print("service fast")
         sandbox=envelope.get("sandbox_mode"); network=envelope.get("network_access")
         values=[]
         if sandbox: values.append(f"sandbox {sandbox}")
@@ -98,7 +100,7 @@ class DispatchPresenter:
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
     p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","checkpoint","executor-info","execute","dispatch"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason",default="manual interruption"); p.add_argument("--model"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
@@ -118,10 +120,10 @@ def main(argv=None):
             print("push not performed")
         elif a.command=="report": print(w.report(a.generation))
         elif a.command=="executor-info": print(json.dumps(AtlasBubblewrapExecutor().info(),sort_keys=True,indent=2))
-        elif a.command=="execute": w.execute(a.generation,AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds))
+        elif a.command=="execute": w.execute(a.generation,AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,service_tier="fast" if a.fast else None))
         elif a.command=="dispatch":
             presenter=DispatchPresenter()
-            executor=AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,progress_callback=presenter.progress)
+            executor=AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,service_tier="fast" if a.fast else None,progress_callback=presenter.progress)
             w.dispatch(executor,observer=presenter.event)
         elif a.command=="complete-run":
             if not a.result: raise WorkflowError("--result JSON is required")
