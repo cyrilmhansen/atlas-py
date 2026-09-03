@@ -236,6 +236,12 @@ class Journal:
                     archived_prompt=self._archived_prompt(raw["payload"]["prompt_sha256"],n)
                     archived_schema=archived_prompt.prompt_schema
                     journal_schema=raw["payload"].get("prompt_schema")
+                    # The archived prompt is the durable authority for all
+                    # request metadata, not just the schema and network
+                    # setting.  In particular, action controls whether the
+                    # manual checkpoint execution-owner exemption applies.
+                    if raw["payload"].get("action") != archived_prompt.action:
+                        raise JournalError(f"prompt action archive mismatch at line {n}")
                     if journal_schema is not None and journal_schema != archived_schema:
                         raise JournalError(f"prompt schema archive mismatch at line {n}")
                     if archived_schema == "atlas-agent-prompt/2":
@@ -246,6 +252,15 @@ class Journal:
                             or raw["payload"]["network_access"] is not archived_prompt.network_access
                         ):
                             raise JournalError(f"prompt network archive mismatch at line {n}")
+                # Once a generation has been accepted, its action is bound to
+                # the archived prompt above.  Do not let a later lifecycle
+                # payload select checkpoint semantics by relabelling itself.
+                if raw["event"] in {"TRANSITION_PREPARED", "RUN_STARTED",
+                                    "RUN_COMPLETED", "RUN_INTERRUPTED"}:
+                    generation=raw["payload"].get("generation")
+                    accepted=generations.get(generation)
+                    if accepted is not None and raw["payload"].get("action") != accepted["action"]:
+                        raise JournalError(f"lifecycle action mismatch at line {n}")
                 self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
                 p=raw["payload"]
                 if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
@@ -359,7 +374,7 @@ class Journal:
         terminal_event = event in {"RUN_COMPLETED","RUN_INTERRUPTED"}
         terminal_with_owner = terminal_event and started_execution is not None
 
-        if archived_v2 and (start_event or terminal_with_owner):
+        if archived_v2 and (start_event or terminal_with_owner) and p.get("action") != "checkpoint":
             execution=p.get("execution")
             if not isinstance(execution,dict):
                 raise JournalError(f"modern execution ownership missing at line {n}")

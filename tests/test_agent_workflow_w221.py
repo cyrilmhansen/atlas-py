@@ -17,7 +17,7 @@ def git(path, *args):
     return subprocess.check_output(["git", *args], cwd=path, text=True).strip()
 
 
-def make_repo(tmp_path, policy=True, project_config=False, policy_text=None):
+def make_repo(tmp_path, policy=True, project_config=False, policy_text=None, dirty_tracked=None):
     repo = tmp_path / "repo"; repo.mkdir(parents=True)
     git(repo, "init", "-q"); git(repo, "config", "user.email", "t@e"); git(repo, "config", "user.name", "t")
     (repo / "a").write_text("a")
@@ -29,6 +29,8 @@ def make_repo(tmp_path, policy=True, project_config=False, policy_text=None):
     if project_config:
         (repo/".codex").mkdir(); (repo/".codex"/"config.toml").write_text("hooks = []\n")
     git(repo, "add", "."); git(repo, "commit", "-qm", "fixture")
+    if dirty_tracked is not None:
+        (repo / "a").write_text(dirty_tracked)
     w=Workflow(repo); w.init(); return repo,w
 
 

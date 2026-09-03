@@ -739,7 +739,10 @@ class Workflow:
         src=self._find(self.base/("accepted" if x["status"]=="ACCEPTED" else "running/checkpoint"),generation,x["prompt_sha256"])
         if x["status"]=="ACCEPTED":
             running=self.base/"running"/x["action"]/src.name
-            move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",{"generation":generation,"action":x["action"],"witness":x["witness"]})
+            start_payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
+            if x.get("prompt_schema") == "atlas-agent-prompt/2":
+                start_payload["network_access"] = x["network_access"]
+            move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",start_payload)
             src=running
         result={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"committed","classification":"manual_checkpoint","commit_sha":intent["commit_sha"]}
         move_transaction(self.base,self.journal,src,self.base/"completed"/src.name,x["prompt_sha256"],"RUN_COMPLETED",{"generation":generation,"action":x["action"],"result":result,"witness":now})
