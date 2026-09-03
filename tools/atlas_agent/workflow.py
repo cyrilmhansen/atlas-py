@@ -815,6 +815,8 @@ class Workflow:
                 if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+            if getattr(executor, "service_tier", None) is not None:
+                metadata["service_tier"] = executor.service_tier
             sandbox_descriptor = (
                 prepared.runtime_handle
                 if isinstance(prepared.runtime_handle, dict)
@@ -882,6 +884,8 @@ class Workflow:
             execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
             prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
             launch={"kind":"dispatch_started","generation":generation,"action":x["action"],"session_mode":x.get("session_mode"),"execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+            if metadata.get("service_tier") is not None:
+                launch["service_tier"] = metadata["service_tier"]
             if hasattr(executor, "sandbox_descriptor"):
                 launch["sandbox"] = executor.sandbox_descriptor()
             if snapshot: launch["policy_snapshot"]=snapshot

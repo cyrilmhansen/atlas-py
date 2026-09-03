@@ -32,7 +32,8 @@ class CodexExecutor:
     def __init__(self, executable="codex", model=None, sandbox="read-only", ephemeral=True,
                  sandbox_mode=None, approval_policy="never", approvals_reviewer="user",
                  ignore_rules=True, strict_config=True, network_access=False, timeout_seconds=300,
-                 progress_callback=None, heartbeat_seconds=30, codex_home=None):
+                 progress_callback=None, heartbeat_seconds=30, codex_home=None,
+                 service_tier=None):
         if executable == "codex":
             executable = os.environ.get("ATLAS_CODEX_EXECUTABLE", executable)
         self.codex_home = Path(
@@ -47,6 +48,7 @@ class CodexExecutor:
         self.ignore_rules=ignore_rules; self.strict_config=strict_config; self.network_access=network_access
         self.timeout_seconds=timeout_seconds
         self.progress_callback=progress_callback; self.heartbeat_seconds=heartbeat_seconds
+        self.service_tier = service_tier
         self._runtime_home = None
         self._persistent_state = None
         self._active_snapshot = None
@@ -57,6 +59,8 @@ class CodexExecutor:
         validate_permission_envelope(self._envelope())
         if isinstance(self.timeout_seconds,bool) or not isinstance(self.timeout_seconds,(int,float)) or self.timeout_seconds <= 0: raise ExecutorError("INVALID_TIMEOUT")
         if isinstance(self.heartbeat_seconds,bool) or not isinstance(self.heartbeat_seconds,(int,float)) or self.heartbeat_seconds <= 0: raise ExecutorError("INVALID_HEARTBEAT_INTERVAL")
+        if self.service_tier is not None and self.service_tier != "fast":
+            raise ExecutorError("INVALID_SERVICE_TIER")
     def _environment(self):
         env = dict(os.environ)
         env["CODEX_HOME"] = str(self._runtime_home or self.codex_home)
@@ -690,6 +694,8 @@ class CodexExecutor:
                 except (OSError, UnicodeError) as error:
                     raise ExecutorError("ATLAS_STATE_AUDIT_PROMPT_MISSING") from error
                 argv += ["-c", f"developer_instructions={_toml_basic_string(role_instructions)}"]
+        if self.service_tier == "fast":
+            argv += ["-c", 'service_tier="fast"']
         if self.ephemeral and (
             not snapshot or snapshot.get("session_storage")=="ephemeral"
         ):
