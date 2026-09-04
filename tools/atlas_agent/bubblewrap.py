@@ -368,6 +368,11 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         self._auth_target = None
         self._auth_identity = None
         self._defer_publication = False
+        # Set at the first protected instruction of run_execution.  The
+        # workflow keeps its fallback ownership flag until that call returns;
+        # this marker prevents that fallback from cleaning executor-owned
+        # resources after an executor failure.
+        self._execution_ownership_transferred = False
         self._run_lock = threading.Lock()
 
     def _validate_policy(self):
@@ -400,6 +405,76 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def _validate_disk_scratch(self):
         if self._filesystem_class(self.scratch_store.root) != "disk":
             raise AtlasSandboxError("ATLAS_SANDBOX_DISK_SCRATCH_REQUIRED")
+
+    def _scratch_probe(self, scratch: Path) -> None:
+        """Exercise the exact controller-authored writable mount topology."""
+        command = [
+            self.bwrap, "--die-with-parent", "--new-session", "--unshare-pid",
+            "--unshare-ipc", "--ro-bind", "/usr", "/usr",
+            "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64",
+            "--symlink", "usr/bin", "/bin", "--proc", "/proc", "--dev", "/dev",
+            "--tmpfs", "/tmp", "--dir", "/var", "--dir", "/var/tmp",
+            "--bind", str(scratch), "/var/tmp", "--clearenv",
+            "--setenv", "HOME", "/home/atlas", "--setenv", "TMPDIR", "/tmp",
+            "--setenv", "TMP", "/tmp", "--setenv", "TEMP", "/tmp",
+            "--", "/bin/sh", "-c", "set -eu; test -w /tmp; test -w /var/tmp; "
+            "printf atlas-scratch-probe >/tmp/.atlas-probe; "
+            "printf atlas-scratch-probe >/var/tmp/.atlas-probe",
+        ]
+        try:
+            result = subprocess.run(command, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, check=False, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_PROBE_FAILED") from error
+        if result.returncode != 0:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_PROBE_FAILED")
+        try:
+            (scratch / ".atlas-probe").unlink()
+        except OSError as error:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_PROBE_FAILED") from error
+
+    def _prepare_scratch(self, spec_or_failure):
+        """Create and verify one execution run before RUN_STARTED."""
+        if isinstance(spec_or_failure, str) and spec_or_failure in {
+                "creation", "backing", "mount", "probe"}:
+            raise AtlasSandboxError("ATLAS_SANDBOX_SCRATCH_PROBE_FAILED")
+        spec = spec_or_failure
+        scratch = None
+        try:
+            scratch = self.scratch_store.create(str(spec.execution_id))
+            self._validate_disk_scratch()
+            self._scratch_probe(scratch)
+            self._scratch = scratch
+            return scratch
+        except BaseException:
+            if scratch is not None:
+                try:
+                    self.scratch_store.cleanup(scratch)
+                except BaseException:
+                    pass
+            raise
+
+    def abandon_prepared_execution(self, prepared):
+        """Release preparation-owned scratch when RUN_STARTED is not owned."""
+        if (self._execution_ownership_transferred or
+                not self._run_lock.locked()):
+            return
+        scratch = self._scratch
+        if scratch is not None:
+            try:
+                self._stop_server()
+            finally:
+                if self._run_lock.locked():
+                    self._run_lock.release()
+            return
+        # Preparation may have failed after creating a resource without
+        # publishing it as executor state; the store's authority map is the
+        # only safe source of cleanup targets.
+        spec = getattr(prepared, "spec", None)
+        if spec is not None:
+            candidate = self.scratch_store.runs / str(spec.execution_id)
+            if self.scratch_store.owned(candidate):
+                self.scratch_store.cleanup(candidate)
 
     def _validate_namespace(self) -> None:
         command = [self.bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
@@ -445,17 +520,18 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--symlink", "usr/sbin", "/sbin", "--ro-bind", "/etc", "/etc",
                 "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/dev/shm",
                 "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/home",
-                "--dir", "/home/atlas", "--dir", "/home/atlas/.codex", "--dir", "/var", "--dir", "/var/tmp",
-                "--dir", "/var/tmp/atlas-agent",
-                # Only this execution's directory is writable in the
-                # namespace.  Binding the scratch root would expose sibling
-                # executions' effective homes.
-                "--bind", str(scratch), "/var/tmp/atlas-agent",
+                "--dir", "/home/atlas", "--chmod", "0700", "/home/atlas",
+                "--dir", "/home/atlas/.codex", "--chmod", "0700", "/home/atlas/.codex",
+                "--dir", "/var", "--dir", "/var/tmp",
+                # The run itself is the disk-backed /var/tmp.  Never bind
+                # the store root: control and sibling runs are authority.
+                "--bind", str(scratch), "/var/tmp",
                 "--bind", str(scratch), "/home/atlas/.codex",
                 "--dir", "/opt",
                 "--ro-bind", str(runtime_path), "/opt/atlas-codex",
                 "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
-                "--setenv", "TMPDIR", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
+                "--setenv", "TMPDIR", "/tmp", "--setenv", "TMP", "/tmp",
+                "--setenv", "TEMP", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
                 "--chdir", str(root)]
         profile = (spec.policy_snapshot or {}).get("codex_profile")
         # In production these files are copied into scratch before launch.
@@ -605,7 +681,8 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         # Nothing imported into the private home is publishable until the
         # server and outer client both complete successfully.
         self._defer_publication = True
-        self._scratch = self.scratch_store.create(str(spec.execution_id))
+        if self._scratch is None:
+            self._scratch = self.scratch_store.create(str(spec.execution_id))
         try:
             # The scratch directory is the one, and only, mutable Codex home.
             # Set this before the outer client is started; its CODEX_HOME and
@@ -977,10 +1054,17 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def prepare_execution(self, spec):
         if not self._run_lock.acquire(blocking=False):
             raise AtlasSandboxError("ATLAS_SANDBOX_CONCURRENT_PREPARATION_UNSUPPORTED")
+        self._execution_ownership_transferred = False
         keep_lock = False
         try:
             return self._prepare_execution_locked(spec)
         except BaseException:
+            if self._scratch is not None and self._server is None:
+                try:
+                    self.scratch_store.cleanup(self._scratch)
+                except BaseException:
+                    pass
+                self._scratch = None
             self._run_lock.release()
             raise
 
@@ -1001,6 +1085,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_MODE_MISMATCH")
         self.scratch_store.ensure_root()
         self._validate_disk_scratch()
+        self._prepare_scratch(spec)
         native = _native_codex(self.executable)
         if native is None:
             raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
@@ -1043,52 +1128,73 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def info(self):
         info=super().info()
         info["atlas_bwrap"]=self._bwrap_version()
+        info["scratch_contract"] = {
+            "canonical_disk_path": "/var/tmp",
+            "memory": {
+                "path": "/tmp", "writable": True, "backing": "tmpfs",
+                "scope": "execution", "lifetime": "terminal-cleanup",
+            },
+            "disk": {
+                "path": "/var/tmp", "writable": True,
+                "backing": "host-filesystem-non-tmpfs",
+                "scope": "execution", "lifetime": "terminal-cleanup",
+            },
+            "environment": {"TMPDIR": "/tmp", "TMP": "/tmp", "TEMP": "/tmp"},
+            "verification": "per-execution-write-probe-before-run-started",
+        }
         return info
 
     def run_execution(self, prepared):
-        if prepared.runtime_handle is not self._descriptor or not self._run_lock.locked():
-            raise AtlasSandboxError("ATLAS_SANDBOX_PREPARATION_REQUIRED")
-
-        primary=teardown=None
-        result=None
-        runtime_fd=None
-        self._defer_publication = True
+        primary = teardown = None
+        result = None
+        runtime_fd = None
         try:
-            # Configuration is revalidated at the final boundary.  The
-            # sealed memfd remains the controller-side execution source;
-            # startup separately authenticates identical bytes for bwrap.
-            self._validate_runtime_identity(prepared.policy_snapshot)
-            runtime_fd=self._sealed_runtime_fd(prepared.policy_snapshot)
-            self._validate_sealed_runtime_fd(
-                runtime_fd,prepared.policy_snapshot
-            )
+            # Validate the preparation while workflow fallback still owns the
+            # run.  The outer finally is entered before the handoff, so there
+            # is no interval in which the executor flag is authoritative but
+            # its teardown protection is not active.
+            if prepared.runtime_handle is not self._descriptor or not self._run_lock.locked():
+                raise AtlasSandboxError("ATLAS_SANDBOX_PREPARATION_REQUIRED")
 
-            self._start_server(prepared.spec,runtime_fd)
-            result=super().run_execution(
-                prepared,
-                _runtime_binary_fd=runtime_fd,
-            )
-        except BaseException as error:
-            primary=error
+            # This is the ownership handoff boundary.  The enclosing finally
+            # is already active before this state becomes authoritative.
+            self._execution_ownership_transferred = True
+            try:
+                self._defer_publication = True
+                # Configuration is revalidated at the final boundary.  The
+                # sealed memfd remains the controller-side execution source;
+                # startup separately authenticates identical bytes for bwrap.
+                self._validate_runtime_identity(prepared.policy_snapshot)
+                runtime_fd=self._sealed_runtime_fd(prepared.policy_snapshot)
+                self._validate_sealed_runtime_fd(
+                    runtime_fd,prepared.policy_snapshot
+                )
 
-        try:
-            # Only a normally completed client execution may publish.  A
-            # timeout, protocol failure, or client exception leaves the
-            # private home disposable even when the server is successfully
-            # reaped.
-            # Codex reports timeout and nonzero exits as ordinary results.
-            # They are still failed executions and must never publish.
-            self._defer_publication = (
-                primary is not None or not self._publication_success(result)
-            )
-            self._stop_server()
-        except BaseException as error:
-            teardown=error
+                self._start_server(prepared.spec,runtime_fd)
+                result=super().run_execution(
+                    prepared,
+                    _runtime_binary_fd=runtime_fd,
+                )
+            except BaseException as error:
+                primary=error
         finally:
-            if runtime_fd is not None:
-                try: os.close(runtime_fd)
-                except OSError: pass
-            self._run_lock.release()
+            if self._execution_ownership_transferred:
+                try:
+                    # Only a normally completed client execution may publish.
+                    # A timeout, protocol failure, or client exception leaves
+                    # the private home disposable even when the server is
+                    # successfully reaped.
+                    self._defer_publication = (
+                        primary is not None or not self._publication_success(result)
+                    )
+                    self._stop_server()
+                except BaseException as error:
+                    teardown=error
+                finally:
+                    if runtime_fd is not None:
+                        try: os.close(runtime_fd)
+                        except OSError: pass
+                    self._run_lock.release()
 
         if primary is not None:
             if teardown is not None:

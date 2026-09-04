@@ -58,7 +58,8 @@ class DispatchPresenter:
         if sandbox_descriptor.get("backend") == "bubblewrap":
             print("sandbox Atlas/bubblewrap")
             print(f"workspace {'read-only' if sandbox_descriptor.get('filesystem_mode') == 'read-only' else 'read-write'}")
-            print("tmp memory · var/tmp disk")
+            print("temporary: /tmp writable tmpfs · /var/tmp writable disk-backed scratch (private, per execution)")
+            print("temp env: TMPDIR=/tmp · TMP=/tmp · TEMP=/tmp")
             print("network restricted by Codex")
         if snapshot.get("session_mode")=="reuse":
             values=[]

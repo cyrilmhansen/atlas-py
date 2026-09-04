@@ -1165,253 +1165,271 @@ class Workflow:
             s=replay_journal(self.journal.read()); self._save(s); return s
     def execute(self,generation,executor=None,observer=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
-        with lock(self.base/"lock"):
-            s,x=self._record(generation)
-            if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
-            accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-            prompt_bytes=accepted.read_bytes()
-            try: prompt=parse_prompt(prompt_bytes)
-            except PromptError as error: raise WorkflowError(error.code) from error
-            policy=self._policy_for(x)
-            snapshot=None
-            if prompt.prompt_schema=="atlas-agent-prompt/1" and prompt.session_mode=="reuse" and policy is None:
-                raise WorkflowError("REUSE_TARGET_MISSING")
-            if policy is not None:
-                try: snapshot=resolve_policy(policy,prompt)
-                except PolicyError as error: raise WorkflowError(str(error)) from error
-                if prompt.session_mode=="reuse":
-                    try:
-                        snapshot=self._reuse_snapshot(s,x,snapshot)
-                    except WorkflowError as error:
-                        # Only policy/liveness boundaries are preferences.  A
-                        # missing target, malformed owner, or tainted lineage
-                        # remains fail-closed (provenance must not be hidden by
-                        # silently opening a new session).
-                        reason=SAFE_REUSE_FALLBACKS.get(str(error))
-                        if reason is None:
-                            raise
-                        snapshot=dict(snapshot)
-                        snapshot.update({
-                            "session_mode": "fresh",
-                            "session_mode_requested": "reuse",
-                            "session_mode_resolved": "fresh",
-                            "reuse_fallback_reason": reason,
-                        })
-                if snapshot["executor"]=="manual": raise WorkflowError("CHECKPOINT_MANUAL_REQUIRED")
-            if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
-            executor=executor or AtlasBubblewrapExecutor()
-            if snapshot and isinstance(executor,CodexExecutor):
-                executor.model=snapshot["requested_model"]; executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
-            ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
-            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
-            execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
-            context, context_info = self._parent_context(s, generation)
-            context_sha256=hashlib.sha256(context).hexdigest()
-            effective_input=x["prompt_sha256"]
-            effective_input=hashlib.sha256(prompt_bytes+context).hexdigest()
-            context_path=self.base/"reports"/"contexts"/(execution_id+".txt")
-            effective_path=self.base/"reports"/"contexts"/(execution_id+"-effective.txt")
-            spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"),snapshot,prompt_bytes+context,"bytes-v1",effective_input)
-            prepared=executor.prepare_execution(spec)
-            if snapshot:
-                try: current_policy_hash=policy_config_sha256(load_policy(self.root/"atlas-agent-policy.toml"))
-                except PolicyError as error: raise WorkflowError(str(error)) from error
-                if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
-            if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
-            metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
-            if getattr(executor, "service_tier", None) is not None:
-                metadata["service_tier"] = executor.service_tier
-            if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
-            if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
-            sandbox_descriptor = (
-                prepared.runtime_handle
-                if isinstance(prepared.runtime_handle, dict)
-                else None
-            )
-            if sandbox_descriptor is None and hasattr(executor, "sandbox_descriptor"):
-                candidate = executor.sandbox_descriptor()
-                if isinstance(candidate, dict) and candidate:
-                    sandbox_descriptor = candidate
-            if sandbox_descriptor is not None:
-                metadata["sandbox"] = dict(sandbox_descriptor)
-                metadata["execution_backend_schema"] = "atlas-bwrap-execution/1"
-            metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
-            if snapshot:
-                metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
-            context_supplement=context.decode("utf-8")
-            execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
-            src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-            start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
-            if snapshot is not None:
-                start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
-            self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
-            if snapshot and policy is not None:
-                # This is the historical policy authority used by replay.
-                # It is deliberately keyed by execution id, not by mutable
-                # owner fields in the journal.  All fallible preparation and
-                # provenance validation above must finish before publication.
-                policy_path_name, policy_hash = self._publish_policy_archive(policy, execution_id)
-                metadata.update({
-                    "historical_policy_path":policy_path_name,
-                    "historical_policy_sha256":policy_hash,
-                })
-                execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
-                start_payload["execution"]=metadata
-            def publish_owner(stage,transaction):
-                if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)
-            try:
-                move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",start_payload,publish_owner)
-            except BaseException:
-                # Keep the artifact if TRANSITION_PREPARED was durable (it is
-                # then needed by recovery); otherwise it is an orphan.
-                try:
-                    durable=any(
-                        e["event"] == "TRANSITION_PREPARED" and
-                        (e["payload"].get("execution") or {}).get("execution_id") == execution_id
-                        for e in self.journal.read()
-                    )
-                except Exception:
-                    durable=True
-                if not durable and "historical_policy_path" in metadata:
-                    (self.base/metadata["historical_policy_path"]).unlink(missing_ok=True)
-                raise
-            # RUN_STARTED is durable before reconstruction/projection.  From
-            # this boundary every BaseException must pass through the same
-            # durable terminalization path as executor failures.
-            started=True
-            post_start_error=None
-            try:
-                s=replay_journal(self.journal.read()); self._save(s)
-            except BaseException as error:
-                post_start_error=error
-        if post_start_error is not None:
-            reason=("KEYBOARD_INTERRUPT" if isinstance(post_start_error,KeyboardInterrupt)
-                    else f"EXECUTOR_FAILURE: {post_start_error}")
-            try:
-                # The projection that failed is needed by interrupt_run's
-                # normal preflight.  Rebuild it first, outside the original
-                # lock, before appending the terminal transition.
-                try:
-                    self._save(replay_journal(self.journal.read()))
-                except BaseException:
-                    # interrupt_run can use the journal projection directly;
-                    # a second projection failure must not strand RUNNING.
-                    pass
-                self.interrupt_run(generation,reason)
-            except BaseException as terminal_error:
-                raise _RunTerminalError(reason) from terminal_error
-            raise post_start_error
-        running= self.base/"running"/x["action"]/accepted.name
-        started=True; telemetry_failed=False
-        execution_input=None
+        preparation_owned = False
         try:
-            try:
-                self._publish_context(context_path,context)
-                self._publish_context(effective_path,prompt_bytes+context)
-            except (WorkflowError,OSError,UnicodeError):
-                # Provenance presentation is informational; RUN_STARTED is authoritative.
-                pass
-            prepared=getattr(executor,"post_start_prepare",lambda value: value)(prepared)
-            self._publish_execution_artifact(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
-            execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
-            prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
-            launch={"kind":"dispatch_started","generation":generation,"action":x["action"],
-                    "session_mode":snapshot.get("session_mode") if snapshot else x.get("session_mode"),
-                    "session_mode_requested":snapshot.get("session_mode_requested") if snapshot else x.get("session_mode"),
-                    "reuse_fallback_reason":snapshot.get("reuse_fallback_reason") if snapshot else None,
-                    "execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
-            if metadata.get("service_tier") is not None:
-                launch["service_tier"] = metadata["service_tier"]
-            if hasattr(executor, "sandbox_descriptor"):
-                launch["sandbox"] = executor.sandbox_descriptor()
-            if snapshot: launch["policy_snapshot"]=snapshot
-            self._observe(observer,launch)
-            result=executor.run_execution(prepared)
-            if getattr(result, "execution_input_sha256", None) != effective_input:
-                raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
-            result_payload={**result.__dict__,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"]}
-            if snapshot:
-                result_payload.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
-            _write_json(report_dir/"result.json",result_payload)
-            try:
-                collect_usage(prepared.spec,result,report_dir,requested_model=getattr(executor,"model",None),requested_reasoning=getattr(executor,"reasoning_effort",None),policy_snapshot=snapshot)
-            except OSError as error:
-                telemetry_failed=True
-                _write_json(report_dir/"result.json",{**result_payload,"telemetry_status":"failed","telemetry_error":str(error)})
-                self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE",result.__dict__)
-                started=False
-                raise WorkflowError(f"TELEMETRY_WRITE_FAILURE: {error}") from error
-            if result.timed_out:
-                self.interrupt_run(generation,"EXECUTOR_TIMEOUT",result.__dict__)
-                raise WorkflowError("EXECUTOR_TIMEOUT")
-            if result.exit_code != 0:
-                reason="REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}"
-                self.interrupt_run(generation,reason,result.__dict__)
-                raise WorkflowError(reason)
-            try:
-                observed_metadata=self._validate_observed_session(s,snapshot,result) if snapshot else {}
-            except WorkflowError as error:
-                self.interrupt_run(generation,str(error),result.__dict__)
-                started=False
-                result_payload["session_validation_error"]=str(error)
-                _write_json(report_dir/"result.json",result_payload)
-                raise
-            if observed_metadata:
-                result_payload.update(observed_metadata)
-                _write_json(report_dir/"result.json",result_payload)
-            report_provenance={"status":"unavailable"}
-            if result.outcome == "success" and prepared.executor == "codex":
+            with lock(self.base/"lock"):
+                s,x=self._record(generation)
+                if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+                accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
+                prompt_bytes=accepted.read_bytes()
+                try: prompt=parse_prompt(prompt_bytes)
+                except PromptError as error: raise WorkflowError(error.code) from error
+                policy=self._policy_for(x)
+                snapshot=None
+                if prompt.prompt_schema=="atlas-agent-prompt/1" and prompt.session_mode=="reuse" and policy is None:
+                    raise WorkflowError("REUSE_TARGET_MISSING")
+                if policy is not None:
+                    try: snapshot=resolve_policy(policy,prompt)
+                    except PolicyError as error: raise WorkflowError(str(error)) from error
+                    if prompt.session_mode=="reuse":
+                        try:
+                            snapshot=self._reuse_snapshot(s,x,snapshot)
+                        except WorkflowError as error:
+                            # Only policy/liveness boundaries are preferences.  A
+                            # missing target, malformed owner, or tainted lineage
+                            # remains fail-closed (provenance must not be hidden by
+                            # silently opening a new session).
+                            reason=SAFE_REUSE_FALLBACKS.get(str(error))
+                            if reason is None:
+                                raise
+                            snapshot=dict(snapshot)
+                            snapshot.update({
+                                "session_mode": "fresh",
+                                "session_mode_requested": "reuse",
+                                "session_mode_resolved": "fresh",
+                                "reuse_fallback_reason": reason,
+                            })
+                    if snapshot["executor"]=="manual": raise WorkflowError("CHECKPOINT_MANUAL_REQUIRED")
+                if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
+                executor=executor or AtlasBubblewrapExecutor()
+                if snapshot and isinstance(executor,CodexExecutor):
+                    executor.model=snapshot["requested_model"]; executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
+                ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
+                if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+                execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
+                context, context_info = self._parent_context(s, generation)
+                context_sha256=hashlib.sha256(context).hexdigest()
+                effective_input=x["prompt_sha256"]
+                effective_input=hashlib.sha256(prompt_bytes+context).hexdigest()
+                context_path=self.base/"reports"/"contexts"/(execution_id+".txt")
+                effective_path=self.base/"reports"/"contexts"/(execution_id+"-effective.txt")
+                spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"),snapshot,prompt_bytes+context,"bytes-v1",effective_input)
+                preparation_owned = True
+                prepared=executor.prepare_execution(spec)
+                if snapshot:
+                    try: current_policy_hash=policy_config_sha256(load_policy(self.root/"atlas-agent-policy.toml"))
+                    except PolicyError as error: raise WorkflowError(str(error)) from error
+                    if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
+                if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+                metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+                if getattr(executor, "service_tier", None) is not None:
+                    metadata["service_tier"] = executor.service_tier
+                if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
+                if (self.base/metadata["report_dir"]).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
+                sandbox_descriptor = (
+                    prepared.runtime_handle
+                    if isinstance(prepared.runtime_handle, dict)
+                    else None
+                )
+                if sandbox_descriptor is None and hasattr(executor, "sandbox_descriptor"):
+                    candidate = executor.sandbox_descriptor()
+                    if isinstance(candidate, dict) and candidate:
+                        sandbox_descriptor = candidate
+                if sandbox_descriptor is not None:
+                    metadata["sandbox"] = dict(sandbox_descriptor)
+                    metadata["execution_backend_schema"] = "atlas-bwrap-execution/1"
+                metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
+                if snapshot:
+                    metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                context_supplement=context.decode("utf-8")
+                execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
+                src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
+                start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
+                if snapshot is not None:
+                    start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
+                self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
+                if snapshot and policy is not None:
+                    # This is the historical policy authority used by replay.
+                    # It is deliberately keyed by execution id, not by mutable
+                    # owner fields in the journal.  All fallible preparation and
+                    # provenance validation above must finish before publication.
+                    policy_path_name, policy_hash = self._publish_policy_archive(policy, execution_id)
+                    metadata.update({
+                        "historical_policy_path":policy_path_name,
+                        "historical_policy_sha256":policy_hash,
+                    })
+                    execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
+                    start_payload["execution"]=metadata
+                def publish_owner(stage,transaction):
+                    if stage=="prepared": self._prepare_execution_publication(transaction,execution_artifact)
                 try:
-                    report_text=self._extract_report({"status":"COMPLETED","execution":metadata})
-                    report_provenance={"status":"available","report_sha256":hashlib.sha256(report_text.encode("utf-8")).hexdigest()}
-                except WorkflowError:
+                    move_transaction(self.base,self.journal,src,self.base/"running"/x["action"]/src.name,x["prompt_sha256"],"RUN_STARTED",start_payload,publish_owner)
+                except BaseException:
+                    # Keep the artifact if TRANSITION_PREPARED was durable (it is
+                    # then needed by recovery); otherwise it is an orphan.
+                    try:
+                        durable=any(
+                            e["event"] == "TRANSITION_PREPARED" and
+                            (e["payload"].get("execution") or {}).get("execution_id") == execution_id
+                            for e in self.journal.read()
+                        )
+                    except Exception:
+                        durable=True
+                    if not durable and "historical_policy_path" in metadata:
+                        (self.base/metadata["historical_policy_path"]).unlink(missing_ok=True)
+                    raise
+                # RUN_STARTED is durable before reconstruction/projection.  From
+                # this boundary every BaseException must pass through the same
+                # durable terminalization path as executor failures.
+                started=True
+                post_start_error=None
+                try:
+                    s=replay_journal(self.journal.read()); self._save(s)
+                except BaseException as error:
+                    post_start_error=error
+            if post_start_error is not None:
+                reason=("KEYBOARD_INTERRUPT" if isinstance(post_start_error,KeyboardInterrupt)
+                        else f"EXECUTOR_FAILURE: {post_start_error}")
+                try:
+                    # The projection that failed is needed by interrupt_run's
+                    # normal preflight.  Rebuild it first, outside the original
+                    # lock, before appending the terminal transition.
+                    try:
+                        self._save(replay_journal(self.journal.read()))
+                    except BaseException:
+                        # interrupt_run can use the journal projection directly;
+                        # a second projection failure must not strand RUNNING.
+                        pass
+                    self.interrupt_run(generation,reason)
+                except BaseException as terminal_error:
+                    raise _RunTerminalError(reason) from terminal_error
+                raise post_start_error
+            running= self.base/"running"/x["action"]/accepted.name
+            started=True; telemetry_failed=False
+            execution_input=None
+            try:
+                try:
+                    self._publish_context(context_path,context)
+                    self._publish_context(effective_path,prompt_bytes+context)
+                except (WorkflowError,OSError,UnicodeError):
+                    # Provenance presentation is informational; RUN_STARTED is authoritative.
                     pass
-            envelope={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":result.outcome,"classification":"executor_process","report_path":result.report_path,"executor_result":result.__dict__,"report_provenance":report_provenance}
-            envelope.update(observed_metadata)
-            if execution_input is not None:
-                execution_input.unlink(missing_ok=True)
-                execution_input=None
-            return self.complete_run(generation,envelope)
-        except BaseException as error:
-            if isinstance(error,_RunTerminalError): raise
-            if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT" or str(error) in SESSION_VALIDATION_ERRORS): raise
-            stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
-            if started:
-                failed_result=locals().get("result")
-                executor_result=failed_result.__dict__ if failed_result is not None else None
-                interrupt_reason=("REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else
-                                  ("KEYBOARD_INTERRUPT" if isinstance(error,KeyboardInterrupt) else f"EXECUTOR_FAILURE: {error}"))
+                prepared=getattr(executor,"post_start_prepare",lambda value: value)(prepared)
+                self._publish_execution_artifact(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
+                execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
+                prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
+                launch={"kind":"dispatch_started","generation":generation,"action":x["action"],
+                        "session_mode":snapshot.get("session_mode") if snapshot else x.get("session_mode"),
+                        "session_mode_requested":snapshot.get("session_mode_requested") if snapshot else x.get("session_mode"),
+                        "reuse_fallback_reason":snapshot.get("reuse_fallback_reason") if snapshot else None,
+                        "execution_id":execution_id,"permission_envelope":prepared.permission_envelope}
+                if metadata.get("service_tier") is not None:
+                    launch["service_tier"] = metadata["service_tier"]
+                if hasattr(executor, "sandbox_descriptor"):
+                    launch["sandbox"] = executor.sandbox_descriptor()
+                if snapshot: launch["policy_snapshot"]=snapshot
+                self._observe(observer,launch)
+                result=executor.run_execution(prepared)
+                # run_execution has synchronously assumed cleanup ownership
+                # before it can return.  Keep the workflow fallback active
+                # until that call has crossed the boundary: an interrupt
+                # delivered before the executor enters still belongs here.
+                preparation_owned = False
+                if getattr(result, "execution_input_sha256", None) != effective_input:
+                    raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
+                result_payload={**result.__dict__,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"]}
+                if snapshot:
+                    result_payload.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                _write_json(report_dir/"result.json",result_payload)
                 try:
-                    projected = self.interrupt_run(generation,interrupt_reason,executor_result)
-                    # Preserve every non-Exception BaseException exactly once
-                    # its interruption has been durably journaled.  Projection
-                    # is secondary and must not determine its public outcome.
-                    if not isinstance(error, Exception) and projected is False:
-                        raise error
-                    if projected is False:
-                        # Ordinary executor exceptions retain their public
-                        # error contract, while skipping post-failure artifact
-                        # work until recovery can project it safely.
-                        if isinstance(error, WorkflowError):
+                    collect_usage(prepared.spec,result,report_dir,requested_model=getattr(executor,"model",None),requested_reasoning=getattr(executor,"reasoning_effort",None),policy_snapshot=snapshot)
+                except OSError as error:
+                    telemetry_failed=True
+                    _write_json(report_dir/"result.json",{**result_payload,"telemetry_status":"failed","telemetry_error":str(error)})
+                    self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE",result.__dict__)
+                    started=False
+                    raise WorkflowError(f"TELEMETRY_WRITE_FAILURE: {error}") from error
+                if result.timed_out:
+                    self.interrupt_run(generation,"EXECUTOR_TIMEOUT",result.__dict__)
+                    raise WorkflowError("EXECUTOR_TIMEOUT")
+                if result.exit_code != 0:
+                    reason="REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}"
+                    self.interrupt_run(generation,reason,result.__dict__)
+                    raise WorkflowError(reason)
+                try:
+                    observed_metadata=self._validate_observed_session(s,snapshot,result) if snapshot else {}
+                except WorkflowError as error:
+                    self.interrupt_run(generation,str(error),result.__dict__)
+                    started=False
+                    result_payload["session_validation_error"]=str(error)
+                    _write_json(report_dir/"result.json",result_payload)
+                    raise
+                if observed_metadata:
+                    result_payload.update(observed_metadata)
+                    _write_json(report_dir/"result.json",result_payload)
+                report_provenance={"status":"unavailable"}
+                if result.outcome == "success" and prepared.executor == "codex":
+                    try:
+                        report_text=self._extract_report({"status":"COMPLETED","execution":metadata})
+                        report_provenance={"status":"available","report_sha256":hashlib.sha256(report_text.encode("utf-8")).hexdigest()}
+                    except WorkflowError:
+                        pass
+                envelope={"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":result.outcome,"classification":"executor_process","report_path":result.report_path,"executor_result":result.__dict__,"report_provenance":report_provenance}
+                envelope.update(observed_metadata)
+                if execution_input is not None:
+                    execution_input.unlink(missing_ok=True)
+                    execution_input=None
+                return self.complete_run(generation,envelope)
+            except BaseException as error:
+                if isinstance(error,_RunTerminalError): raise
+                if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT" or str(error) in SESSION_VALIDATION_ERRORS): raise
+                stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
+                if started:
+                    failed_result=locals().get("result")
+                    executor_result=failed_result.__dict__ if failed_result is not None else None
+                    interrupt_reason=("REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else
+                                      ("KEYBOARD_INTERRUPT" if isinstance(error,KeyboardInterrupt) else f"EXECUTOR_FAILURE: {error}"))
+                    try:
+                        projected = self.interrupt_run(generation,interrupt_reason,executor_result)
+                        # Preserve every non-Exception BaseException exactly once
+                        # its interruption has been durably journaled.  Projection
+                        # is secondary and must not determine its public outcome.
+                        if not isinstance(error, Exception) and projected is False:
                             raise error
-                        raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
-                finally: started=False
-            if not telemetry_failed:
-                try: collect_usage(prepared.spec,type("Result",(),{"session_id":None,"version":prepared.version})(),report_dir,requested_model=getattr(executor,"model",None),policy_snapshot=snapshot)
-                except OSError: pass
-                try:
-                    stdout.touch(exist_ok=True); stderr.touch(exist_ok=True)
-                    failure={"execution_id":execution_id,"executor":prepared.executor,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"exception","error":str(error),"permission_envelope":prepared.permission_envelope,"permission_observation_status":"unavailable","permission_failures":None}
-                    if snapshot: failure.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
-                    _write_json(report_dir/"result.json",failure)
-                except OSError: pass
-            if not isinstance(error,Exception): raise error
-            if snapshot and snapshot.get("session_mode")=="reuse": raise WorkflowError("REUSE_SESSION_UNAVAILABLE") from error
-            raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
+                        if projected is False:
+                            # Ordinary executor exceptions retain their public
+                            # error contract, while skipping post-failure artifact
+                            # work until recovery can project it safely.
+                            if isinstance(error, WorkflowError):
+                                raise error
+                            raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
+                    finally: started=False
+                if not telemetry_failed:
+                    try: collect_usage(prepared.spec,type("Result",(),{"session_id":None,"version":prepared.version})(),report_dir,requested_model=getattr(executor,"model",None),policy_snapshot=snapshot)
+                    except OSError: pass
+                    try:
+                        stdout.touch(exist_ok=True); stderr.touch(exist_ok=True)
+                        failure={"execution_id":execution_id,"executor":prepared.executor,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"exception","error":str(error),"permission_envelope":prepared.permission_envelope,"permission_observation_status":"unavailable","permission_failures":None}
+                        if snapshot: failure.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                        _write_json(report_dir/"result.json",failure)
+                    except OSError: pass
+                if not isinstance(error,Exception): raise error
+                if snapshot and snapshot.get("session_mode")=="reuse": raise WorkflowError("REUSE_SESSION_UNAVAILABLE") from error
+                raise WorkflowError(f"EXECUTOR_FAILURE: {error}") from error
+            finally:
+                if execution_input is not None:
+                    try: execution_input.unlink(missing_ok=True)
+                    except OSError: pass
         finally:
-            if execution_input is not None:
-                try: execution_input.unlink(missing_ok=True)
-                except OSError: pass
+            if preparation_owned and "prepared" in locals():
+                abandon = getattr(executor, "abandon_prepared_execution", None)
+                if abandon is not None:
+                    try:
+                        abandon(prepared)
+                    except BaseException:
+                        # Preserve the original lifecycle failure. Recovery
+                        # can retry executor-owned cleanup.
+                        pass
     def _interruption_reason(self,generation):
         for event in reversed(self.journal.read()):
             if event["event"]=="RUN_INTERRUPTED" and event["payload"].get("generation")==generation:
