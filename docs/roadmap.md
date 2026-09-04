@@ -1,7 +1,7 @@
 # Atlas / Atlas Agent — Roadmap
-Document version: **0.3**
+Document version: **0.4**
 
-This roadmap reflects the state reached after Atlas Agent v0.1.1 and the first long-running real workflow on Memoria, now extending across roughly forty generations.
+This roadmap reflects the state reached during the Atlas Agent v0.1.2 hardening tranche after sustained real-project use, including the completed P0.1–P0.5 checkpoints.
 
 It is a prioritization document, not a catalogue of every possible Atlas feature.
 
@@ -42,6 +42,23 @@ NEXT   qualified project/role contracts and bounded operational ergonomics
 THEN   freeze broad Agent expansion and return to Atlas Core
 LATER  release automation, portability, broader hardening, optional UX
 ```
+
+### Current v0.1.2 hardening status
+
+As of 2026-09-04:
+
+| Tranche | Status | Checkpoint |
+| --- | --- | --- |
+| P0.1 manual checkpoint correctness | DONE | `3aad255` |
+| P0.2 config/trust/auth/session isolation | DONE | `b4cc45c` |
+| P0.3 safe reuse fallback | DONE | `fd0073c` |
+| per-dispatch Fast service tier | DONE | `cc1b9cd` |
+| P0.4 accepted-generation cancellation | DONE | `cde171f` |
+| P0.5 truthful scratch semantics | DONE | `833d275` |
+| P0.6 qualified development toolchains/caches | **NEXT** | — |
+
+P0.5 was closed with host validation and a final independent Sol review
+returning `PASS`.
 
 ---
 
@@ -220,6 +237,49 @@ After the current hardening/installability tranche, new Agent features require r
 
 The goal is reliable infrastructure that fades into the background.
 
+### 3.12 Active workflows are pinned to controller compatibility
+
+A workflow journal is not necessarily semantically portable across arbitrary
+Atlas Agent controller revisions.
+
+A newer controller may introduce stronger historical validation that an older
+journal could never have materialized. Therefore changing controller code
+under an active workflow is a migration operation, not a neutral launcher
+change.
+
+The normal rule should be:
+
+```text
+workflow starts
+→ controller identity is pinned
+→ workflow remains on that compatible controller
+→ checkpoint / explicit migration boundary
+→ controller may change
+```
+
+Controller mismatch should fail explicitly rather than reinterpret historical
+authority silently.
+
+### 3.13 Shell environment is derived state, not durable authority
+
+A reboot or terminal restart must not erase information required to resume a
+qualified workflow.
+
+Persistent project/runtime metadata should be sufficient to reconstruct:
+
+```text
+Atlas Agent controller
+controller commit
+qualified Codex executable
+Codex executable SHA-256
+qualified CODEX_HOME
+qualified config/assets identities
+```
+
+Environment variables such as `ATLAS_AGENT_SRC`, `ATLAS_CODEX_EXECUTABLE`, and
+`ATLAS_CODEX_HOME` may remain implementation interfaces, but normal operation
+must not require the operator to remember and recreate them manually.
+
 ---
 
 # NOW — P0 correctness, liveness, and self-consistency
@@ -233,7 +293,7 @@ misrepresent a critical runtime capability,
 or prevent an implementation agent from validating its own work.
 ```
 
-## P0.1 — Complete manual checkpoint correctness — PR #1
+## P0.1 — Complete manual checkpoint correctness — PR #1 — DONE (`3aad255`)
 
 The first real Memoria checkpoint exposed two lifecycle/provenance defects after the Git checkpoint itself had already succeeded:
 
@@ -246,7 +306,7 @@ Manual checkpoints must remain journal-valid without fabricating model execution
 
 ---
 
-## P0.2 — Isolate immutable Codex config from mutable trust state — issue #6
+## P0.2 — Isolate immutable Codex config from mutable trust state — issue #6 — DONE (`b4cc45c`)
 
 This is promoted from P1 to P0.
 
@@ -267,7 +327,7 @@ Possible designs include an execution-local derived config, a separate writable 
 
 ---
 
-## P0.3 — Automatic safe reuse fallback — issue #2a
+## P0.3 — Automatic safe reuse fallback — issue #2a — DONE (`fd0073c`)
 
 Split issue #2 into an essential P0 part and a later optimization part.
 
@@ -307,9 +367,11 @@ P0 does **not** require context-percentage rollover yet.
 
 ---
 
-## P0.4 — Cancel/requeue/invalidate unstarted accepted generations — issue #4
+## P0.4 — Cancel unstarted accepted generations — issue #4 — DONE (`cde171f`)
 
 Even after #2a, Atlas needs a generic durable escape hatch for an accepted generation that never reached `RUN_STARTED`.
+
+The implemented v0.1.2 scope is cancellation, not in-place requeue or rewriting. A changed intent is represented by a later generation while the cancelled generation remains immutable history.
 
 Examples:
 
@@ -329,38 +391,47 @@ The lifecycle operation must:
 - unblock later dispatch;
 - be understood by replay/rebuild/doctor.
 
-**Exit criterion:** no manual journal suffix deletion or JSONL surgery is required to abandon/requeue an unstarted accepted generation.
+Delivered semantics include transactional `ACCEPTED → CANCELLED`, crash/recovery correctness, reason binding, idempotence for the same reason, refusal after `RUN_STARTED`, and continued generation sequencing without rewriting parentage.
+
+**Exit criterion:** no manual journal suffix deletion or JSONL surgery is required to abandon an unstarted accepted generation and continue with a later generation.
 
 ---
 
-## P0.5 — Truthful writable scratch semantics — issue #13
+## P0.5 — Truthful writable scratch semantics — issue #13 — DONE (`833d275`)
 
-This is promoted to the P0/P1 boundary because Memoria tests were genuinely blocked by a sandbox capability that dispatch presented inaccurately.
+Memoria tests were genuinely blocked by a sandbox capability that dispatch
+presented inaccurately. P0.5 selected `/var/tmp` itself as the canonical
+disk-backed execution scratch location and made presentation match reality.
 
-Atlas currently advertises:
-
-```text
-tmp memory · var/tmp disk
-```
-
-while `/var/tmp` is observed read-only inside the sandbox.
-
-Atlas must either make `/var/tmp` writable disk-backed scratch or stop presenting it as such and expose another canonical writable disk location.
-
-Required outcome:
+Delivered semantics:
 
 ```text
-/tmp       explicit writable tmpfs
-scratch    explicit writable disk-backed location
-TMPDIR     deliberate effective value
-presentation == actual mount/write semantics
+/tmp       writable execution-private tmpfs
+/var/tmp   writable execution-private host-filesystem-backed scratch
+
+TMPDIR=/tmp
+TMP=/tmp
+TEMP=/tmp
 ```
 
-**Exit criterion:** agents/tests can discover and use canonical writable temporary locations without guessing host paths.
+The `/var/tmp` source is the current execution ScratchStore run, not arbitrary
+host `/var/tmp`. Backing suitability and a real Bubblewrap write capability are
+verified before execution capability is published.
+
+P0.5 also established continuous prepared-resource ownership across workflow
+and executor handoff: every reachable `BaseException` boundary has a defined
+cleanup owner, without unsafe double cleanup after ownership transfer.
+
+Descriptor, executor-info, and dispatch presentation now describe the actual
+temporary-storage contract.
+
+**Exit criterion:** agents/tests can discover and use canonical writable
+temporary locations without guessing host paths, and prepared scratch cannot
+be stranded across pre-run/executor ownership boundaries.
 
 ---
 
-## P0.6 — Qualified development toolchains and caches — issue #5
+## P0.6 — Qualified development toolchains and caches — issue #5 — **NEXT**
 
 An implementation profile that can edit code but cannot compile/test it is structurally degraded.
 
@@ -504,32 +575,70 @@ Report the three levels separately rather than collapsing them into one boolean.
 
 ## P0.10 — Reproducible launcher/activation and install identity — issue #9
 
-This is promoted from P2 to P0/P1 because reproducible activation is part of installation correctness, not merely convenience.
+This is promoted from P2 to P0/P1 because reproducible activation is part of
+installation correctness, not merely convenience.
 
-Closing a terminal must not lose or silently change:
+Closing a terminal or rebooting the machine must not lose or silently change:
 
 ```text
-Agent release
+Agent/controller identity
+controller commit
 CODEX_HOME
 Codex executable
+Codex executable digest
+qualified config/assets
 qualified override/hotfix state
 ```
 
-The installer may provide a versioned launcher, an activation mechanism, or a canonical environment exporter.
+The P0.5 self-host workflow demonstrated that controller compatibility is also
+workflow provenance: opening an older active journal under a newer controller
+can legitimately fail stronger historical validation.
+
+The project should therefore retain a local, non-versioned binding from its
+workflow runtime to the controller that owns it, for example conceptually:
+
+```text
+.git/atlas-agent/controller.toml
+    controller_root
+    controller_commit
+```
+
+The controller/installation should in turn expose enough qualified runtime
+metadata to resolve the Codex executable, CODEX_HOME, and expected digests.
+
+Absolute machine paths belong to local runtime state, not versioned project
+configuration.
+
+A stable launcher should be able to start from only the project directory,
+resolve these bindings, validate them, construct any internal environment, and
+then invoke Atlas Agent. Shell exports are derived state, not authority.
 
 Candidate surfaces:
 
 ```bash
 atlas-agent --version
 atlas-agent install-info
+atlas-agent project-info
+atlas-agent doctor --environment
 atlas-agent env --shell bash
 atlas-agent env --shell fish
 atlas-agent activate <installation>
 ```
 
-Human and JSON output should expose effective Agent/Codex/assets/runtime identities.
+A short launcher such as `aa` may wrap this discovery, but should not require
+pre-existing `ATLAS_AGENT_SRC`, `ATLAS_CODEX_EXECUTABLE`, or
+`ATLAS_CODEX_HOME` variables.
 
-**Exit criterion:** reopening a shell does not require reconstructing Atlas environment variables by hand, and a bug report can state the effective installation identity directly.
+Controller change for an active workflow must be explicit and should normally
+occur only at a clean checkpoint/migration boundary.
+
+Human and JSON output should expose effective project/controller/Codex/assets
+runtime identities and mismatches.
+
+**Exit criterion:** after a reboot, resuming an existing workflow requires only
+the project directory and a stable launcher; controller and Codex authority are
+rediscovered and verified without reconstructing environment variables by
+hand.
 
 ---
 
