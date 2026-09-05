@@ -829,7 +829,7 @@ def test_policy_witness_is_revalidated_after_prepare_before_run_started(tmp_path
     assert not any(e["event"]=="RUN_STARTED" for e in w.journal.read())
 
 
-def test_running_reuse_blocks_second_branch_from_same_thread(tmp_path):
+def test_running_generation_admission_blocks_second_reuse_branch(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w); w.execute(1,FakeExecutor(observed_thread_id="thread-T")); first=w._state()["generations"]["1"]["execution"]
     accepted(w,generation=2,session="reuse",target=first["execution_id"])
     metadata={
@@ -859,7 +859,7 @@ def test_running_reuse_blocks_second_branch_from_same_thread(tmp_path):
         "prompt_sha256":g2["prompt_sha256"], "action":g2["action"],
     })
     accepted(w,generation=3,session="reuse",target=first["execution_id"]); probe=FakeExecutor()
-    with pytest.raises(WorkflowError,match="REUSE_LINEAGE_TAINTED"): w.execute(3,probe)
+    with pytest.raises(WorkflowError,match="RUNNING_GENERATION_EXISTS"): w.execute(3,probe)
     assert probe.launched==0
 
 
