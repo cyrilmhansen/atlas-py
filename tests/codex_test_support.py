@@ -9,7 +9,7 @@ def _sha(path):
 
 
 def pinned_codex(tmp_path, executable, **executor_kwargs):
-    """Return a CodexExecutor and executable Atlas /2 snapshot for tests."""
+    """Return a CodexExecutor and executable current snapshot for tests."""
     executable = Path(executable).resolve()
 
     home = tmp_path / "codex-home-test"
@@ -29,8 +29,8 @@ def pinned_codex(tmp_path, executable, **executor_kwargs):
     )
 
     snapshot = {
-        "schema": "atlas-agent-policy-snapshot/2",
-        "policy_schema": "atlas-agent-policy/1",
+        "schema": "atlas-agent-policy-snapshot/3",
+        "policy_schema": "atlas-agent-policy/2",
         "policy_config_sha256": "a" * 64,
         "action": "implementation",
         "checkpoint": "test",
@@ -52,6 +52,8 @@ def pinned_codex(tmp_path, executable, **executor_kwargs):
         "codex_config_sha256": _sha(config),
         "codex_catalog_sha256": _sha(catalog),
         "codex_profile_sha256": _sha(profile),
+        "required_toolchains": [],
+        "writable_caches": [],
     }
 
     kwargs = {

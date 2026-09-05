@@ -138,7 +138,7 @@ def test_prompt_v2_rules_and_v1_compatibility():
 def test_v2_snapshot_owner_and_telemetry_enrichment(tmp_path):
     repo,w=make_repo(tmp_path); accepted(w); fake=FakeExecutor(observed_thread_id="thread-A",observed_model="gpt-5.6-luna",observed_reasoning="medium"); w.execute(1,fake)
     rec=w._state()["generations"]["1"]; owner=rec["execution"]; report=w.base/owner["report_dir"]
-    assert owner["owner_schema"]=="atlas-agent-execution-owner/2" and owner["policy_snapshot"]["profile"]=="implementation"
+    assert owner["owner_schema"]=="atlas-agent-execution-owner/3" and owner["policy_snapshot"]["profile"]=="implementation"
     assert owner["policy_snapshot"]["network_access"] is False
     for name in ("execution.json","result.json"):
         assert json.loads((report/name).read_text())["policy_snapshot"]==owner["policy_snapshot"]
@@ -221,8 +221,8 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/2",
-        "policy_schema":"atlas-agent-policy/1",
+        "schema":"atlas-agent-policy-snapshot/3",
+        "policy_schema":"atlas-agent-policy/2",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -244,6 +244,8 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
         "codex_config_sha256":sha(config),
         "codex_catalog_sha256":sha(catalog),
         "codex_profile_sha256":sha(profile),
+        "required_toolchains":[],
+        "writable_caches":[],
     }
     assert validate_snapshot(snapshot)==snapshot
 
@@ -343,8 +345,8 @@ def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeyp
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/2",
-        "policy_schema":"atlas-agent-policy/1",
+        "schema":"atlas-agent-policy-snapshot/3",
+        "policy_schema":"atlas-agent-policy/2",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -366,6 +368,8 @@ def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeyp
         "codex_config_sha256":sha(config),
         "codex_catalog_sha256":sha(catalog),
         "codex_profile_sha256":sha(profile),
+        "required_toolchains":[],
+        "writable_caches":[],
     }
 
     spec=ExecutionSpec(
@@ -488,7 +492,7 @@ network_access = false
 '''.encode()
 
     snapshot=resolve_policy(policy,parse_prompt(raw))
-    assert snapshot["schema"] == "atlas-agent-policy-snapshot/2"
+    assert snapshot["schema"] == "atlas-agent-policy-snapshot/3"
 
     downgraded=dict(snapshot)
     downgraded["schema"]="atlas-agent-policy-snapshot/1"
@@ -498,6 +502,8 @@ network_access = false
         "codex_config_sha256",
         "codex_catalog_sha256",
         "codex_profile_sha256",
+        "required_toolchains",
+        "writable_caches",
     ):
         downgraded.pop(key)
 
@@ -560,6 +566,8 @@ def test_legacy_snapshot_is_never_reuse_compatible(tmp_path):
         "codex_config_sha256",
         "codex_catalog_sha256",
         "codex_profile_sha256",
+        "required_toolchains",
+        "writable_caches",
     ):
         owner["policy_snapshot"].pop(key,None)
 
@@ -603,8 +611,8 @@ def test_pinned_runtime_rejects_prepared_command_binary_substitution(tmp_path):
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/2",
-        "policy_schema":"atlas-agent-policy/1",
+        "schema":"atlas-agent-policy-snapshot/3",
+        "policy_schema":"atlas-agent-policy/2",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -626,6 +634,8 @@ def test_pinned_runtime_rejects_prepared_command_binary_substitution(tmp_path):
         "codex_config_sha256":sha(config),
         "codex_catalog_sha256":sha(catalog),
         "codex_profile_sha256":sha(profile),
+        "required_toolchains":[],
+        "writable_caches":[],
     }
 
     executor=CodexExecutor(
@@ -668,7 +678,7 @@ def test_pinned_runtime_fd_is_sealed_and_digest_bound(tmp_path):
     executable.chmod(0o500)
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/2",
+        "schema":"atlas-agent-policy-snapshot/3",
         "codex_binary_sha256":
             hashlib.sha256(executable.read_bytes()).hexdigest(),
     }

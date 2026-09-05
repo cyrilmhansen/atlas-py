@@ -98,7 +98,7 @@ def _witness(value, line):
     if untracked!=sorted(untracked,key=lambda x:x["path"]) or len({x["path"] for x in untracked})!=len(untracked): raise JournalError(f"witness untracked invalid at line {line}")
 def _execution(value,line):
     if type(value) is not dict or not {"execution_id","executor","started_at","pid","report_dir"}<=set(value): raise JournalError(f"execution metadata invalid at line {line}")
-    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","historical_policy_path","historical_policy_sha256","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema","service_tier"}: raise JournalError(f"execution metadata invalid at line {line}")
+    if set(value)-{"execution_id","executor","started_at","pid","report_dir","permission_envelope","owner_schema","policy_snapshot","historical_policy_path","historical_policy_sha256","provenance_version","execution_input_sha256","report_provenance","prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256","sandbox","execution_backend_schema","service_tier","capability_plan_sha256","capability_qualification","cache_guest_path","cache_lifetime","mutable_unhashed_cache","capability_provenance","capability_archive_path","capability_archive_sha256"}: raise JournalError(f"execution metadata invalid at line {line}")
     if type(value["execution_id"]) is not str or not value["execution_id"] or type(value["executor"]) is not str or type(value["started_at"]) is not str or (value["pid"] is not None and type(value["pid"]) is not int) or type(value["report_dir"]) is not str: raise JournalError(f"execution metadata types invalid at line {line}")
     if "service_tier" in value and value["service_tier"] != "fast": raise JournalError(f"execution service tier invalid at line {line}")
     provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
@@ -114,7 +114,7 @@ def _execution(value,line):
         if any(type(value[key]) is not str or not HEX.fullmatch(value[key]) for key in ("context_sha256","effective_prompt_sha256")): raise JournalError(f"execution provenance hash invalid at line {line}")
     modern_fields={"provenance_version","execution_input_sha256","report_provenance"}
     if modern_fields & set(value):
-        if value.get("provenance_version") != 2 or type(value.get("execution_input_sha256")) is not str or not HEX.fullmatch(value["execution_input_sha256"]):
+        if value.get("provenance_version") not in {2, 3} or type(value.get("execution_input_sha256")) is not str or not HEX.fullmatch(value["execution_input_sha256"]):
             raise JournalError(f"execution provenance version invalid at line {line}")
         if present != provenance:
             raise JournalError(f"execution provenance incomplete at line {line}")
@@ -125,11 +125,18 @@ def _execution(value,line):
         envelope=value["permission_envelope"]
         if type(envelope) is not dict or set(envelope)!={"sandbox_mode","approval_policy","approvals_reviewer","strict_config","ignore_rules","network_access"}: raise JournalError(f"permission envelope invalid at line {line}")
         if envelope["sandbox_mode"] not in {"read-only","workspace-write","danger-full-access"} or envelope["approval_policy"]!="never" or envelope["approvals_reviewer"]!="user" or envelope["strict_config"] is not True or envelope["ignore_rules"] is not True or type(envelope["network_access"]) is not bool: raise JournalError(f"permission envelope invalid at line {line}")
-    if "owner_schema" in value or "policy_snapshot" in value:
-        if value.get("owner_schema")!="atlas-agent-execution-owner/2" or "policy_snapshot" not in value: raise JournalError(f"execution owner schema invalid at line {line}")
-        try: validate_snapshot(value["policy_snapshot"])
-        except PolicyError as error: raise JournalError(f"policy snapshot invalid at line {line}") from error
-    modern_bwrap = value.get("execution_backend_schema") == "atlas-bwrap-execution/1"
+        if "owner_schema" in value or "policy_snapshot" in value:
+            if value.get("owner_schema") not in {"atlas-agent-execution-owner/2", "atlas-agent-execution-owner/3"} or "policy_snapshot" not in value: raise JournalError(f"execution owner schema invalid at line {line}")
+            try: validate_snapshot(value["policy_snapshot"])
+            except PolicyError as error: raise JournalError(f"policy snapshot invalid at line {line}") from error
+            plan_hash = value.get("capability_plan_sha256")
+            snapshot_hash = value["policy_snapshot"].get("capability_plan_sha256")
+            if plan_hash is not None and snapshot_hash != plan_hash:
+                raise JournalError(f"CAPABILITY_PLAN_CROSS_BINDING_MISMATCH at line {line}")
+            sandbox_hash = (value.get("sandbox") or {}).get("capability_plan_sha256")
+            if sandbox_hash is not None and plan_hash is not None and plan_hash != sandbox_hash:
+                raise JournalError(f"CAPABILITY_PLAN_DESCRIPTOR_MISMATCH at line {line}")
+    modern_bwrap = value.get("execution_backend_schema") in {"atlas-bwrap-execution/1", "atlas-bwrap-execution/2"}
     if "execution_backend_schema" in value and not modern_bwrap:
         raise JournalError(f"execution backend schema invalid at line {line}")
     if "sandbox" in value:
@@ -139,6 +146,9 @@ def _execution(value,line):
                     "resolved_network_access","user_namespace","pid_namespace","ipc_namespace",
                     "mount_roles","temporary_storage","bwrap","bwrap_version","codex_executable",
                     "codex_version","scratch_backing_class","exec_server_transport","inner_codex_sandbox","inner_codex_network"}
+        capability_descriptor = value.get("execution_backend_schema") == "atlas-bwrap-execution/2"
+        if capability_descriptor:
+            required = required | {"capability_plan_sha256", "toolchains", "caches", "environment"}
         if type(descriptor) is not dict or set(descriptor) != required:
             raise JournalError(f"sandbox provenance invalid at line {line}")
         if descriptor["schema"] != "atlas-bwrap/1" or descriptor["provider"] != "atlas" or descriptor["backend"] != "bubblewrap":
@@ -177,6 +187,23 @@ def _execution(value,line):
         expected_inner_network = "enabled" if descriptor["resolved_network_access"] else "restricted"
         if descriptor["inner_codex_network"] != expected_inner_network:
             raise JournalError(f"sandbox network mismatch at line {line}")
+        if capability_descriptor:
+            if type(descriptor["capability_plan_sha256"]) is not str or not HEX.fullmatch(descriptor["capability_plan_sha256"]):
+                raise JournalError(f"sandbox capability provenance invalid at line {line}")
+            if (type(descriptor["toolchains"]) is not list or
+                    any(type(x) is not dict or set(x) != {"guest_root", "mount"} or
+                        type(x["guest_root"]) is not str or x["mount"] != "ro"
+                        for x in descriptor["toolchains"])):
+                raise JournalError(f"sandbox capability provenance invalid at line {line}")
+            if (type(descriptor["caches"]) is not list or
+                    any(type(x) is not dict or set(x) != {"guest_path", "mount"} or
+                        type(x["guest_path"]) is not str or x["mount"] != "rw"
+                        for x in descriptor["caches"])):
+                raise JournalError(f"sandbox capability provenance invalid at line {line}")
+            if (type(descriptor["environment"]) is not dict or
+                    any(type(k) is not str or type(v) is not str
+                        for k, v in descriptor["environment"].items())):
+                raise JournalError(f"sandbox capability provenance invalid at line {line}")
     if modern_bwrap and "sandbox" not in value:
         raise JournalError(f"sandbox provenance missing at line {line}")
 
@@ -203,7 +230,7 @@ def _validate_parent_context(form, generation, generations, line):
         raise JournalError(f"context supplement parent execution invalid at line {line}")
     if form.get("thread_id") != canonical_context_identifier(result.get("session_id")):
         raise JournalError(f"context supplement parent thread invalid at line {line}")
-    if execution.get("provenance_version") == 2:
+    if execution.get("provenance_version") in {2, 3}:
         descriptor=(parent.get("result") or {}).get("report_provenance")
         if not isinstance(descriptor,dict) or descriptor.get("status") not in {"available","unavailable"}:
             raise JournalError(f"context supplement parent report provenance invalid at line {line}")
@@ -420,7 +447,7 @@ class Journal:
             if not isinstance(execution,dict):
                 raise JournalError(f"modern execution ownership missing at line {n}")
 
-            if execution.get("owner_schema") != "atlas-agent-execution-owner/2":
+            if execution.get("owner_schema") not in {"atlas-agent-execution-owner/2", "atlas-agent-execution-owner/3"}:
                 raise JournalError(f"modern execution owner schema missing at line {n}")
 
             snapshot=execution.get("policy_snapshot")
@@ -434,7 +461,7 @@ class Journal:
                 raise JournalError(f"session mode provenance mismatch at line {n}")
             if (
                 not isinstance(snapshot,dict)
-                or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
+                or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
             ):
                 raise JournalError(f"modern policy snapshot invalid at line {n}")
             if (
@@ -468,7 +495,7 @@ class Journal:
             # Real Codex executions must carry the concrete sandbox backend;
             # FakeExecutor histories used by deterministic tests are not
             # reclassified as Bubblewrap executions.
-        if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2 and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
+        if event == "RUN_STARTED" and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version") in {2, 3} and p["execution"].get("execution_input_sha256") != p["execution"].get("effective_prompt_sha256"):
             raise JournalError(f"execution handoff digest mismatch at line {n}")
         if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and v2 and started_execution is not None:
             if p.get("execution") != started_execution:
@@ -481,7 +508,7 @@ class Journal:
                 observed=p.get("result",{}).get("executor_result")
                 if not isinstance(observed,dict) or observed.get("execution_input_sha256") != started_execution.get("execution_input_sha256"):
                     raise JournalError(f"execution handoff digest mismatch at line {n}")
-        if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version")==2:
+        if event in {"RUN_COMPLETED","RUN_INTERRUPTED"} and isinstance(p.get("execution"),dict) and p["execution"].get("provenance_version") in {2, 3}:
             descriptor=p["result"].get("report_provenance")
             if not isinstance(descriptor,dict) or descriptor.get("status") not in {"available","unavailable"} or set(descriptor)-{"status","report_sha256"}:
                 raise JournalError(f"report provenance invalid at line {n}")
@@ -534,7 +561,7 @@ class Journal:
                         raise JournalError(f"sandbox network mismatch at line {n}")
                     if (
                         event=="RUN_STARTED"
-                        and snapshot.get("schema")=="atlas-agent-policy-snapshot/2"
+                        and snapshot.get("schema") in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
                     ):
                         if (
                             "network_access" not in p

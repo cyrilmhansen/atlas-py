@@ -1,10 +1,12 @@
-schema = "atlas-agent-policy/1"
+schema = "atlas-agent-policy/2"
 
 [session_limits]
 max_hot_reuse_hops = 3
 max_reuse_generation_gap = 2
 
 [profiles.implementation]
+required_toolchains = []
+writable_caches = []
 executor = "codex"
 model = "gpt-5.6-luna"
 reasoning_effort = "medium"
@@ -22,6 +24,8 @@ codex_profile_local_sha256 = "6c82760bcf5314354b29c63217529a6ff8693b2a82b957d315
 codex_profile_web_sha256 = "d5259782d10c4484aa75782cea2e6d6fb5cd84c6eb2a2f1d1fa3d423f3d8e942"
 
 [profiles.patch_review]
+required_toolchains = []
+writable_caches = []
 executor = "codex"
 model = "gpt-5.6-sol"
 reasoning_effort = "high"
@@ -39,6 +43,8 @@ codex_profile_local_sha256 = "16e3772748abc22655180d86e78bdf277a9510cd7249f6ef86
 codex_profile_web_sha256 = "43035a5f3ecb77673fabc3e472c37bd8aa8610ef78174f329ef5728d5024f321"
 
 [profiles.state_audit]
+required_toolchains = []
+writable_caches = []
 executor = "codex"
 model = "gpt-5.6-sol"
 reasoning_effort = "high"
