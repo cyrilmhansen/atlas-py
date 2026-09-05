@@ -269,8 +269,6 @@ class Journal:
         except PromptError as error:
             raise JournalError(f"prompt archive invalid at line {line}") from error
 
-    def _archived_prompt_schema(self, prompt_sha256, line):
-        return self._archived_prompt(prompt_sha256, line).prompt_schema
     def read(self):
         if not self.path.exists(): return []
         out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False

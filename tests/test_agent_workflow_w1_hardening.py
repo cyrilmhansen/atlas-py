@@ -27,7 +27,7 @@ def test_result_generation_hash_action_mismatch(repo):
     p,w=repo; raw=running(w)
     for key,val in [("generation",2),("prompt_sha256","0"*64),("action","patch_review")]:
         r={"generation":1,"prompt_sha256":digest(raw),"action":"implementation"}; r[key]=val
-        with pytest.raises(WorkflowError): w.complete_run(1,r)
+        with pytest.raises(WorkflowError,match="RESULT_PROMPT_MISMATCH"): w.complete_run(1,r)
 def test_implementation_can_complete_with_new_file_and_binds_content(repo):
     p,w=repo; raw=running(w); (p/"new-source.py").write_text("VALUE = 1\n")
     w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
@@ -132,7 +132,7 @@ def test_patch_review_detects_witnessed_new_file_content_change(repo):
     assert w._state()["generations"]["2"]["status"]=="INTERRUPTED"
 def test_start_witness_guard(repo):
     p,w=repo; prompt(w); w.ingest(); (p/"a").write_text("changed")
-    with pytest.raises(WorkflowError): w.start_run(1)
+    with pytest.raises(WorkflowError,match="REPOSITORY_WITNESS_MISMATCH"): w.start_run(1)
 def test_journal_schema_rejected_even_rehashed(repo):
     p,w=repo; path=w.base/"events.jsonl"; rows=[json.loads(x) for x in path.read_text().splitlines()]; rows[0]["schema"]="bogus"; rows[0]["event_sha256"]=_hash_event(rows[0]); path.write_text("\n".join(canonical(x) for x in rows)+"\n")
     with pytest.raises(Exception): w.journal.read()
@@ -226,14 +226,14 @@ def test_prompt_exact_delimiter_and_multi_inbox_order(repo):
 @pytest.mark.parametrize("action",["patch_review","state_audit","checkpoint"])
 def test_read_only_action_policies(repo,action):
     p,w=repo; raw=prompt(w,action=action); w.ingest(); w.start_run(1); (p/"a").write_text("changed")
-    with pytest.raises(WorkflowError): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":action})
+    with pytest.raises(WorkflowError,match="REPOSITORY_POLICY_VIOLATION"): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":action})
     assert w._state()["generations"]["1"]["status"]=="INTERRUPTED"
 def test_staged_and_head_changes_interrupt_implementation(repo):
     p,w=repo; raw=running(w); (p/"a").write_text("staged"); sh(p,"add","a")
-    with pytest.raises(WorkflowError): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    with pytest.raises(WorkflowError,match="REPOSITORY_POLICY_VIOLATION"): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
 def test_head_change_interrupts_implementation(repo):
     p,w=repo; raw=running(w); (p/"a").write_text("head-change"); sh(p,"add","a"); sh(p,"commit","-qm","changed")
-    with pytest.raises(WorkflowError): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
+    with pytest.raises(WorkflowError,match="REPOSITORY_POLICY_VIOLATION"): w.complete_run(1,{"generation":1,"prompt_sha256":digest(raw),"action":"implementation"})
 def test_lock_blocks_and_recovers_after_kill(repo):
     p,w=repo; code="from tools.atlas_agent.spool import lock; import time; open('ready','w').close();\nwith lock(__import__('pathlib').Path(__import__('sys').argv[1])): time.sleep(.5)"; ready=p/"ready"; env=dict(os.environ,PYTHONPATH=str(Path(__file__).parents[1])); proc=subprocess.Popen([sys.executable,"-c",code,str(w.base/"lock")],cwd=p,env=env); deadline=time.time()+2
     while not ready.exists() and time.time()<deadline: time.sleep(.01)

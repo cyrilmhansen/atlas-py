@@ -52,7 +52,7 @@ def test_allowed_untracked_and_unexpected_witness(repo):
 
 def test_bad_result_and_rebuild(repo):
     p,w=repo; raw=put(w,git(p,"rev-parse","HEAD")); w.ingest(); w.start_run(1)
-    with pytest.raises(WorkflowError): w.complete_run(1,{"generation":1,"prompt_sha256":"0"*64,"action":"implementation"})
+    with pytest.raises(WorkflowError,match="RESULT_PROMPT_MISMATCH"): w.complete_run(1,{"generation":1,"prompt_sha256":"0"*64,"action":"implementation"})
     state=json.loads((w.base/"state.json").read_text()); (w.base/"state.json").unlink(); assert w.rebuild()==state
 
 @pytest.mark.parametrize("stage",["prepared","renamed"])

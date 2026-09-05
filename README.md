@@ -47,7 +47,9 @@ already completed:
 - durable cancellation of unstarted accepted generations;
 - truthful writable scratch semantics.
 
-The next P0 item is **qualified development toolchains and caches**.
+Qualified development toolchains and caches, along with the P0.6x closure,
+are complete. The current milestone is **M1 — Core Hygiene**; the authoritative
+current planning document is [`docs/roadmap.md`](docs/roadmap.md).
 
 The roadmap also tracks installation, reboot-safe activation,
 controller/runtime identity, profile-driven timeouts, project prompt

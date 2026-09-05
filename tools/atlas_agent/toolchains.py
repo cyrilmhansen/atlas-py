@@ -373,10 +373,7 @@ class CapabilityResolver:
                     _error("ATLAS_TOOLCHAIN_QUALIFICATION_MISMATCH")
                 if command in commands:
                     _error("ATLAS_TOOLCHAIN_CAPABILITY_CONFLICT")
-                # System-visible entries are not mounts.  Their authority is
-                # the object already present at the qualified guest path.
-                # System-visible paths are not relocatable mounts.  The
-                # qualified object in the host namespace is the guest object.
+                # System-visible paths use the qualified host object directly; they are not relocatable mounts.
                 guest = (_GuestPath(str(host)) if exposure == "system-visible"
                          else guest_root / rel)
                 observed = output.decode()
