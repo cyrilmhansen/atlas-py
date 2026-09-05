@@ -1233,7 +1233,9 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                                                 " && ".join(checks)],
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, check=False,
-                                        timeout=5)
+                                        timeout=5,
+                                        pass_fds=tuple(m.authority_fd
+                                                       for m in plan.mounts))
                 if result.returncode != 0:
                     raise AtlasSandboxError("ATLAS_TOOLCHAIN_SANDBOX_PROBE_FAILED")
         except (OSError, subprocess.TimeoutExpired) as error:
