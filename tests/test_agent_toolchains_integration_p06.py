@@ -492,7 +492,7 @@ def test_system_visible_capability_does_not_create_unrelated_usr_bind(
     if not shutil.which("bwrap") or not shutil.which("codex"):
         pytest.skip("Bubblewrap/native Codex unavailable")
     manifest = tmp_path / "system-capabilities.toml"
-    executable = Path("/usr/bin/true")
+    executable = Path("/usr/bin/cat")
     digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     probe = hashlib.sha256(b"\0").hexdigest()
     manifest.write_text(
@@ -501,7 +501,7 @@ def test_system_visible_capability_does_not_create_unrelated_usr_bind(
         "[toolchains.system]\nexposure = \"system-visible\"\n"
         'qualification = "system:true"\nsource_root = "/usr"\n'
         'guest_root = "/usr"\n\n'
-        "[toolchains.system.commands.true]\npath = \"bin/true\"\n"
+        "[toolchains.system.commands.cat]\npath = \"bin/cat\"\n"
         f'sha256 = "{digest}"\nprobe_args = []\n'
         f'probe_output_sha256 = "{probe}"\n'
     )

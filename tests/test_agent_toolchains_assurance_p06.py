@@ -183,13 +183,15 @@ def test_cache_namespace_definition_and_toolchain_identity_break_reuse(
     base = _resolve(toolchains_api, _manifest(tmp_path / "root"))
     for mutation in ("qualification", "cache-definition", "toolchain-set"):
         changed = _manifest(tmp_path / ("root-" + mutation))
+        requirements = {"toolchains": ["rust"], "caches": ["cargo"]}
         if mutation == "qualification":
             changed["toolchains"]["rust"]["qualification"] = "rust:changed"
         elif mutation == "cache-definition":
             changed["caches"]["cargo"]["qualification"] = "cargo-cache:changed"
         else:
             changed["toolchains"]["other"] = changed["toolchains"].pop("rust")
-        candidate = _resolve(toolchains_api, changed)
+            requirements["toolchains"] = ["other"]
+        candidate = _resolve(toolchains_api, changed, requirements)
         assert candidate.sha256 != base.sha256
         assert candidate.caches[0].backing != base.caches[0].backing
 
