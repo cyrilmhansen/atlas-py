@@ -136,6 +136,20 @@ def _execution(value,line):
             sandbox_hash = (value.get("sandbox") or {}).get("capability_plan_sha256")
             if sandbox_hash is not None and plan_hash is not None and plan_hash != sandbox_hash:
                 raise JournalError(f"CAPABILITY_PLAN_DESCRIPTOR_MISMATCH at line {line}")
+    # Schema versions form an authority tuple; accepting each member
+    # independently permits a replay record to mix eras.
+    owner = value.get("owner_schema")
+    snapshot_schema = (value.get("policy_snapshot") or {}).get("schema")
+    provenance_version = value.get("provenance_version")
+    backend = value.get("execution_backend_schema")
+    if owner is not None and snapshot_schema is not None and provenance_version is not None and backend is not None:
+        permitted = {
+            ("atlas-agent-execution-owner/2", "atlas-agent-policy-snapshot/1", 2, "atlas-bwrap-execution/1"),
+            ("atlas-agent-execution-owner/2", "atlas-agent-policy-snapshot/2", 2, "atlas-bwrap-execution/1"),
+            ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/3", 3, "atlas-bwrap-execution/2"),
+        }
+        if (owner, snapshot_schema, provenance_version, backend) not in permitted:
+            raise JournalError(f"execution schema tuple invalid at line {line}")
     modern_bwrap = value.get("execution_backend_schema") in {"atlas-bwrap-execution/1", "atlas-bwrap-execution/2"}
     if "execution_backend_schema" in value and not modern_bwrap:
         raise JournalError(f"execution backend schema invalid at line {line}")

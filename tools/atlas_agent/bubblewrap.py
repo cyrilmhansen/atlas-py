@@ -1114,10 +1114,9 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         if self._capability_plan is not None:
             try:
                 for cache in self._capability_plan.caches:
-                    cache.backing.mkdir(parents=True, exist_ok=True)
-                    self._capability_locks.append(
-                        CacheStore(cache.backing.parent.parent.parent).lock_directory(
-                            cache.backing))
+                    store = CacheStore(cache.backing.parents[3])
+                    store.prepare_backing(cache.backing)
+                    self._capability_locks.append(store.lock_directory(cache.backing))
             except Exception as error:
                 self._release_capability_locks()
                 raise AtlasSandboxError("ATLAS_CACHE_PREPARATION_FAILED") from error

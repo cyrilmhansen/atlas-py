@@ -53,7 +53,7 @@ def machine_capabilities_path():
     return path
 
 
-def load_machine_capabilities():
+def load_machine_capabilities(repository_root=None):
     path = machine_capabilities_path()
     if path is None:
         _error("ATLAS_TOOLCHAIN_REQUIRED_UNAVAILABLE")
@@ -73,6 +73,20 @@ def load_machine_capabilities():
     if (not isinstance(value, dict) or value.get("schema") !=
             "atlas-agent-machine-capabilities/1" or set(value) - allowed):
         _error("ATLAS_CAPABILITY_CONFIG_INVALID")
+    # Manifest labels are untrusted data.  Placement authority is the
+    # repository which is actually being prepared, when supplied by the
+    # workflow, and is checked before any manifest facts are normalized.
+    actual_repository = Path(repository_root).resolve() if repository_root is not None else None
+    if actual_repository is not None:
+        actual_git = actual_repository / ".git"
+        try:
+            actual_git = actual_git.resolve()
+            if path.resolve() == actual_repository or path.resolve().is_relative_to(actual_repository):
+                _error("ATLAS_CAPABILITY_AUTHORITY_OVERLAP")
+            if path.resolve() == actual_git or path.resolve().is_relative_to(actual_git):
+                _error("ATLAS_CAPABILITY_AUTHORITY_OVERLAP")
+        except OSError as exc:
+            _error("ATLAS_CAPABILITY_AUTHORITY_INVALID", str(exc))
     repository = value.get("repository_root") or value.get("repository_identity")
     if repository:
         repo = Path(repository).resolve()
@@ -361,7 +375,10 @@ class CapabilityResolver:
                     _error("ATLAS_TOOLCHAIN_CAPABILITY_CONFLICT")
                 # System-visible entries are not mounts.  Their authority is
                 # the object already present at the qualified guest path.
-                guest = guest_root / rel
+                # System-visible paths are not relocatable mounts.  The
+                # qualified object in the host namespace is the guest object.
+                guest = (_GuestPath(str(host)) if exposure == "system-visible"
+                         else guest_root / rel)
                 observed = output.decode()
                 item = ResolvedCommand(command, guest, digest, observed, host,
                                        tuple(probe_args), cspec["probe_output_sha256"])
@@ -538,12 +555,48 @@ class CacheStore:
             except OSError as error:
                 _error("ATLAS_CACHE_AUTHORITY_INVALID", str(error))
             if stat.st_uid != os.geteuid() or stat.st_mode & 0o777 != 0o700:
-                try:
-                    item.chmod(0o700)
-                except OSError:
-                    pass
+                if stat.st_uid == os.geteuid() and not os.path.islink(item):
+                    try:
+                        item.chmod(0o700)
+                    except OSError:
+                        pass
                 _error("ATLAS_CACHE_AUTHORITY_INVALID", "mode or owner")
         return True
+
+    def prepare_backing(self, path):
+        """Create/validate the private cache namespace before locking it."""
+        path = Path(path)
+        try:
+            relative = path.relative_to(self.root)
+        except ValueError:
+            _error("ATLAS_CACHE_AUTHORITY_INVALID")
+        current = self.root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                _error("ATLAS_CACHE_AUTHORITY_INVALID", "symlink")
+            if not current.exists():
+                current.mkdir()
+                current.chmod(0o700)
+            self._validate_private(current)
+        control = self.root / "control"
+        if control.is_symlink():
+            _error("ATLAS_CACHE_AUTHORITY_INVALID", "symlink")
+        if not control.exists():
+            control.mkdir()
+            control.chmod(0o700)
+        self._validate_private(control)
+        return path
+
+    @staticmethod
+    def _validate_private(path):
+        try:
+            stat = os.lstat(path)
+        except OSError as error:
+            _error("ATLAS_CACHE_AUTHORITY_INVALID", str(error))
+        if (not os.path.isdir(path) or os.path.islink(path) or
+                stat.st_uid != os.geteuid() or stat.st_mode & 0o777 != 0o700):
+            _error("ATLAS_CACHE_AUTHORITY_INVALID", "mode or owner")
 
     def visible_to(self, project, toolchain, qualification):
         return qualification is not None and self._path(

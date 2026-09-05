@@ -416,6 +416,13 @@ class Workflow:
                             raise WorkflowError("HISTORICAL_CAPABILITY_TAMPER")
                         if (data.get("archive_sha256") != archive_digest or
                                 data.get("capability_plan_sha256") != execution.get("capability_plan_sha256") or
+                                data.get("capability_provenance") != execution.get("capability_provenance") or
+                                not isinstance(data.get("capability_provenance"), dict) or
+                                data["capability_provenance"].get("capability_plan_sha256") !=
+                                    execution.get("capability_plan_sha256") or
+                                any(data.get(key) != data["capability_provenance"].get(key)
+                                    for key in ("machine_catalog", "toolchains", "caches",
+                                                "environment")) or
                                 hashlib.sha256(archive.read_bytes()).hexdigest() !=
                                 execution.get("capability_archive_sha256")):
                             raise WorkflowError("HISTORICAL_CAPABILITY_TAMPER")
@@ -719,7 +726,7 @@ class Workflow:
     def resolve_capabilities(self, requirements):
         """Resolve the machine-local capability authority for an execution."""
         try:
-            manifest = load_machine_capabilities()
+            manifest = load_machine_capabilities(self.root)
             # Bind cache authority to this repository, rather than to a
             # caller-provided label or the historical literal "project".
             manifest = dict(manifest)
@@ -1005,8 +1012,7 @@ class Workflow:
                     raise WorkflowError("EXECUTION_ID_COLLISION")
                 if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             historical_policy_path=None
-            if (execution is not None and x.get("prompt_schema") == "atlas-agent-prompt/2"
-                    and x["action"] != "checkpoint"):
+            if execution is not None and x["action"] != "checkpoint":
                 # start_run is also a supported modern launcher boundary.  It
                 # must acquire exactly the same policy authority as execute,
                 # rather than leaving replay to consult today's TOML.
@@ -1014,7 +1020,7 @@ class Workflow:
                     raise WorkflowError("BAD_EXECUTION_METADATA")
                 policy=self._policy_for(x)
                 prompt=parse_prompt(self._find(self.base/"accepted",generation,x["prompt_sha256"]).read_bytes())
-                try: derived=resolve_policy(policy,prompt)
+                try: derived=resolve_policy(policy,prompt,for_new_execution=True)
                 except PolicyError as error: raise WorkflowError(str(error)) from error
                 # The legacy launcher has no executor preparation handoff and
                 # therefore cannot safely establish retained capability
@@ -1033,7 +1039,7 @@ class Workflow:
                                         "reuse_fallback_reason":reason})
                 supplied=execution.get("policy_snapshot")
                 if supplied is not None:
-                    try: validate_snapshot(supplied)
+                    try: validate_snapshot(supplied,for_new_execution=True)
                     except PolicyError as error:
                         raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH") from error
                     immutable={"action","checkpoint","profile","executor","requested_model",
