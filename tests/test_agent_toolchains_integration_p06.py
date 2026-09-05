@@ -81,21 +81,23 @@ def _project(tmp_path, *, capabilities=True, qualification="rust:1"):
     return repo, workflow
 
 
-def _accept(workflow, generation=1, *, session="fresh", target=None):
+def _accept(workflow, generation=1, *, session="fresh", target=None,
+            prompt_schema=2):
     target_line = (
         f'reuse_execution_id = "{target}"\n' if target is not None else ""
     )
+    network_line = "network_access = false\n" if prompt_schema == 2 else ""
     raw = (
         "+++\n"
-        'schema = "atlas-agent-prompt/2"\n'
+        f'schema = "atlas-agent-prompt/{prompt_schema}"\n'
         f"generation = {generation}\n"
         f"parent = {'\"genesis\"' if generation == 1 else generation - 1}\n"
         f'checkpoint = "P06-{generation}"\n'
         'action = "implementation"\n'
         f'expected_head = "{_git(workflow.root, "rev-parse", "HEAD")}"\n'
         f'session_mode = "{session}"\n'
-        "network_access = false\n"
-        f"{target_line}"
+        + network_line
+        + f"{target_line}"
         "+++\nP0.6 integration fixture\n"
     ).encode()
     (workflow.base / "inbox" / f"g{generation}.txt").write_bytes(raw)
@@ -795,7 +797,7 @@ def test_start_run_rejects_replay_only_schema_as_new_execution(
     tmp_path, schema_kind
 ):
     _, workflow = _project(tmp_path, capabilities=False)
-    _accept(workflow)
+    _accept(workflow, prompt_schema=1 if schema_kind == "snapshot-v1" else 2)
     historical = json.loads(json.dumps(
         load_policy(workflow.root / "atlas-agent-policy.toml")
     ))
