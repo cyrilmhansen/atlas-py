@@ -1019,6 +1019,8 @@ class Workflow:
                 if not isinstance(execution.get("execution_id"), str):
                     raise WorkflowError("BAD_EXECUTION_METADATA")
                 policy=self._policy_for(x)
+                if policy is None:
+                    raise WorkflowError("POLICY_CONFIG_REQUIRED")
                 prompt=parse_prompt(self._find(self.base/"accepted",generation,x["prompt_sha256"]).read_bytes())
                 try: derived=resolve_policy(policy,prompt,for_new_execution=True)
                 except PolicyError as error: raise WorkflowError(str(error)) from error

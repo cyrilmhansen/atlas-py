@@ -6,12 +6,16 @@ from tools.atlas_agent.workflow import Workflow,WorkflowError,replay_journal
 
 def git(p,*args): return subprocess.check_output(["git",*args],cwd=p,text=True).strip()
 @pytest.fixture
-def repo(tmp_path):
-    p=tmp_path/"repo"; p.mkdir(); git(p,"init","-q"); git(p,"config","user.email","t@e"); git(p,"config","user.name","t"); (p/"a").write_text("a"); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n'); git(p,"add","."); git(p,"commit","-qm","g"); w=Workflow(p); w.init(); return p,w
-def prompt(w):
-    raw=f'''+++\nschema = "atlas-agent-prompt/1"\ngeneration = 1\nparent = "genesis"\ncheckpoint = "W21"\naction = "implementation"\nexpected_head = "{git(w.root,"rev-parse","HEAD")}"\nsession_mode = "fresh"\n+++\nReturn exactly: ATLAS_CODEX_SMOKE_OK\n'''.encode(); (w.base/"inbox"/"prompt.txt").write_bytes(raw); return raw
+def repo(tmp_path, request):
+    p=tmp_path/"repo"; p.mkdir(); git(p,"init","-q"); git(p,"config","user.email","t@e"); git(p,"config","user.name","t"); (p/"a").write_text("a"); (p/"atlas-agent.toml").write_text('schema = "atlas-agent-project/1"\nallowed_untracked = ["corpus_miner/"]\n')
+    if request.node.name == "test_restart_after_launcher_crash_is_visible":
+        (p/"atlas-agent-policy.toml").write_text((Path(__file__).parents[1]/"atlas-agent-policy.toml").read_text())
+    git(p,"add","."); git(p,"commit","-qm","g"); w=Workflow(p); w.init(); return p,w
+def prompt(w, schema=1):
+    network = "\nnetwork_access = false" if schema == 2 else ""
+    raw=f'''+++\nschema = "atlas-agent-prompt/{schema}"\ngeneration = 1\nparent = "genesis"\ncheckpoint = "W21"\naction = "implementation"\nexpected_head = "{git(w.root,"rev-parse","HEAD")}"\nsession_mode = "fresh"{network}\n+++\nReturn exactly: ATLAS_CODEX_SMOKE_OK\n'''.encode(); (w.base/"inbox"/"prompt.txt").write_bytes(raw); return raw
 def sha(raw): return hashlib.sha256(raw).hexdigest()
-def accepted(w): raw=prompt(w); w.ingest(); return raw
+def accepted(w, **kwargs): raw=prompt(w, **kwargs); w.ingest(); return raw
 def test_fake_success_completed_and_captured(repo):
     p,w=repo; raw=accepted(w); fake=FakeExecutor(stdout=b"out",stderr=b"err"); w.execute(1,fake); rec=w._state()["generations"]["1"]; assert rec["status"]=="COMPLETED"; assert fake.launched==1; execution=rec["execution"]; d=w.base/execution["report_dir"]; assert (d/"stdout.log").read_bytes()==b"out"; assert (d/"stderr.log").read_bytes()==b"err"; result=json.loads((d/"result.json").read_text()); assert result["execution_id"]==execution["execution_id"]; assert rec["result"]["prompt_sha256"]==sha(raw)
 def test_fake_nonzero_interrupts(repo):
@@ -227,9 +231,22 @@ def test_concurrent_incompatible_execution_refused(repo):
     with pytest.raises(WorkflowError): w.execute(1,fake)
     assert fake.launched==0
 def test_restart_after_launcher_crash_is_visible(repo):
-    p,w=repo; accepted(w); metadata={"execution_id":"crashed","executor":"fake","started_at":"2026-01-01T00:00:00Z","pid":123,"report_dir":"reports/executions/crashed"}; w.start_run(1,execution=metadata); w2=Workflow(p)
+    p,w=repo
+    accepted(w, schema=2)
+    execution_id="123e4567-e89b-12d3-a456-426614174000"
+    metadata={"execution_id":execution_id,"executor":"codex","started_at":"2026-01-01T00:00:00Z","pid":123,"report_dir":f"reports/executions/{execution_id}","permission_envelope":{"sandbox_mode":"workspace-write","approval_policy":"never","approvals_reviewer":"user","strict_config":True,"ignore_rules":True,"network_access":False}}
+    w.start_run(1,execution=metadata); w2=Workflow(p)
     with pytest.raises((WorkflowError,RuntimeError)): w2.rebuild()
     assert w2._state()["generations"]["1"]["status"]=="RUNNING"
+
+def test_legacy_admission_without_policy_is_rejected_before_start(repo):
+    p,w=repo; accepted(w, schema=1)
+    metadata={"execution_id":"legacy-launch","executor":"fake","started_at":"2026-01-01T00:00:00Z","pid":123,"report_dir":"reports/executions/legacy-launch"}
+    with pytest.raises(WorkflowError, match="^POLICY_CONFIG_REQUIRED$"):
+        w.start_run(1, execution=metadata)
+    assert not any(event["event"] == "RUN_STARTED" for event in w.journal.read())
+    assert not (w.base/"reports"/"policies").exists() or not list((w.base/"reports"/"policies").iterdir())
+    assert w._state()["generations"]["1"]["status"] == "ACCEPTED"
 def test_codex_executor_configuration_is_explicit():
     from tools.atlas_agent.codex_executor import CodexExecutor
     info=CodexExecutor().info(); assert info["executor"]=="codex"; assert "exec" in info["capabilities"] or not info["available"]
