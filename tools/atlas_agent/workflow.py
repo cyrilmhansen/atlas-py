@@ -166,6 +166,17 @@ class Workflow:
             os.replace(p,self._state_file()); fsync_dir(self.base)
         finally:
             if p.exists(): p.unlink()
+
+    @staticmethod
+    def _admit_run_start(state, generation):
+        """Apply the repository-wide single-running admission rule."""
+        active = [
+            record["generation"] for key, record in state.get("generations", {}).items()
+            if record.get("status") == "RUNNING" and int(key) != generation
+        ]
+        if active:
+            raise WorkflowError("RUNNING_GENERATION_EXISTS")
+
     def _publish_execution_artifact(self,path,value):
         """Atomically publish mandatory execution-owner metadata.
 
@@ -1005,6 +1016,10 @@ class Workflow:
         with lock(self.base/"lock"):
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+            self._admit_run_start(s, generation)
+            if (execution is None and x.get("prompt_schema") == "atlas-agent-prompt/2"
+                    and x["action"] != "checkpoint"):
+                raise WorkflowError("EXECUTION_METADATA_REQUIRED")
             ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
             if execution is not None:
@@ -1308,6 +1323,7 @@ class Workflow:
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
             if x["action"]!="checkpoint": raise WorkflowError("GENERATION_IS_NOT_CHECKPOINT")
+            self._admit_run_start(s, generation)
             if type(message) is not str or not message.strip(): raise WorkflowError("CHECKPOINT_COMMIT_MESSAGE_REQUIRED")
             ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
             if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
@@ -1336,6 +1352,7 @@ class Workflow:
             with lock(self.base/"lock"):
                 s,x=self._record(generation)
                 if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+                self._admit_run_start(s, generation)
                 accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
                 prompt_bytes=accepted.read_bytes()
                 try: prompt=parse_prompt(prompt_bytes)
@@ -1743,6 +1760,7 @@ class Workflow:
                 raise WorkflowError("NO_DISPATCHABLE_GENERATION")
             record = min(accepted, key=lambda value: value["generation"])
             generation = record["generation"]
+            self._admit_run_start(state, generation)
         try:
             state = self.execute(generation, executor, observer=observer)
         except Exception as error:
@@ -1797,6 +1815,8 @@ class Workflow:
                 if de and sha(dst)!=p["prompt_sha256"]: raise WorkflowError("RECOVERY_DESTINATION_HASH_MISMATCH")
                 if se and de: raise WorkflowError("RECOVERY_AMBIGUOUS")
                 if not se and not de: raise WorkflowError("RECOVERY_MISSING_BOTH")
+                if p["logical_event"] == "RUN_STARTED":
+                    self._admit_run_start(prior, int(p["generation"]))
                 if p["logical_event"]=="RUN_STARTED" and "execution" in p:
                     self._validate_authoritative_provenance(p,prior)
                     self._validate_historical_session_plan(prior,p)
@@ -1827,5 +1847,7 @@ class Workflow:
                     now=verify_checkpoint_boundary(self.root,self.allowed,intent,ownership)
                 except RepositoryError as error: raise WorkflowError(f"CHECKPOINT_RECOVERY_REPOSITORY_MISMATCH: {error}") from error
                 if not x or x["status"] not in {"ACCEPTED","RUNNING"}: raise WorkflowError("CHECKPOINT_RECOVERY_STATE_MISMATCH")
+                if x["status"] == "ACCEPTED":
+                    self._admit_run_start(s, x["generation"])
                 self._finish_checkpoint(x["generation"],x,intent,now)
             s=replay_journal(self.journal.read()); self._recover_interruption_artifacts(s); self._recover_context_artifacts(s); validate_spool(self.base,s); self._save(s); return s
