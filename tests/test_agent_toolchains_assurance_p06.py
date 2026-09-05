@@ -86,6 +86,10 @@ def test_workflow_binds_machine_manifest_placement_to_actual_repository(
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "atlas-agent.toml").write_text(
+        'schema = "atlas-agent-project/1"\n'
+        'allowed_untracked = ["corpus_miner/"]\n'
+    )
     qualified = _manifest(tmp_path / "qualified")
     lines = [
         'schema = "atlas-agent-machine-capabilities/1"',
@@ -106,7 +110,7 @@ def test_workflow_binds_machine_manifest_placement_to_actual_repository(
     machine = repo / "machine.toml"
     machine.write_text("\n".join(lines) + "\n")
     monkeypatch.setenv("ATLAS_AGENT_CAPABILITIES_FILE", str(machine))
-    with pytest.raises(Exception, match="OVERLAP|AUTHORITY|CONFIG"):
+    with pytest.raises(Exception, match="OVERLAP|AUTHORITY"):
         Workflow(repo).resolve_capabilities({"toolchains": ["rust"], "caches": []})
 
 

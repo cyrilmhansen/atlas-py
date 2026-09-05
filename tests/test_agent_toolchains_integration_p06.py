@@ -790,37 +790,62 @@ def test_start_run_cannot_replace_derived_empty_capability_plan(
     assert not any(event["event"] == "RUN_STARTED" for event in _events(workflow))
 
 
-@pytest.mark.parametrize("schema_kind", ["policy", "snapshot"])
+@pytest.mark.parametrize("schema_kind", ["policy", "snapshot-v1", "snapshot-v2"])
 def test_start_run_rejects_replay_only_schema_as_new_execution(
     tmp_path, schema_kind
 ):
     _, workflow = _project(tmp_path, capabilities=False)
     _accept(workflow)
-    if schema_kind == "policy":
-        historical = json.loads(json.dumps(
-            load_policy(workflow.root / "atlas-agent-policy.toml")
-        ))
-        historical["schema"] = "atlas-agent-policy/1"
-        for profile in historical["profiles"].values():
-            if profile.get("executor") == "codex":
-                profile.pop("required_toolchains", None)
-                profile.pop("writable_caches", None)
-        workflow._policy_for = lambda record: historical
+    historical = json.loads(json.dumps(
+        load_policy(workflow.root / "atlas-agent-policy.toml")
+    ))
+    historical["schema"] = "atlas-agent-policy/1"
+    for profile in historical["profiles"].values():
+        if profile.get("executor") == "codex":
+            profile.pop("required_toolchains", None)
+            profile.pop("writable_caches", None)
+    # This is an independently valid historical policy authority, not a
+    # current policy with only its schema label changed.
+    workflow._policy_for = lambda record: historical
     accepted = next((workflow.base / "accepted").glob("*.txt"))
-    prompt = parse_prompt(accepted.read_bytes())
-    policy = (historical if schema_kind == "policy" else
-              load_policy(workflow.root / "atlas-agent-policy.toml"))
-    snapshot = resolve_policy(policy, prompt)
-    if schema_kind == "snapshot":
+    prompt_bytes = accepted.read_bytes()
+    prompt = parse_prompt(prompt_bytes)
+    snapshot = resolve_policy(historical, prompt)
+    if schema_kind == "snapshot-v1":
         snapshot = dict(snapshot)
-        snapshot["schema"] = "atlas-agent-policy-snapshot/2"
-    with pytest.raises(Exception, match="REPLAY|CURRENT|SCHEMA|POLICY|SESSION_PLAN|PERMISSION"):
-        workflow.start_run(1, execution={
-            "execution_id": "replay-schema-start",
-            "report_dir": "reports/executions/replay-schema-start",
-            "policy_snapshot": snapshot,
-        })
+        snapshot["schema"] = "atlas-agent-policy-snapshot/1"
+        for key in (
+            "codex_profile", "codex_binary_sha256", "codex_config_sha256",
+            "codex_catalog_sha256", "codex_profile_sha256",
+        ):
+            snapshot.pop(key, None)
+    elif schema_kind == "snapshot-v2":
+        # resolve_policy() against the independently valid /1 policy already
+        # produces the historical, capability-free /2 snapshot.
+        assert snapshot["schema"] == "atlas-agent-policy-snapshot/2"
+    execution_id = "123e4567-e89b-12d3-a456-426614174000"
+    execution = {
+        "execution_id": execution_id,
+        "executor": "codex",
+        "started_at": "2026-01-01T00:00:00Z",
+        "pid": 123,
+        "report_dir": f"reports/executions/{execution_id}",
+        "owner_schema": "atlas-agent-execution-owner/3",
+        "policy_snapshot": snapshot,
+        "permission_envelope": {
+            "sandbox_mode": snapshot["sandbox_mode"],
+            "approval_policy": "never",
+            "approvals_reviewer": "user",
+            "strict_config": True,
+            "ignore_rules": True,
+            "network_access": snapshot["network_access"],
+        },
+    }
+    with pytest.raises(Exception, match="REPLAY_ONLY|POLICY_REPLAY_ONLY"):
+        workflow.start_run(1, execution=execution)
     assert not any(event["event"] == "RUN_STARTED" for event in _events(workflow))
+    assert not (workflow.base / "reports" / "policies" /
+                f"{execution_id}.json").exists()
 
 
 def test_journal_rejects_current_owner_snapshot_with_historical_backend(tmp_path):
@@ -931,11 +956,61 @@ def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
 
     _, workflow = _project(tmp_path, capabilities=False)
     _accept(workflow)
-    workflow.execute(1, FakeExecutor(observed_thread_id="tuple-matrix"))
+    class DescriptorFake(FakeExecutor):
+        def prepare_execution(self, spec):
+            prepared = super().prepare_execution(spec)
+            return PreparedExecution(
+                prepared.spec, prepared.executor, prepared.command,
+                prepared.version, prepared.permission_envelope,
+                prepared.policy_snapshot, {
+                    "schema": "atlas-bwrap/1", "provider": "atlas",
+                    "backend": "bubblewrap", "filesystem_mode": "workspace-write",
+                    "filesystem_enforcement": "atlas-bwrap",
+                    "process_enforcement": "atlas-bwrap", "network_enforcement": "codex",
+                    "requested_network_access": False, "resolved_network_access": False,
+                    "user_namespace": "bwrap-default", "pid_namespace": True,
+                    "ipc_namespace": True, "mount_roles": [],
+                    "temporary_storage": {
+                        "tmp": "private-tmpfs", "shm": "private-tmpfs",
+                        "var_tmp": "private-disk-scratch",
+                    },
+                    "bwrap": "bwrap", "bwrap_version": "1", "codex_executable": "codex",
+                    "codex_version": "1", "scratch_backing_class": "disk",
+                    "exec_server_transport": "websocket-loopback",
+                    "inner_codex_sandbox": "workspace-write",
+                    "inner_codex_network": "restricted",
+                },
+            )
+
+    workflow.execute(1, DescriptorFake(observed_thread_id="tuple-matrix"))
     path = workflow.journal.path
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     started = next(row for row in rows if row["event"] == "RUN_STARTED")
     execution = started["payload"]["execution"]
+    # Each negative case begins with a valid current tuple.  Historical
+    # snapshot/backend values are independently valid shapes below, rather
+    # than current objects relabelled as legacy data.
+    if field == "policy_snapshot.schema":
+        historical = json.loads(json.dumps(
+            load_policy(workflow.root / "atlas-agent-policy.toml")
+        ))
+        historical["schema"] = "atlas-agent-policy/1"
+        for profile in historical["profiles"].values():
+            if profile.get("executor") == "codex":
+                profile.pop("required_toolchains", None)
+                profile.pop("writable_caches", None)
+        prompt_path = workflow.base / "prompts" / (
+            workflow._state()["generations"]["1"]["prompt_sha256"] + ".txt"
+        )
+        historical_snapshot = resolve_policy(
+            historical, parse_prompt(prompt_path.read_bytes())
+        )
+        execution["policy_snapshot"] = historical_snapshot
+        value = historical_snapshot["schema"]
+    elif field == "execution_backend_schema":
+        descriptor = execution["sandbox"]
+        for key in ("capability_plan_sha256", "toolchains", "caches", "environment"):
+            descriptor.pop(key, None)
     target = execution
     key = field
     if "." in field:
@@ -953,6 +1028,10 @@ def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
                 other[key][nested] = value
             else:
                 other[key] = value
+            if field == "execution_backend_schema":
+                for descriptor_key in ("capability_plan_sha256", "toolchains",
+                                       "caches", "environment"):
+                    (other.get("sandbox") or {}).pop(descriptor_key, None)
     previous = "0" * 64
     for row in rows:
         row["previous_event_sha256"] = previous
