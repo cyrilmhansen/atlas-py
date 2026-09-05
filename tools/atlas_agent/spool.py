@@ -61,7 +61,7 @@ def validate_spool(root,canonical_state):
                 policy_path=execution.get("historical_policy_path")
                 # Owner schema/2 existed before policy archives.  Require the
                 # archive only for the prompt epoch which introduced it.
-                modern=(execution.get("owner_schema")=="atlas-agent-execution-owner/2"
+                modern=(execution.get("owner_schema")=="atlas-agent-execution-owner/3"
                         and rec.get("prompt_schema")=="atlas-agent-prompt/2")
                 if modern and not isinstance(policy_path,str):
                     errors.append(f"missing historical policy archive g{g}")
@@ -82,6 +82,23 @@ def validate_spool(root,canonical_state):
                             json.loads(artifact.read_text(encoding="utf-8"))
                         except (OSError,UnicodeError,json.JSONDecodeError):
                             errors.append(f"historical policy archive invalid g{g}")
+                capability_path=execution.get("capability_archive_path")
+                if capability_path is not None:
+                    cp=Path(capability_path)
+                    if (cp.is_absolute() or "\\" in str(cp) or "." in cp.parts
+                            or ".." in cp.parts or not str(cp).startswith("reports/")):
+                        errors.append(f"invalid capability archive path g{g}")
+                    else:
+                        expected_execution_files.add(str(cp.relative_to("reports")))
+                        expected_name=f"reports/capabilities/{execution.get('execution_id')}.json"
+                        if str(cp) != expected_name:
+                            errors.append(f"capability archive binding mismatch g{g}")
+                        try:
+                            if cp.is_symlink() or hashlib.sha256((base/cp).read_bytes()).hexdigest() != execution.get("capability_archive_sha256"):
+                                errors.append(f"capability archive mismatch g{g}")
+                            json.loads((base/cp).read_text(encoding="utf-8"))
+                        except (OSError,UnicodeError,json.JSONDecodeError):
+                            errors.append(f"capability archive invalid g{g}")
                 for field in ("context_path", "effective_prompt_path"):
                     value=execution.get(field)
                     if value is not None:

@@ -19,11 +19,13 @@ import threading
 import select
 import tempfile
 import fcntl
+import shlex
 from dataclasses import replace
 from pathlib import Path
 
 from .codex_executor import CodexExecutor
 from .executor import ExecutorError, ExecutionResult, PreparedExecution
+from .toolchains import CacheStore
 
 
 class AtlasSandboxError(ExecutorError):
@@ -374,6 +376,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         # resources after an executor failure.
         self._execution_ownership_transferred = False
         self._run_lock = threading.Lock()
+        self._capability_locks = []
+        self._capability_plan = None
+
+    def _release_capability_locks(self):
+        while self._capability_locks:
+            self._capability_locks.pop().release()
 
     def _validate_policy(self):
         super()._validate_policy()
@@ -464,6 +472,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             try:
                 self._stop_server()
             finally:
+                self._release_capability_locks()
                 if self._run_lock.locked():
                     self._run_lock.release()
             return
@@ -533,6 +542,25 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "TMP", "/tmp",
                 "--setenv", "TEMP", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
                 "--chdir", str(root)]
+        plan = getattr(spec, "capability_plan", None)
+        if plan is not None:
+            for mount in plan.mounts:
+                if mount.authority_fd < 0:
+                    raise AtlasSandboxError("ATLAS_TOOLCHAIN_AUTHORITY_INVALID")
+                args += ["--ro-bind", mount.authority_path, str(mount.guest_root)]
+            for cache in plan.caches:
+                cache.backing.mkdir(parents=True, exist_ok=True)
+                args += ["--bind", str(cache.backing), str(cache.guest_path)]
+            # Replace the bootstrap PATH with the controller-resolved one.
+            pos = args.index("--setenv")
+            while pos < len(args) - 1:
+                if args[pos + 1] == "PATH":
+                    args[pos + 2] = plan.environment()["PATH"]
+                    break
+                pos += 1
+            for key, value in plan.environment().items():
+                if key not in {"HOME", "CODEX_HOME", "TMPDIR", "TMP", "TEMP", "PATH"}:
+                    args += ["--setenv", key, value]
         profile = (spec.policy_snapshot or {}).get("codex_profile")
         # In production these files are copied into scratch before launch.
         # Keep direct callers useful by projecting qualified files read-only
@@ -775,7 +803,10 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
-                pass_fds=(runtime_fd,),
+                pass_fds=(runtime_fd,) + tuple(
+                    m.authority_fd for m in
+                    getattr(getattr(spec, "capability_plan", None), "mounts", ())
+                ),
             )
             self._server_stdin = self._server.stdin
             if self._server.stdout is None:
@@ -947,6 +978,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 record("cleanup", error)
         if reaped and not errors:
             self._server = self._server_stdin = self._scratch = self._server_url = None
+            self._release_capability_locks()
         elif reaped and not any(isinstance(error, AtlasSandboxError) and
                                 str(error) == "ATLAS_SANDBOX_SERVER_UNREAPED"
                                 for _, error in errors):
@@ -1049,6 +1081,12 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise AtlasSandboxError("ATLAS_SANDBOX_EXEC_SERVER_UNAVAILABLE")
         env = super()._environment()
         env["CODEX_EXEC_SERVER_URL"] = self._server_url
+        # Codex is the process/start controller for the namespace exec-server.
+        # Give it the same sealed, controller-authored environment that the
+        # server itself receives; otherwise an explicit process/start env
+        # loses the qualified values before reaching the namespace child.
+        if self._capability_plan is not None:
+            env.update(self._capability_plan.environment())
         return env
 
     def prepare_execution(self, spec):
@@ -1059,6 +1097,9 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         try:
             return self._prepare_execution_locked(spec)
         except BaseException:
+            self._release_capability_locks()
+            if self._capability_plan is not None:
+                self._capability_plan.close_authority()
             if self._scratch is not None and self._server is None:
                 try:
                     self.scratch_store.cleanup(self._scratch)
@@ -1069,6 +1110,16 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise
 
     def _prepare_execution_locked(self, spec):
+        self._capability_plan = getattr(spec, "capability_plan", None)
+        if self._capability_plan is not None:
+            try:
+                for cache in self._capability_plan.caches:
+                    store = CacheStore(cache.backing.parents[3])
+                    store.prepare_backing(cache.backing)
+                    self._capability_locks.append(store.lock_directory(cache.backing))
+            except Exception as error:
+                self._release_capability_locks()
+                raise AtlasSandboxError("ATLAS_CACHE_PREPARATION_FAILED") from error
         prepared = super().prepare_execution(spec)
         if spec.action in {"patch_review", "state_audit"} and self.network_access:
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH")
@@ -1105,10 +1156,117 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             "exec_server_transport": "CODEX_EXEC_SERVER_URL/websocket-loopback",
             "inner_codex_sandbox": self.sandbox, "inner_codex_network": "enabled" if self.network_access else "restricted",
         }
+        if self._capability_plan is not None:
+            self._descriptor.update({
+                "capability_plan_sha256": self._capability_plan.sha256,
+                "toolchains": [{"guest_root": str(t.guest_root), "mount": "ro"}
+                               for t in self._capability_plan.toolchains],
+                "caches": [{"guest_path": str(c.guest_path), "mount": "rw"}
+                           for c in self._capability_plan.caches],
+                "environment": self._capability_plan.environment(),
+            })
+            self._capability_probe()
         return replace(prepared, runtime_handle=self._descriptor)
 
     def sandbox_descriptor(self):
         return dict(self._descriptor or {})
+
+    def _capability_probe(self):
+        """Verify qualified mounts and environment in the execution namespace."""
+        plan = self._capability_plan
+        if plan is None:
+            return
+        base = [self.bwrap, "--die-with-parent", "--new-session",
+                "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib",
+                "--ro-bind", "/lib64", "/lib64", "--symlink", "usr/bin", "/bin",
+                "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+                "--dir", "/home", "--dir", "/home/atlas", "--clearenv"]
+        for mount in plan.mounts:
+            # Qualification is descriptor-relative in spirit as well as in
+            # the plan digest: reject a replaced source object before giving
+            # it to bubblewrap.
+            try:
+                current = mount.host_root.stat()
+                if current.st_dev != mount.st_dev or current.st_ino != mount.st_ino:
+                    raise OSError("qualified source object changed")
+            except (OSError, StopIteration) as error:
+                raise AtlasSandboxError("ATLAS_TOOLCHAIN_SANDBOX_PROBE_FAILED") from error
+            if mount.authority_fd < 0:
+                raise AtlasSandboxError("ATLAS_TOOLCHAIN_AUTHORITY_INVALID")
+            base += ["--ro-bind", mount.authority_path, str(mount.guest_root)]
+        for cache in plan.caches:
+            cache.backing.mkdir(parents=True, exist_ok=True)
+            base += ["--bind", str(cache.backing), str(cache.guest_path)]
+        for key, value in plan.environment().items():
+            base += ["--setenv", key, value]
+        try:
+            commands = [c for t in plan.toolchains for c in t.commands]
+            for command in commands:
+                discovery = subprocess.run(
+                    base + ["--", "/bin/sh", "-c",
+                            "test \"$(command -v %s)\" = %s" % (
+                                shlex.quote(command.name),
+                                shlex.quote(str(command.guest_path)))],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                    timeout=5, pass_fds=tuple(m.authority_fd for m in plan.mounts),
+                )
+                if discovery.returncode != 0:
+                    raise AtlasSandboxError("ATLAS_TOOLCHAIN_COMMAND_DISCOVERY_FAILED")
+                result = subprocess.run(
+                    base + ["--", str(command.guest_path), *command.probe_args],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                    timeout=5, pass_fds=tuple(m.authority_fd for m in plan.mounts))
+                identity = hashlib.sha256(
+                    result.stdout + b"\0" + result.stderr).hexdigest()
+                if result.returncode != 0 or identity != command.probe_output_sha256:
+                    raise AtlasSandboxError("ATLAS_TOOLCHAIN_SANDBOX_PROBE_FAILED")
+            # A commandless plan still receives a real namespace check.  This
+            # also proves each selected cache's guest mount is writable.
+            checks = []
+            for cache in plan.caches:
+                checks.append(f"p={str(cache.guest_path)!r}; mkdir -p \"$p/.atlas-preflight\"; rmdir \"$p/.atlas-preflight\"")
+            for mount in plan.mounts:
+                checks.append(f"p={str(mount.guest_root)!r}; ! mkdir \"$p/.atlas-preflight-ro\"")
+            if checks:
+                result = subprocess.run(base + ["--", "/bin/sh", "-c",
+                                                " && ".join(checks)],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, check=False,
+                                        timeout=5,
+                                        pass_fds=tuple(m.authority_fd
+                                                       for m in plan.mounts))
+                if result.returncode != 0:
+                    raise AtlasSandboxError("ATLAS_TOOLCHAIN_SANDBOX_PROBE_FAILED")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AtlasSandboxError("ATLAS_TOOLCHAIN_SANDBOX_PROBE_FAILED") from error
+
+    def start_exec_server(self, prepared):
+        """Start the already prepared production exec-server.
+
+        Normal workflow execution calls this through ``run_execution`` after
+        ownership transfer; the public method is useful to embedders without
+        creating a second launch path.
+        """
+        if not isinstance(prepared, PreparedExecution):
+            raise AtlasSandboxError("ATLAS_SANDBOX_PREPARATION_REQUIRED")
+        runtime_fd = self._sealed_runtime_fd(prepared.spec.policy_snapshot)
+        self._start_server(prepared.spec, runtime_fd)
+        return self._server
+
+    def exec_server_child(self, command):
+        """Run a small controller-authored probe in the effective plan.
+
+        This is intentionally unavailable until preparation has installed the
+        plan; arbitrary commands never acquire capability mount authority.
+        """
+        plan = self._capability_plan
+        if plan is None:
+            raise AtlasSandboxError("ATLAS_SANDBOX_CAPABILITY_PROBE_FAILED")
+        env = {"HOME": "/home/atlas", "CODEX_HOME": "/home/atlas/.codex",
+               "TMPDIR": "/tmp", "TMP": "/tmp", "TEMP": "/tmp",
+               **plan.environment()}
+        return subprocess.run(command, env=env, capture_output=True, text=True,
+                              check=True)
 
     def _bwrap_version(self):
         if not self.bwrap:
@@ -1191,6 +1349,8 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 except BaseException as error:
                     teardown=error
                 finally:
+                    if self._capability_plan is not None:
+                        self._capability_plan.close_authority()
                     if runtime_fd is not None:
                         try: os.close(runtime_fd)
                         except OSError: pass

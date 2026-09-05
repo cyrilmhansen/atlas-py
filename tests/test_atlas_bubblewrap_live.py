@@ -1,6 +1,5 @@
 """Capability-gated tests of the actual bubblewrap boundary."""
 import os
-import hashlib
 import base64
 import json
 import select
@@ -13,6 +12,27 @@ import pytest
 
 from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor, AtlasSandboxError, _native_codex
 from tools.atlas_agent.executor import ExecutionSpec
+from tools.atlas_agent.policy import load_policy, resolve_policy
+from tools.atlas_agent.prompt import parse_prompt
+
+
+def _current_policy_snapshot():
+    """Resolve the live fixture through the current policy authority."""
+    raw = b"""+++
+schema = "atlas-agent-prompt/2"
+generation = 1
+parent = "genesis"
+checkpoint = "live"
+action = "patch_review"
+expected_head = "0000000000000000000000000000000000000000"
+session_mode = "fresh"
+network_access = false
++++
+live bubblewrap fixture
+"""
+    prompt = parse_prompt(raw)
+    policy = load_policy(Path(__file__).parents[1] / "atlas-agent-policy.toml")
+    return resolve_policy(policy, prompt)
 
 
 def _ws_send(sock, value):
@@ -174,10 +194,7 @@ def test_live_sealed_codex_exec_server_uses_opt_runtime(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    snapshot = {
-        "schema": "atlas-agent-policy-snapshot/2",
-        "codex_binary_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
-    }
+    snapshot = _current_policy_snapshot()
     spec = ExecutionSpec(1, "0" * 64, "patch_review", repo / "prompt", repo,
                         "live-runtime", tmp_path / "report", tmp_path / "runtime",
                         policy_snapshot=snapshot)
@@ -224,10 +241,7 @@ def test_live_exec_server_spawns_true_through_linux_sandbox(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    snapshot = {
-        "schema": "atlas-agent-policy-snapshot/2",
-        "codex_binary_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
-    }
+    snapshot = _current_policy_snapshot()
     spec = ExecutionSpec(1, "0" * 64, "patch_review", repo / "prompt", repo,
                         "live-process", tmp_path / "report", tmp_path / "runtime",
                         policy_snapshot=snapshot)

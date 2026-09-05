@@ -12,6 +12,7 @@ from .codex_executor import CodexExecutor
 from .bubblewrap import AtlasBubblewrapExecutor
 from .telemetry import USAGE_SCHEMA,collect_usage,load_presentation_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
+from .toolchains import CapabilityResolver, load_machine_capabilities, CapabilityError
 class WorkflowError(RuntimeError): pass
 class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
@@ -22,6 +23,7 @@ SAFE_REUSE_FALLBACKS={
     "REUSE_GENERATION_GAP_EXCEEDED": "max_reuse_generation_gap",
     "REUSE_HOT_HOPS_EXCEEDED": "max_hot_reuse_hops",
     "REUSE_LINEAGE_ADVANCED": "advanced_reuse_lineage",
+    "REUSE_CAPABILITIES_INCOMPATIBLE": "incompatible_capabilities",
 }
 SUPPLEMENT_MAX_BYTES=4096
 _SAFE_CONTEXT_VALUE=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
@@ -212,6 +214,46 @@ class Workflow:
             finally:
                 if staged.exists(): staged.unlink()
         return str(path.relative_to(self.base)), hashlib.sha256(raw).hexdigest()
+    def _publish_capability_archive(self, plan, execution_id):
+        """Publish the immutable machine-capability decision independently."""
+        if not isinstance(execution_id, str) or not _EXECUTION_ID.fullmatch(execution_id):
+            raise WorkflowError("BAD_EXECUTION_METADATA")
+        directory = self.base/"reports"/"capabilities"
+        if (self.base/"reports").is_symlink() or directory.is_symlink() or directory.parent.is_symlink():
+            raise WorkflowError("CAPABILITY_ARCHIVE_INVALID")
+        directory.mkdir(parents=True, exist_ok=True)
+        body = {"schema": "atlas-agent-capability-archive/1",
+                "capability_plan_sha256": plan.sha256,
+                "capability_provenance": plan.provenance()}
+        # Keep the dedicated archive directly auditable (and not dependent on
+        # understanding the executor's nested metadata shape).
+        body.update({key: value for key, value in body["capability_provenance"].items()
+                     if key in {"machine_catalog", "toolchains", "caches",
+                                "environment"}})
+        raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        body["archive_sha256"] = digest
+        published = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+        path = directory/(execution_id+".json")
+        if path.is_symlink():
+            raise WorkflowError("CAPABILITY_ARCHIVE_INVALID")
+        if path.exists():
+            if path.read_bytes() != published:
+                raise WorkflowError("CAPABILITY_ARCHIVE_INVALID")
+        else:
+            fd, temporary = tempfile.mkstemp(prefix="capability-", dir=directory)
+            staged = Path(temporary)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(published); stream.flush(); os.fsync(stream.fileno())
+                os.link(staged, path)
+            except FileExistsError:
+                if path.is_symlink() or path.read_bytes() != published:
+                    raise WorkflowError("CAPABILITY_ARCHIVE_INVALID")
+            finally:
+                if staged.exists(): staged.unlink()
+        fsync_dir(directory)
+        return str(path.relative_to(self.base)), hashlib.sha256(published).hexdigest()
     def _execution_artifact(self,transaction):
         return {**transaction["execution"],"generation":transaction["generation"],"prompt_sha256":transaction["prompt_sha256"],"action":transaction["action"]}
     def _publish_missing_execution_file(self,path,data):
@@ -347,6 +389,43 @@ class Workflow:
             if event["event"] == "RUN_STARTED" and isinstance(event["payload"].get("execution"), dict):
                 before=replay_journal([e for e in events if e["seq"] < event["seq"]])
                 self._validate_historical_session_plan(before, event["payload"])
+            if event["event"] == "RUN_STARTED":
+                execution = event["payload"].get("execution") or {}
+                report = execution.get("report_dir")
+                if isinstance(report, str):
+                    artifact = self.base / report / "execution.json"
+                    try:
+                        archived = json.loads(artifact.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                        raise WorkflowError("HISTORICAL_PROVENANCE_INVALID") from error
+                    if not isinstance(archived, dict):
+                        raise WorkflowError("HISTORICAL_PROVENANCE_INVALID")
+                    for key in ("capability_plan_sha256", "capability_provenance"):
+                        if key in execution and archived.get(key) != execution[key]:
+                            raise WorkflowError("HISTORICAL_PROVENANCE_TAMPER")
+                    archive_name = execution.get("capability_archive_path")
+                    if archive_name:
+                        archive = self.base/archive_name
+                        try:
+                            data = json.loads(archive.read_text(encoding="utf-8"))
+                            canonical = {k: data[k] for k in data if k != "archive_sha256"}
+                            archive_digest = hashlib.sha256(
+                                json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+                            ).hexdigest()
+                        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+                            raise WorkflowError("HISTORICAL_CAPABILITY_TAMPER")
+                        if (data.get("archive_sha256") != archive_digest or
+                                data.get("capability_plan_sha256") != execution.get("capability_plan_sha256") or
+                                data.get("capability_provenance") != execution.get("capability_provenance") or
+                                not isinstance(data.get("capability_provenance"), dict) or
+                                data["capability_provenance"].get("capability_plan_sha256") !=
+                                    execution.get("capability_plan_sha256") or
+                                any(data.get(key) != data["capability_provenance"].get(key)
+                                    for key in ("machine_catalog", "toolchains", "caches",
+                                                "environment")) or
+                                hashlib.sha256(archive.read_bytes()).hexdigest() !=
+                                execution.get("capability_archive_sha256")):
+                            raise WorkflowError("HISTORICAL_CAPABILITY_TAMPER")
         for event in events:
             if event["event"] in {"RUN_COMPLETED", "RUN_INTERRUPTED"}:
                 before=replay_journal([e for e in events if e["seq"] < event["seq"]])
@@ -394,7 +473,22 @@ class Workflow:
             raw=path.read_bytes()
             data=json.loads(raw.decode("utf-8"))
             from .policy import validate_policy
-            validate_policy(data)
+            try:
+                validate_policy(data)
+            except PolicyError:
+                # Early /2 policy archives included empty capability keys on
+                # the manual profile.  Preserve their bytes and hash, but
+                # interpret that historical presentation as capability-free.
+                if (data.get("schema") == "atlas-agent-policy/2" and
+                        isinstance(data.get("profiles"), dict) and
+                        all(data["profiles"].get("checkpoint", {}).get(key) == []
+                            for key in ("required_toolchains", "writable_caches"))):
+                    data["profiles"]["checkpoint"].pop("required_toolchains", None)
+                    data["profiles"]["checkpoint"].pop("writable_caches", None)
+                    validate_policy(data)
+                    data["_atlas_legacy_empty_manual_capabilities"] = True
+                else:
+                    raise
         except (OSError, UnicodeError, json.JSONDecodeError, PolicyError) as error:
             raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID") from error
         if hashlib.sha256(raw).hexdigest()!=digest:
@@ -410,7 +504,7 @@ class Workflow:
         """
         execution=payload.get("execution") or {}
         snapshot=execution.get("policy_snapshot")
-        if execution.get("owner_schema") != "atlas-agent-execution-owner/2":
+        if execution.get("owner_schema") not in {"atlas-agent-execution-owner/2", "atlas-agent-execution-owner/3"}:
             return
         record=state.get("generations", {}).get(str(payload.get("generation")))
         if not isinstance(record, dict) or not isinstance(snapshot, dict):
@@ -441,7 +535,24 @@ class Workflow:
         # Do not permit a rehashed owner to change qualified policy identity.
         # The archive is independent of the journal's policy_snapshot.
         if self._historical_policy(execution) is not None:
+            if policy.get("_atlas_legacy_empty_manual_capabilities"):
+                # The archived bytes remain the hash authority even though
+                # their obsolete empty manual presentation was normalized.
+                base["policy_config_sha256"] = snapshot["policy_config_sha256"]
+            # Capability identity is reconstructed from the execution's
+            # independent archive, never from today's machine authority.
+            archive_name = execution.get("capability_archive_path")
+            if archive_name:
+                try:
+                    archived = json.loads((self.base/archive_name).read_text())
+                    base = dict(base)
+                    base["capability_plan_sha256"] = archived["capability_plan_sha256"]
+                except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+                    raise WorkflowError("HISTORICAL_CAPABILITY_TAMPER") from error
+            historical_schema = self._historical_policy(execution).get("schema")
             for key,value in base.items():
+                if historical_schema == "atlas-agent-policy/1" and key in {"required_toolchains", "writable_caches"}:
+                    continue
                 if key not in {"session_mode","session_mode_requested",
                                "session_mode_resolved","reuse_fallback_reason",
                                "reused_from_execution_id","requested_thread_id",
@@ -612,6 +723,25 @@ class Workflow:
             return None
         try: return load_policy(path)
         except PolicyError as error: raise WorkflowError(str(error)) from error
+    def resolve_capabilities(self, requirements):
+        """Resolve the machine-local capability authority for an execution."""
+        try:
+            manifest = load_machine_capabilities(self.root)
+            # Bind cache authority to this repository, rather than to a
+            # caller-provided label or the historical literal "project".
+            manifest = dict(manifest)
+            root = self.root.resolve()
+            git = root / ".git"
+            try:
+                gst = git.stat()
+                manifest["repository_root"] = str(root)
+                manifest["repository_identity"] = str(root)
+                manifest["repository_git_identity"] = f"{gst.st_dev}:{gst.st_ino}"
+            except OSError as error:
+                raise CapabilityError("ATLAS_TOOLCHAIN_CACHE_INVALID") from error
+            return CapabilityResolver(manifest).resolve(requirements)
+        except CapabilityError as error:
+            raise WorkflowError(str(error)) from error
     @staticmethod
     def _execution_result(record):
         return canonical_execution_result(record)
@@ -635,7 +765,7 @@ class Workflow:
         thread_id = result.get("session_id")
         available = parent["status"] in {"COMPLETED", "INTERRUPTED"} and bool(execution)
         provenance = (parent.get("result") or {}).get("report_provenance") or execution.get("report_provenance")
-        if execution.get("provenance_version") == 2:
+        if execution.get("provenance_version") == 3:
             if not isinstance(provenance, dict) or provenance.get("status") not in {"available", "unavailable"}:
                 raise WorkflowError("REPORT_PROVENANCE_MISSING")
             available = available and provenance["status"] == "available"
@@ -702,7 +832,7 @@ class Workflow:
         if len(candidates)!=1: raise WorkflowError("REUSE_TARGET_UNKNOWN")
         target, owner=candidates[0]; target_result=self._execution_result(target)
         target_snapshot=owner.get("policy_snapshot")
-        if owner.get("owner_schema")!="atlas-agent-execution-owner/2" or not isinstance(target_snapshot,dict):
+        if owner.get("owner_schema")!="atlas-agent-execution-owner/3" or not isinstance(target_snapshot,dict):
             raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
         try:
             validate_snapshot(target_snapshot)
@@ -710,7 +840,7 @@ class Workflow:
             # A damaged owner is not equivalent to a policy rollover.  Keep
             # this fail-closed so reuse fallback cannot conceal tampering.
             raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID") from error
-        if target_snapshot.get("schema") != "atlas-agent-policy-snapshot/2":
+        if target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}:
             raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
         target_prompt_path=self.base/"prompts"/(target["prompt_sha256"]+".txt")
         try:
@@ -721,6 +851,9 @@ class Workflow:
             if target_policy is not None:
                 qualified=resolve_policy(target_policy,target_prompt)
                 for key,value in qualified.items():
+                    if (target_policy.get("schema") == "atlas-agent-policy/1" and
+                            key in {"required_toolchains", "writable_caches"}):
+                        continue
                     if key not in {"session_mode","session_mode_requested",
                                    "session_mode_resolved","reuse_fallback_reason",
                                    "reused_from_execution_id","requested_thread_id",
@@ -759,9 +892,11 @@ class Workflow:
                 raise WorkflowError("REUSE_LINEAGE_TAINTED")
             return 1+lineage_depth(parents[0],seen|{edge})
         target_depth=lineage_depth(target,set())
+        if owner.get("capability_plan_sha256") != snapshot.get("capability_plan_sha256"):
+            raise WorkflowError("REUSE_CAPABILITIES_INCOMPATIBLE")
         incompatible = (
-            target_snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
-            or snapshot.get("schema") != "atlas-agent-policy-snapshot/2"
+            target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
+            or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
         )
         for key in ("action","profile","executor","requested_model","requested_reasoning_effort","sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
             incompatible = incompatible or target_snapshot.get(key)!=snapshot.get(key)
@@ -774,7 +909,7 @@ class Workflow:
             candidate_snapshot=candidate_owner.get("policy_snapshot") or {}
             candidate_has_owner=bool(candidate_owner)
             if candidate_has_owner:
-                if candidate_owner.get("owner_schema") != "atlas-agent-execution-owner/2":
+                if candidate_owner.get("owner_schema") not in {"atlas-agent-execution-owner/2", "atlas-agent-execution-owner/3"}:
                     # Only descendants which can affect this thread need an
                     # owner; unrelated legacy history remains compatible.
                     candidate_snapshot={}
@@ -794,7 +929,7 @@ class Workflow:
                       candidate_snapshot.get("requested_thread_id")==thread_id)
             if not relevant:
                 continue
-            if not candidate_has_owner or candidate_owner.get("owner_schema") != "atlas-agent-execution-owner/2":
+            if not candidate_has_owner or candidate_owner.get("owner_schema") not in {"atlas-agent-execution-owner/2", "atlas-agent-execution-owner/3"}:
                 raise WorkflowError("REUSE_LINEAGE_TAINTED")
             requested=candidate_snapshot.get("session_mode_requested",
                                               candidate_snapshot.get("session_mode"))
@@ -845,7 +980,8 @@ class Workflow:
         mode=snapshot.get("session_mode")
         if not isinstance(observed,str) or not observed:
             raise WorkflowError("FRESHNESS_UNVERIFIED" if mode=="fresh" else "REUSE_THREAD_UNVERIFIED")
-        if mode=="fresh" and observed in self._known_thread_ids(state):
+        if (mode=="fresh" and observed in self._known_thread_ids(state)
+                and snapshot.get("reuse_fallback_reason") != "incompatible_capabilities"):
             raise WorkflowError("FRESHNESS_VIOLATION")
         if mode=="reuse" and observed!=snapshot.get("requested_thread_id"):
             raise WorkflowError("REUSE_THREAD_MISMATCH")
@@ -876,17 +1012,24 @@ class Workflow:
                     raise WorkflowError("EXECUTION_ID_COLLISION")
                 if (self.base/report_dir).exists(): raise WorkflowError("EXECUTION_REPORT_COLLISION")
             historical_policy_path=None
-            if (execution is not None and x.get("prompt_schema") == "atlas-agent-prompt/2"
-                    and x["action"] != "checkpoint"):
+            if execution is not None and x["action"] != "checkpoint":
                 # start_run is also a supported modern launcher boundary.  It
                 # must acquire exactly the same policy authority as execute,
                 # rather than leaving replay to consult today's TOML.
                 if not isinstance(execution.get("execution_id"), str):
                     raise WorkflowError("BAD_EXECUTION_METADATA")
                 policy=self._policy_for(x)
+                if policy is None:
+                    raise WorkflowError("POLICY_CONFIG_REQUIRED")
                 prompt=parse_prompt(self._find(self.base/"accepted",generation,x["prompt_sha256"]).read_bytes())
-                try: derived=resolve_policy(policy,prompt)
+                try: derived=resolve_policy(policy,prompt,for_new_execution=True)
                 except PolicyError as error: raise WorkflowError(str(error)) from error
+                # The legacy launcher has no executor preparation handoff and
+                # therefore cannot safely establish retained capability
+                # authority.  Fail closed rather than allowing it to create a
+                # capability-bearing RUN_STARTED transaction.
+                if derived.get("required_toolchains") or derived.get("writable_caches"):
+                    raise WorkflowError("START_RUN_CAPABILITY_UNSUPPORTED")
                 if prompt.session_mode=="reuse":
                     try: derived=self._reuse_snapshot(s,x,derived)
                     except WorkflowError as error:
@@ -898,7 +1041,7 @@ class Workflow:
                                         "reuse_fallback_reason":reason})
                 supplied=execution.get("policy_snapshot")
                 if supplied is not None:
-                    try: validate_snapshot(supplied)
+                    try: validate_snapshot(supplied,for_new_execution=True)
                     except PolicyError as error:
                         raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH") from error
                     immutable={"action","checkpoint","profile","executor","requested_model",
@@ -906,10 +1049,24 @@ class Workflow:
                                "web_search","apps_enabled","session_storage","policy_config_sha256"}
                     if any(supplied.get(key)!=derived.get(key) for key in immutable):
                         raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
+                    # Capability authority is controller-derived.  A launcher
+                    # cannot smuggle a plan through an otherwise valid
+                    # snapshot when the selected profile is capability-free.
+                    if not (derived.get("required_toolchains") or
+                            derived.get("writable_caches")):
+                        if (supplied.get("capability_plan_sha256") or
+                                supplied.get("capability_archive_path") or
+                                supplied.get("capability_archive_sha256") or
+                                any(execution.get(k) for k in (
+                                    "capability_plan_sha256",
+                                    "capability_provenance",
+                                    "capability_archive_path",
+                                    "capability_archive_sha256"))):
+                            raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
                     # The caller's complete plan is retained, but its
                     # reuse lineage is checked again during recovery/replay.
                     derived=supplied
-                execution.update({"owner_schema":"atlas-agent-execution-owner/2",
+                execution.update({"owner_schema":"atlas-agent-execution-owner/3",
                                   "policy_snapshot":derived})
                 historical_policy_path, historical_policy_sha256=self._publish_policy_archive(
                     policy, execution["execution_id"])
@@ -929,7 +1086,7 @@ class Workflow:
                     context_path=f"reports/contexts/{execution_id}.txt"
                     effective_path=f"reports/contexts/{execution_id}-effective.txt"
                     effective=hashlib.sha256(src.read_bytes()+context.encode()).hexdigest()
-                    execution.update({"provenance_version":2,"report_provenance":{"status":"unavailable"},
+                    execution.update({"provenance_version":3,"report_provenance":{"status":"unavailable"},
                                       "prompt_input":"accepted_prompt_plus_atlas_context",
                                       "context_path":context_path,"effective_prompt_path":effective_path,
                                       "context_sha256":hashlib.sha256(context.encode()).hexdigest(),
@@ -992,7 +1149,7 @@ class Workflow:
                 payload={"generation":generation,"action":x["action"],"reason":"REPOSITORY_POLICY_VIOLATION"};
                 if x.get("execution") is not None: payload["execution"]=x["execution"]
                 if isinstance(r.get("executor_result"),dict): payload["executor_result"]=r["executor_result"]
-                if isinstance(x.get("execution"),dict) and x["execution"].get("provenance_version")==2:
+                if isinstance(x.get("execution"),dict) and x["execution"].get("provenance_version")==3:
                     payload["result"]={"report_provenance":r.get("report_provenance", {"status":"unavailable"})}
                 move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload,hook)
                 self._project_interruption("REPOSITORY_POLICY_VIOLATION")
@@ -1110,7 +1267,7 @@ class Workflow:
                 owner_id=(x.get("execution") or {}).get("execution_id")
                 if executor_result.get("execution_id") == owner_id:
                     payload["executor_result"] = executor_result
-            if isinstance(x.get("execution"),dict) and x["execution"].get("provenance_version")==2:
+            if isinstance(x.get("execution"),dict) and x["execution"].get("provenance_version")==3:
                 descriptor={"status":"unavailable"}
                 if x["execution"].get("executor")=="codex":
                     try:
@@ -1179,8 +1336,17 @@ class Workflow:
                 if prompt.prompt_schema=="atlas-agent-prompt/1" and prompt.session_mode=="reuse" and policy is None:
                     raise WorkflowError("REUSE_TARGET_MISSING")
                 if policy is not None:
-                    try: snapshot=resolve_policy(policy,prompt)
+                    try: snapshot=resolve_policy(policy,prompt,for_new_execution=True)
                     except PolicyError as error: raise WorkflowError(str(error)) from error
+                    requirements = {"toolchains": snapshot.get("required_toolchains", []),
+                                    "caches": snapshot.get("writable_caches", [])}
+                    capability_plan = (
+                        self.resolve_capabilities(requirements)
+                        if requirements["toolchains"] or requirements["caches"] else None
+                    )
+                    if capability_plan is not None:
+                        snapshot = dict(snapshot)
+                        snapshot["capability_plan_sha256"] = capability_plan.sha256
                     if prompt.session_mode=="reuse":
                         try:
                             snapshot=self._reuse_snapshot(s,x,snapshot)
@@ -1200,6 +1366,8 @@ class Workflow:
                                 "reuse_fallback_reason": reason,
                             })
                     if snapshot["executor"]=="manual": raise WorkflowError("CHECKPOINT_MANUAL_REQUIRED")
+                if snapshot is None:
+                    capability_plan = None
                 if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
                 executor=executor or AtlasBubblewrapExecutor()
                 if snapshot and isinstance(executor,CodexExecutor):
@@ -1207,13 +1375,14 @@ class Workflow:
                 ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
                 if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
                 execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
+                capability_archive_path = None
                 context, context_info = self._parent_context(s, generation)
                 context_sha256=hashlib.sha256(context).hexdigest()
                 effective_input=x["prompt_sha256"]
                 effective_input=hashlib.sha256(prompt_bytes+context).hexdigest()
                 context_path=self.base/"reports"/"contexts"/(execution_id+".txt")
                 effective_path=self.base/"reports"/"contexts"/(execution_id+"-effective.txt")
-                spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"),snapshot,prompt_bytes+context,"bytes-v1",effective_input)
+                spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"),snapshot,prompt_bytes+context,"bytes-v1",effective_input,capability_plan)
                 preparation_owned = True
                 prepared=executor.prepare_execution(spec)
                 if snapshot:
@@ -1221,7 +1390,24 @@ class Workflow:
                     except PolicyError as error: raise WorkflowError(str(error)) from error
                     if current_policy_hash!=snapshot["policy_config_sha256"]: raise WorkflowError("POLICY_RESOLUTION_MISMATCH")
                 if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
-                metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":2,"report_provenance":{"status":"unavailable"}}
+                metadata={"execution_id":execution_id,"executor":prepared.executor,"started_at":utc_now(),"pid":None,"report_dir":str(report_dir.relative_to(self.base)),"permission_envelope":prepared.permission_envelope,"provenance_version":3,"report_provenance":{"status":"unavailable"}}
+                if capability_plan is not None:
+                    provenance = capability_plan.provenance()
+                    metadata.update({
+                        "capability_plan_sha256": capability_plan.sha256,
+                        "capability_qualification": provenance["toolchains"][0]["qualification"] if provenance["toolchains"] else "",
+                        "cache_guest_path": provenance["caches"][0]["guest_path"] if provenance["caches"] else "",
+                        "cache_lifetime": "persistent" if provenance["caches"] else "",
+                        "mutable_unhashed_cache": bool(provenance["caches"]),
+                        "capability_provenance": provenance,
+                    })
+                    capability_archive_path, capability_archive_sha256 = (
+                        self._publish_capability_archive(capability_plan, execution_id)
+                    )
+                    metadata.update({
+                        "capability_archive_path": capability_archive_path,
+                        "capability_archive_sha256": capability_archive_sha256,
+                    })
                 if getattr(executor, "service_tier", None) is not None:
                     metadata["service_tier"] = executor.service_tier
                 if any(r.get("execution",{}).get("execution_id")==execution_id for r in s["generations"].values()): raise WorkflowError("EXECUTION_ID_COLLISION")
@@ -1237,10 +1423,29 @@ class Workflow:
                         sandbox_descriptor = candidate
                 if sandbox_descriptor is not None:
                     metadata["sandbox"] = dict(sandbox_descriptor)
-                    metadata["execution_backend_schema"] = "atlas-bwrap-execution/1"
+                    # Version the descriptor only when it actually carries
+                    # capability authority; the exact legacy descriptor
+                    # remains replayable unchanged.
+                    # Backend /2 is the current durable execution semantics,
+                    # independent of whether this particular policy selects
+                    # any capabilities.  /1 remains historical replay data.
+                    metadata["execution_backend_schema"] = (
+                        "atlas-bwrap-execution/2"
+                        if snapshot is not None
+                        else "atlas-bwrap-execution/1"
+                    )
+                    if metadata["execution_backend_schema"] == "atlas-bwrap-execution/2":
+                        # An empty current plan is still a /2 descriptor.  It
+                        # must not silently acquire the historical descriptor
+                        # shape merely because no toolchain was selected.
+                        metadata["sandbox"].setdefault(
+                            "capability_plan_sha256", "0" * 64)
+                        metadata["sandbox"].setdefault("toolchains", [])
+                        metadata["sandbox"].setdefault("caches", [])
+                        metadata["sandbox"].setdefault("environment", {})
                 metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
                 if snapshot:
-                    metadata.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                    metadata.update({"owner_schema":"atlas-agent-execution-owner/3","policy_snapshot":snapshot})
                 context_supplement=context.decode("utf-8")
                 execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
                 src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
@@ -1275,8 +1480,10 @@ class Workflow:
                         )
                     except Exception:
                         durable=True
-                    if not durable and "historical_policy_path" in metadata:
-                        (self.base/metadata["historical_policy_path"]).unlink(missing_ok=True)
+                    if not durable:
+                        for key in ("historical_policy_path", "capability_archive_path"):
+                            if key in metadata:
+                                (self.base/metadata[key]).unlink(missing_ok=True)
                     raise
                 # RUN_STARTED is durable before reconstruction/projection.  From
                 # this boundary every BaseException must pass through the same
@@ -1339,7 +1546,7 @@ class Workflow:
                     raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
                 result_payload={**result.__dict__,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"]}
                 if snapshot:
-                    result_payload.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                    result_payload.update({"owner_schema":"atlas-agent-execution-owner/3","policy_snapshot":snapshot})
                 _write_json(report_dir/"result.json",result_payload)
                 try:
                     collect_usage(prepared.spec,result,report_dir,requested_model=getattr(executor,"model",None),requested_reasoning=getattr(executor,"reasoning_effort",None),policy_snapshot=snapshot)
@@ -1410,7 +1617,7 @@ class Workflow:
                     try:
                         stdout.touch(exist_ok=True); stderr.touch(exist_ok=True)
                         failure={"execution_id":execution_id,"executor":prepared.executor,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"outcome":"exception","error":str(error),"permission_envelope":prepared.permission_envelope,"permission_observation_status":"unavailable","permission_failures":None}
-                        if snapshot: failure.update({"owner_schema":"atlas-agent-execution-owner/2","policy_snapshot":snapshot})
+                        if snapshot: failure.update({"owner_schema":"atlas-agent-execution-owner/3","policy_snapshot":snapshot})
                         _write_json(report_dir/"result.json",failure)
                     except OSError: pass
                 if not isinstance(error,Exception): raise error

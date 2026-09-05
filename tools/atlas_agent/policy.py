@@ -9,11 +9,14 @@ from .assets import ASSET_VERSION, asset_set_identity, prompt_set_identity
 
 from .model import ACTIONS, SESSIONS
 
-POLICY_SCHEMA = "atlas-agent-policy/1"
+POLICY_SCHEMA = "atlas-agent-policy/2"
+LEGACY_POLICY_SCHEMA = "atlas-agent-policy/1"
 LEGACY_SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/1"
-SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/2"
+HISTORICAL_SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/2"
+SNAPSHOT_SCHEMA = "atlas-agent-policy-snapshot/3"
+_CAPABILITY_KEYS = {"required_toolchains", "writable_caches"}
 _PROFILE_KEYS = {
-    "codex": {"executor", "model", "reasoning_effort", "sandbox", "network_default", "network_override", "allowed_session_modes", "fresh_storage", "codex_profile_local", "codex_profile_web", "codex_binary_sha256", "codex_config_sha256", "codex_catalog_sha256", "codex_profile_local_sha256", "codex_profile_web_sha256"},
+    "codex": {"executor", "model", "reasoning_effort", "sandbox", "network_default", "network_override", "allowed_session_modes", "fresh_storage", "codex_profile_local", "codex_profile_web", "codex_binary_sha256", "codex_config_sha256", "codex_catalog_sha256", "codex_profile_local_sha256", "codex_profile_web_sha256"} | _CAPABILITY_KEYS,
     "manual": {"executor", "allowed_session_modes"},
 }
 _BASE_KEYS = {"schema", "policy_schema", "policy_config_sha256", "action", "checkpoint", "profile", "executor", "session_mode", "network_access_requested", "network_access", "web_search", "apps_enabled", "session_storage", "max_hot_reuse_hops", "max_reuse_generation_gap"}
@@ -22,6 +25,7 @@ SAFE_REUSE_FALLBACK_REASONS = frozenset({
     "max_reuse_generation_gap",
     "max_hot_reuse_hops",
     "advanced_reuse_lineage",
+    "incompatible_capabilities",
 })
 
 
@@ -70,14 +74,24 @@ def _strict_int(value):
     return type(value) is int and value > 0 and value <= 100
 
 
-def _profile(value, name):
+def _profile(value, name, modern=True):
     if type(value) is not dict:
         raise PolicyError("POLICY_SCHEMA_INVALID", f"profile {name}")
     executor = value.get("executor")
     if executor not in _PROFILE_KEYS:
         raise PolicyError("POLICY_SCHEMA_INVALID", f"executor {name}")
-    if set(value) != _PROFILE_KEYS[executor]:
+    allowed = _PROFILE_KEYS[executor]
+    if set(value) != allowed and not (
+        executor == "codex" and not modern
+        and set(value) == allowed - _CAPABILITY_KEYS
+    ):
         raise PolicyError("POLICY_SCHEMA_INVALID", f"profile keys {name}")
+    if executor == "codex":
+        for key in _CAPABILITY_KEYS:
+            names = value.get(key, [])
+            if type(names) is not list or any(type(n) is not str or not n or "/" in n or "\\" in n
+                                             or n in {".", ".."} for n in names):
+                raise PolicyError("POLICY_SCHEMA_INVALID", f"{key} {name}")
     modes = value["allowed_session_modes"]
     if type(modes) is not list or not modes or any(type(x) is not str or x not in SESSIONS for x in modes) or len(set(modes)) != len(modes):
         raise PolicyError("POLICY_SCHEMA_INVALID", f"session modes {name}")
@@ -120,7 +134,7 @@ def _profile(value, name):
 
 
 def validate_policy(data):
-    if type(data) is not dict or set(data) != {"schema", "session_limits", "profiles"} or data.get("schema") != POLICY_SCHEMA:
+    if type(data) is not dict or set(data) != {"schema", "session_limits", "profiles"} or data.get("schema") not in {LEGACY_POLICY_SCHEMA, POLICY_SCHEMA}:
         raise PolicyError("POLICY_SCHEMA_INVALID")
     limits = data["session_limits"]
     if type(limits) is not dict or set(limits) != {"max_hot_reuse_hops", "max_reuse_generation_gap"} or not all(_strict_int(limits[k]) for k in limits):
@@ -129,7 +143,7 @@ def validate_policy(data):
     if type(profiles) is not dict or set(profiles) != ACTIONS:
         raise PolicyError("POLICY_SCHEMA_INVALID", "profiles")
     for name in ACTIONS:
-        _profile(profiles[name], name)
+        _profile(profiles[name], name, data["schema"] == POLICY_SCHEMA)
     return data
 
 
@@ -144,6 +158,9 @@ def load_policy(path: Path):
 
 
 def policy_config_sha256(data):
+    if "_atlas_legacy_empty_manual_capabilities" in data:
+        data = {key: value for key, value in data.items()
+                if not key.startswith("_atlas_")}
     validate_policy(data)
     semantic = toml_dumps(data).encode("utf-8")
     return hashlib.sha256(semantic).hexdigest()
@@ -153,7 +170,7 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
     limits = policy["session_limits"]
     cfg = policy["profiles"][profile]
     snapshot = {
-        "schema": SNAPSHOT_SCHEMA,
+        "schema": SNAPSHOT_SCHEMA if policy["schema"] == POLICY_SCHEMA else HISTORICAL_SNAPSHOT_SCHEMA,
         "policy_schema": policy["schema"],
         "policy_config_sha256": policy_config_sha256(policy),
         "action": action,
@@ -175,6 +192,11 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
         "max_hot_reuse_hops": limits["max_hot_reuse_hops"],
         "max_reuse_generation_gap": limits["max_reuse_generation_gap"],
     }
+    if cfg["executor"] == "codex" and "required_toolchains" in cfg:
+        snapshot.update({
+            "required_toolchains": list(cfg["required_toolchains"]),
+            "writable_caches": list(cfg["writable_caches"]),
+        })
     if cfg["executor"] == "codex":
         snapshot.update({
             "requested_model": cfg["model"],
@@ -200,7 +222,9 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
     return snapshot
 
 
-def resolve_policy(policy, prompt):
+def resolve_policy(policy, prompt, *, for_new_execution=False):
+    if for_new_execution and policy.get("schema") != POLICY_SCHEMA:
+        raise PolicyError("POLICY_REPLAY_ONLY", "historical policy cannot create execution")
     action = prompt.action
     cfg = policy["profiles"].get(action)
     if cfg is None:
@@ -219,12 +243,14 @@ def resolve_policy(policy, prompt):
     return _snapshot_base(policy, prompt, action, action, requested if cfg["network_override"] == "explicit" else cfg["network_default"])
 
 
-def validate_snapshot(snapshot):
+def validate_snapshot(snapshot, *, for_new_execution=False):
     if type(snapshot) is not dict or snapshot.get("schema") not in {
-        LEGACY_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA
+        LEGACY_SNAPSHOT_SCHEMA, HISTORICAL_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA
     }:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot schema")
     snapshot_schema = snapshot["schema"]
+    if for_new_execution and snapshot_schema != SNAPSHOT_SCHEMA:
+        raise PolicyError("POLICY_REPLAY_ONLY", "historical snapshot")
     required = _BASE_KEYS | {"requested_model", "requested_reasoning_effort", "sandbox_mode"} if snapshot.get("executor") == "codex" else _BASE_KEYS
     runtime_keys = {
         "codex_binary_sha256", "codex_config_sha256",
@@ -237,13 +263,19 @@ def validate_snapshot(snapshot):
         "reuse_fallback_reason",
         "cold_policy", "freshness_verification", "codex_profile",
         "asset_set_sha256", "prompt_set_sha256", "asset_version",
+        "capability_plan_sha256", "capability_archive_path",
+        "capability_archive_sha256",
     } | runtime_keys
+    if snapshot_schema == SNAPSHOT_SCHEMA:
+        optional |= {"required_toolchains", "writable_caches"}
     if not required <= set(snapshot) or set(snapshot) - (required | optional):
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot fields")
-    if snapshot.get("profile") != snapshot.get("action") or snapshot.get("policy_schema") != POLICY_SCHEMA or snapshot.get("apps_enabled") is not False:
+    if snapshot.get("profile") != snapshot.get("action") or snapshot.get("apps_enabled") is not False:
         raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot invariants")
 
     if snapshot_schema == SNAPSHOT_SCHEMA:
+        if snapshot.get("policy_schema") != POLICY_SCHEMA:
+            raise PolicyError("POLICY_SCHEMA_INVALID", "current snapshot policy")
         if snapshot.get("executor") == "codex":
             if "codex_profile" not in snapshot or not runtime_keys <= set(snapshot):
                 raise PolicyError("POLICY_SCHEMA_INVALID", "codex runtime identity")
@@ -270,7 +302,21 @@ def validate_snapshot(snapshot):
                 )
         elif "codex_profile" in snapshot or runtime_keys & set(snapshot):
             raise PolicyError("POLICY_SCHEMA_INVALID", "unexpected codex runtime identity")
+    elif snapshot_schema == HISTORICAL_SNAPSHOT_SCHEMA:
+        # Snapshot /2 is the frozen pre-capability modern format.  Its
+        # runtime identity remains meaningful for replay, but it has no
+        # capability semantics.
+        if snapshot.get("executor") == "codex":
+            if "codex_profile" not in snapshot or not runtime_keys <= set(snapshot):
+                raise PolicyError("POLICY_SCHEMA_INVALID", "historical codex identity")
+            for key in runtime_keys:
+                if type(snapshot.get(key)) is not str or not re.fullmatch(r"[0-9a-f]{64}", snapshot[key]):
+                    raise PolicyError("POLICY_SCHEMA_INVALID", f"snapshot {key}")
+        elif "codex_profile" in snapshot or runtime_keys & set(snapshot):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "unexpected codex runtime identity")
     else:
+        if snapshot.get("policy_schema") not in {LEGACY_POLICY_SCHEMA, POLICY_SCHEMA}:
+            raise PolicyError("POLICY_SCHEMA_INVALID", "historical snapshot policy")
         # /1 is positively identified historical provenance, replay-only.
         if "codex_profile" in snapshot or runtime_keys & set(snapshot):
             raise PolicyError("POLICY_SCHEMA_INVALID", "legacy snapshot runtime identity")
@@ -317,4 +363,17 @@ def validate_snapshot(snapshot):
         raise PolicyError("POLICY_SCHEMA_INVALID", "cold assurance")
     if snapshot.get("action") != "state_audit" and ({"cold_policy", "freshness_verification"} & set(snapshot)):
         raise PolicyError("POLICY_SCHEMA_INVALID", "unexpected cold assurance")
+    caps = {"required_toolchains", "writable_caches"}
+    historical_caps = caps | {
+        "capability_plan_sha256", "capability_archive_path",
+        "capability_archive_sha256",
+    }
+    if snapshot_schema != SNAPSHOT_SCHEMA:
+        if historical_caps & set(snapshot):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "historical capability semantics")
+    elif snapshot.get("executor") == "codex":
+        if any(type(snapshot.get(k)) is not list for k in caps):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "current capability requirements")
+    elif caps & set(snapshot):
+        raise PolicyError("POLICY_SCHEMA_INVALID", "manual capability semantics")
     return snapshot

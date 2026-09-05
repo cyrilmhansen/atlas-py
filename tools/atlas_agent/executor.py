@@ -46,6 +46,7 @@ class ExecutionSpec:
     prompt_bytes: bytes | None = None
     input_mode: str | None = None
     expected_input_sha256: str | None = None
+    capability_plan: object | None = None
 
 @dataclass(frozen=True)
 class PreparedExecution:
