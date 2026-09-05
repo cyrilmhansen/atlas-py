@@ -1,40 +1,99 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.5**  
-Planning baseline: **2026-09-05**  
-Repository baseline: **`develop/core-v1` at `2fd88d5343c998439186c01fa5f4541040180276`**
+Document version: **0.6**  
+Planning date: **2026-09-06**  
+Code baseline: **`2c97e706f394b9392f27eae3d50ca210b3daeeac`** (`M1 Core Hygiene`)  
+Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
 
-This roadmap replaces the previous P0/P1-oriented sequencing. The earlier roadmap mixed foundational correctness, installability, executor robustness, ergonomics, and long-horizon architecture into one priority ladder. That was useful during the initial hardening phase, but it no longer describes the system we are building.
+This roadmap supersedes the single M3–M12 sequence from version 0.5.
 
-Atlas Agent has now crossed a planning boundary: the core transactional controller is sufficiently coherent that the next work should focus on semantic coordination, post-generation assurance, qualified developer tooling, and a cleaner separation between deterministic control and model reasoning.
+The previous roadmap treated Atlas and Atlas Agent too much like one evolving component. The M2 Astra Medium review made useful observations about execution outcomes, material identity, evidence, and qualification, but its prompt and source package were dominated by Atlas Agent and blurred the product boundary. Its proposed global milestone order is therefore advisory rather than authoritative.
 
-This document is a prioritization and exit-criteria document. It is not a catalogue of every possible Atlas feature.
+The current planning model separates two development tracks:
+
+```text
+Atlas Core        semantic coordination product
+Atlas Agent       deterministic execution subsystem
+```
+
+They have explicit dependencies, but Atlas Core development must not be indefinitely postponed by unrelated Atlas Agent hardening.
 
 ---
 
-## 1. Current baseline
+## 1. Architectural boundary
 
-The current baseline is the state reached after the v0.1.2 hardening work, the qualified-toolchain tranche, the Astra Low systemic review, owner adjudication, Sol Medium qualification, and the P0.6x closure work.
+The governing rule is:
 
-### 1.1 Completed foundation
+> **Atlas decides what must be understood or accomplished. Atlas Agent guarantees how an authorized operation is executed, recorded, and materialized.**
+
+See [`architecture-boundaries.md`](architecture-boundaries.md) for the detailed ownership model.
+
+At a high level:
+
+```text
+                         ATLAS CORE
+                   semantic coordination
+
+ goals / decisions / work representation / obligations
+ code understanding / impact / traceability / planning
+ agent strategy / assurance planning / orchestration
+
+                             │
+                             ▼
+
+                         ATLAS AGENT
+                 deterministic execution
+
+ admission / ownership / capabilities / sandbox
+ model + tool execution / journal / recovery
+ qualification execution / Git materialization
+ provenance / durable runtime facts
+
+                             │
+                             ▼
+
+                    SPECIALIZED SERVICES
+
+ Codex / models / rust-analyzer / Pyright / Git
+ compilers / test runners / linters / other tools
+```
+
+Semantic services are a useful example of the split:
+
+```text
+Atlas Core       asks and interprets semantic questions
+Atlas Agent      qualifies and executes the service
+rust-analyzer    computes Rust semantic observations
+```
+
+Atlas Agent must not grow until it absorbs Atlas Core responsibilities.
+
+---
+
+## 2. Completed foundation
+
+### 2.1 Atlas Agent hardening baseline
+
+The following work is complete and remains the foundation for future execution services:
 
 | Capability / tranche | Status | Representative checkpoint |
 | --- | --- | --- |
-| Manual checkpoint correctness | DONE | `3aad255` |
-| Config/trust/auth/session isolation | DONE | `b4cc45c` |
-| Safe reuse fallback | DONE | `fd0073c` |
-| Per-dispatch Fast service tier | DONE | `cc1b9cd` |
-| Accepted-generation cancellation | DONE | `cde171f` |
-| Truthful scratch semantics | DONE | `833d275` |
-| Qualified development toolchains/caches | DONE | `046e182` |
-| Historical validity C1/C2/C4 | DONE | `846c344` |
-| Serialized run admission + C5 | DONE | `41c3718` |
-| Cache lock authority C6 | DONE | `25d4590` |
-| Full-suite regression migration | DONE | `2fd88d5` |
+| manual checkpoint correctness | DONE | `3aad255` |
+| config/trust/auth/session isolation | DONE | `b4cc45c` |
+| safe reuse fallback | DONE | `fd0073c` |
+| per-dispatch Fast service tier | DONE | `cc1b9cd` |
+| accepted-generation cancellation | DONE | `cde171f` |
+| truthful scratch semantics | DONE | `833d275` |
+| qualified development toolchains/caches | DONE | `046e182` |
+| historical validity C1/C2/C4 | DONE | `846c344` |
+| serialized run admission + C5 | DONE | `41c3718` |
+| cache lock authority C6 | DONE | `25d4590` |
+| full-suite regression migration | DONE | `2fd88d5` |
+| M1 Core Hygiene | DONE | `2c97e70` |
 
-Astra Low finding C3 remains explicitly **V1-COMPLIANT AS IS**: recoverability and diagnosis are required; exhaustive automatic repair of every crash window is not.
+Astra Low finding C3 remains **V1-COMPLIANT AS IS**: diagnosis and practical recoverability are required; exhaustive automatic repair of every crash window is not.
 
-The closure suite at the planning boundary is:
+M1 closed with:
 
 ```text
 967 passed
@@ -43,152 +102,336 @@ repository witness: MATCH
 doctor: OK
 ```
 
-### 1.2 Core controller model now considered stable enough to build on
+### 2.2 M1 Core Hygiene — DONE
 
-The current system provides, at minimum:
+M1 intentionally changed no product semantics. It removed a small amount of stale/dead material, tightened deterministic test assertions, and refreshed documentation status.
 
-- immutable prompt admission;
-- durable request/execution lifecycle;
-- journal replay and state rebuild;
-- crash-aware spool transactions;
-- deterministic Git checkpointing;
-- cancellation of unstarted accepted generations;
-- fresh/reuse resolution with historical replay semantics;
-- Bubblewrap execution isolation;
-- truthful writable scratch capabilities;
-- qualified development toolchains and persistent mutable caches;
-- historical documentary validation independent of current runtime assets;
-- one `RUNNING` generation per controlled repository/workflow in V1;
-- host qualification proven against the complete test suite.
+The M1 stop rule remains important:
 
-This baseline is not an invitation to continue generalized hardening. New foundation work should be driven by concrete failures or by an explicit dependency of a planned milestone.
+> Once a bounded task satisfies its decided contract, required witnesses, and required qualification, close it. Do not convert task closure into generalized hardening.
+
+### 2.3 M2 architecture review — completed, scope-corrected
+
+The Astra Medium M2 review produced useful architecture observations, especially:
+
+- execution status, material value, and qualification status are distinct;
+- primary execution failure must not be hidden by secondary collection/parsing failure;
+- qualification evidence must be bound to the material it qualifies;
+- operational journal, evidence artifacts, and Git commits have different roles;
+- requested / resolved / observed remains a useful runtime distinction;
+- semantic navigation should expose backend capability and completeness rather than treating unsupported as empty.
+
+However, M2 was prompted as if Atlas itself were evolving from the transactional controller. That is not the current product boundary. Therefore M2 does **not** decide that Atlas Agent assurance work must precede Atlas Core semantic navigation.
+
+The owner clarification following M2 is now authoritative: **Atlas Core and Atlas Agent are separate layers.**
 
 ---
 
-## 2. Durable architectural principles
+## 3. Implementation-language and repository direction
 
-### 2.1 Deterministic controller, model-assisted coordination
+### 3.1 Atlas Core
 
-Atlas should keep authority over deterministic operations:
+New Atlas Core development should begin in **Rust**.
 
-```text
-admission
-resource grants
-sandbox/runtime selection
-journal transitions
-host qualification
-Git checkpointing
-recovery boundaries
-```
-
-Models may reason, propose, inspect, diagnose, select among authorized operations, and produce material work, but they should not silently become the authority for controller state.
-
-### 2.2 Coordinator is a semantic role, not an interactive shell
-
-The long-term coordinator should maintain the semantic state of the task rather than repeatedly rediscovering the repository by opening arbitrary files.
-
-Conceptually:
+Working repository/component name:
 
 ```text
-human goal / ambiguous product decision
-        ↓
-semantic coordinator
-        ↓
-work decomposition / review level / proof obligations
-        ↓
-specialized model agents
-        ↓
-deterministic Atlas controller
-        ↓
-repository / tools / qualifications / journal
+atlas-core
 ```
 
-The coordinator owns questions such as:
+The name is provisional and descriptive. Do not block development on final naming.
 
-- what is the current objective;
-- which product decisions are already fixed;
-- which obligations remain open;
-- which invariants are affected;
-- which agent/review level is appropriate;
-- what evidence is sufficient to close the task;
-- whether to continue, correct, qualify, or checkpoint.
+Python was acceptable as a prototyping and long-lived implementation language for Atlas Agent. It should not automatically become the production language for a new Atlas Core merely because the current repository is Python.
 
-### 2.3 Requested, resolved, observed are distinct dimensions
+### 3.2 Atlas Agent
 
-Where runtime behavior may legitimately differ from preference, Atlas should preserve all three layers rather than collapse them.
+The existing implementation remains Python for now.
 
-Examples include:
+Current repository:
 
 ```text
-session mode
-model
-reasoning effort
-service tier
-tool concurrency
-network capability
+atlas-py
 ```
 
-The generic shape is:
+Likely future repository name:
 
 ```text
-requested
-resolved
-observed
+atlas-agent
 ```
 
-A supported fallback is not automatically an execution failure.
+Do not rename the repository yet solely for cosmetic consistency.
 
-### 2.4 Historical validity is not historical reproducibility
+### 3.3 Migration rule
 
-Historical report/audit/rebuild must use archived facts and authorities rather than requiring the current runtime, current assets, or current cloud service to still exist.
+Do not perform a big-bang Python-to-Rust rewrite of Atlas Agent before beginning Atlas Core.
 
-Atlas does **not** promise arbitrary historical re-execution or bit-for-bit reproducibility of external model behavior.
+If Atlas Agent is later migrated, prefer incremental replacement behind explicit versioned boundaries. Existing Python tests, journals, fixtures, error codes, and state transitions can serve as conformance evidence for replacement components.
 
-### 2.5 Historical validity, execution success, and content quality are different
+Atlas Core must not depend on importing internal Python objects from Atlas Agent. The Core/Agent boundary should be explicit and versioned; a simple process/CLI + structured JSON boundary is acceptable initially.
 
-An interrupted execution is still history. It may also have produced legitimate durable material.
+---
 
-Therefore:
+# 4. Atlas Core track
+
+The Core track is labeled **C1–C5**. It describes product capabilities rather than implementation-language layers.
+
+## C1 — Semantic Observation
+
+### Goal
+
+Give Atlas a compact, structured way to observe code semantics instead of repeatedly rediscovering repositories through text search and whole-file dumps.
+
+This is the first major Atlas Core capability and the first intended Rust implementation milestone.
+
+### C1.1 Semantic Observation v0
+
+Initial capability:
 
 ```text
-historical validity ≠ execution success ≠ content quality
+definition
+references
+implementations
+diagnostics
+search_text
 ```
 
-Git commits remain neutral snapshots of material state; they are not success certificates.
+The precise wire/API syntax is not frozen yet.
 
-### 2.6 Recoverability is not automatic recovery
-
-V1 requires:
-
-- reliable inconsistency/corruption diagnosis;
-- fail-safe stop at invalid authority boundaries;
-- practical return to or identification of a known stable state;
-- recovery of important interrupted transactions where explicitly supported.
-
-V1 does not require automatic repair of every theoretically possible crash point.
-
-### 2.7 One RUNNING generation per repository remains the V1 rule
-
-Parallelism is useful, but concurrent writers in one controlled checkout are not part of the current model.
-
-Near-term rule:
+Each observation should be able to report, as applicable:
 
 ```text
-one controlled repository/workflow
-→ at most one RUNNING generation
+workspace/material identity
+backend identity
+query kind
+supported / unsupported / incomplete
+bounded result set
+truncation / expansion information
+source locations
 ```
 
-Future generation-level parallelism should use explicit workspace/repository isolation.
+The model-facing contract must distinguish:
 
-### 2.8 Tool-level concurrency is a separate concern
+```text
+unsupported capability
+empty valid answer
+incomplete answer
+backend failure
+```
 
-Multiple tool calls inside one running generation may be concurrent when their effect classes permit it. This does not weaken repository-level generation serialization.
+### Backend order
 
-### 2.9 Proof states must be explicit
+1. `rust-analyzer`;
+2. Pyright or equivalent Python semantic backend;
+3. syntax/AST helpers where language-server semantics are insufficient;
+4. exact text search as an explicit fallback.
 
-A skipped sandbox test is not equivalent to a passed host proof.
+Rust is not merely a fixture language here. The new Core itself is intended to be Rust, and real Rust repositories such as existing Atlas-managed projects are valid integration subjects.
 
-Planned proof vocabulary:
+### C1.1 non-goals
+
+Do not include yet:
+
+- persistent semantic database;
+- whole-program language-neutral graph;
+- complete impact analysis;
+- automatic test selection;
+- parallel LSP query execution;
+- Pyright in the first Rust backend slice;
+- semantic traceability UI;
+- generalized RPC framework.
+
+### Exit criteria
+
+Against a representative Rust project, Atlas can ask the initial semantic questions through an explicit Atlas/Agent boundary, receive bounded qualified observations, and fall back to exact text search without silently confusing lexical and semantic results.
+
+---
+
+## C2 — Semantic Coordinator
+
+### Goal
+
+Represent enough task semantics that Atlas can coordinate work without rebuilding the problem from conversation history and repository exploration at every step.
+
+Candidate durable/working concepts include:
+
+```text
+objective
+accepted decision
+open product question
+obligation
+constraint
+candidate next action
+relevant semantic anchors
+```
+
+The coordinator should preserve what matters to the task, not create a prose twin of the repository.
+
+### Human authority
+
+The human/operator retains authority over consequential product ambiguity, scope changes, new privileges, risk acceptance, and externally meaningful side effects.
+
+Models may propose decomposition, next actions, engineering choices, and review strategy within granted policy.
+
+### Exit direction
+
+A bounded development task can be resumed from explicit task state and targeted semantic observations rather than requiring the coordinator to reconstruct the entire situation from scratch.
+
+---
+
+## C3 — Assurance Planning
+
+### Goal
+
+Let Atlas decide what evidence is needed for a candidate change.
+
+Atlas owns reasoning such as:
+
+```text
+this material affects subsystem X
+→ obligations A/B are open
+→ focused + integration qualification is required
+```
+
+Atlas Agent owns execution of authorized recipes and truthful recording of results.
+
+Semantic navigation can improve impact reasoning, but passing static analysis or finding no callers must never silently erase mandatory qualification rules.
+
+### Non-goal
+
+Core must not acquire unrestricted host shell authority merely because it can reason about which tests should run.
+
+---
+
+## C4 — Semantic Traceability / Semantic Zoom
+
+### Goal
+
+Connect important product intent to implementation and evidence without maintaining a parallel manually curated requirements database.
+
+Useful links include:
+
+```text
+scenario
+→ decision
+→ invariant
+→ enforcement boundary
+→ symbol
+→ witness test
+→ qualification evidence
+```
+
+Important distinctions:
+
+- human-asserted links;
+- tool-derived links;
+- model-inferred links.
+
+Inference must not silently become authority.
+
+Semantic zoom should permit progressive disclosure from user intent down to exact code and proof evidence.
+
+Do not begin with a graph database. Start with stable identifiers and links only when a real consumer requires them.
+
+---
+
+## C5 — Higher-level Orchestration
+
+### Goal
+
+Use the semantic/task representation to coordinate larger work:
+
+- dependency graphs;
+- resource constraints;
+- specialized agent assignments;
+- deterministic scheduling where agent reasoning is unnecessary;
+- bounded replanning when evidence or product decisions change.
+
+This is the later Atlas Core layer corresponding to the broader orchestration vision. It should be built from real C1–C4 primitives, not designed as a speculative general scheduler first.
+
+---
+
+# 5. Atlas Agent track
+
+The Agent track is labeled **A1–A7**. Work here improves deterministic execution services and can proceed when it either blocks Core or closes a concrete operational defect.
+
+## A1 — Executor Outcome Robustness
+
+### Goal
+
+Make execution outcomes truthful even when output/report collection also fails.
+
+Known motivating case:
+
+```text
+primary event: model quota / service failure
+secondary event: oversized JSONL/tool-output record
+bad presentation: EXECUTOR_OUTPUT_MALFORMED hides primary cause
+```
+
+Required direction:
+
+1. preserve the primary execution/process/service failure;
+2. record report/parser/telemetry/collection failure separately;
+3. bound output reinjected into model context;
+4. retain full useful output as an artifact where feasible;
+5. support explicit bounded/range retrieval;
+6. keep historical outcome records readable without current runtime assets.
+
+A1 is important maintenance, but it is **not a prerequisite for beginning C1** unless implementation discovers a direct dependency.
+
+---
+
+## A2 — Qualified Tool Services
+
+### Goal
+
+Expose long-lived or structured development services through explicit qualified Agent boundaries rather than allowing models to launch arbitrary user-state tools.
+
+### A2.1 Semantic service runtime
+
+This is the Agent-side dependency for C1.
+
+For a language server, Agent should own or report, where relevant:
+
+```text
+qualified executable identity
+version
+workspace root / material binding
+configuration
+environment/capabilities
+process lifecycle
+resource bounds
+response bounds
+backend capability discovery
+```
+
+The first consumer is `rust-analyzer`.
+
+Language servers may themselves execute build scripts, procedural macros, interpreters, or other helpers. Source-read semantics therefore do not automatically imply zero execution capability. Such behavior must be represented truthfully by the Agent service contract rather than hidden behind the word “read-only”.
+
+### A2.2 Additional semantic backends
+
+Add Pyright after the Rust contract has demonstrated useful shape. The second backend is intentionally a test of whether the interface generalizes across language semantics.
+
+---
+
+## A3 — Qualification Execution and Evidence
+
+### Goal
+
+Execute authorized project qualification recipes against identified candidate material and record evidence without making Agent responsible for deciding product correctness.
+
+Candidate recipe classes include:
+
+```text
+focused
+affected
+live
+full
+hygiene
+```
+
+Proof attempts should distinguish at least outcomes such as:
 
 ```text
 UNTESTED
@@ -199,804 +442,256 @@ HOST_FAIL
 LIVE_PASS
 ```
 
-A required proof that is skipped remains an open obligation.
+with timeout/cancellation/infrastructure failure represented separately rather than collapsed into pass/fail.
 
-### 2.10 Semantic traceability should be linked, not duplicated
+Evidence must be bound to the material and environment it actually observed.
 
-Atlas should avoid creating a second manually maintained prose representation of the software.
-
-Prefer navigable links between:
-
-```text
-scenario
-→ decision
-→ invariant
-→ enforcement boundary
-→ implementation symbol
-→ witness test
-→ qualification evidence
-```
-
-Text at different resolutions should be generated from or anchored to this graph where practical.
-
-### 2.11 Scope discipline is part of correctness
-
-The stop rule for normal engineering work is:
-
-> Once a ticket satisfies its decided contract, required witnesses, and required qualification, close it. Do not turn task closure into an open-ended search for additional hardening.
-
-Architecture work is different: its purpose may be to refine the representation itself. The process should not impose architecture-review weight on routine bounded work.
+Automatic checkpointing may eventually depend on policy plus evidence, but Git commits remain neutral material snapshots.
 
 ---
 
-# M1 — Core Hygiene
+## A4 — Tool Concurrency
 
-## Goal
+### Goal
 
-Reduce debt accumulated during the discovery/hardening phase **without changing product semantics**.
+Permit safe intra-generation concurrency without weakening the V1 single-`RUNNING`-generation rule.
 
-M1 is deliberately small. It prepares the codebase and documentation for the architecture review that follows; it is not a refactoring programme.
-
-## Scope
-
-Allowed work includes:
-
-- comments that became false, misleading, or stale;
-- small helpers that remove obvious semantic duplication;
-- dead or redundant internal APIs now known not to have a public compatibility contract;
-- overly broad test assertions where a deterministic `WorkflowError` exists;
-- naming that still confuses admission, execution, replay, reconstruction, or historical validation;
-- documentation of established distinctions such as:
-  - authority vs observation;
-  - requested / resolved / observed;
-  - current admission vs historical replay;
-  - `RUNNING` as controller ownership;
-  - Git snapshot vs success certification.
-
-Explicitly out of scope:
-
-- redesign of `Workflow.execute()`;
-- new lifecycle features;
-- generalized mount/sandbox redesign;
-- installer/distribution work;
-- LSP implementation;
-- post-generation automation;
-- tool concurrency implementation.
-
-## Exit criteria
-
-- no intended product-semantic change;
-- focused tests for touched code pass;
-- full host suite passes;
-- `git diff --check` passes;
-- comments/documentation no longer contradict the current lifecycle model.
-
-## Deliverable after M1
-
-Create **Repomix v2** for architectural review, containing at least:
+Likely effect distinctions include:
 
 ```text
-tools/atlas_agent/workflow.py
-tools/atlas_agent/journal.py
-tools/atlas_agent/spool.py
-tools/atlas_agent/policy.py
-tools/atlas_agent/toolchains.py
-tools/atlas_agent/bubblewrap.py
-tools/atlas_agent/executor.py
-tools/atlas_agent/codex_executor.py
-tools/atlas_agent/repository.py
-tools/atlas_agent/cli.py
-tools/atlas_agent/prompt.py
-```
-
-Include the relevant architecture/context notes and the current roadmap.
-
----
-
-# M2 — Atlas 2026 architecture review — Astra Medium
-
-## Goal
-
-Use a bounded architecture review to decide how Atlas should evolve from a reliable transactional controller into a semantic coordinator without weakening deterministic control boundaries.
-
-This is not another broad bug hunt. Its output is architectural decisions and sequencing guidance, not implementation patches.
-
-## Required review topics
-
-### M2.1 Coordinator role
-
-Clarify responsibilities between:
-
-```text
-human operator
-semantic coordinator
-specialized model agents
-deterministic controller
-external tools/runtimes
-```
-
-### M2.2 Semantic Code Navigation
-
-Decide the architecture for semantic repository observation using:
-
-```text
-LSP / compiler semantic services
-AST / syntax structure
-text search fallback
-```
-
-### M2.3 Post-generation lifecycle
-
-Define the transition from model completion to qualified material state:
-
-```text
-model result
-→ diff understanding
-→ impacted surface
-→ proof selection
-→ host qualification
-→ disposition
-→ checkpoint
-```
-
-### M2.4 Semantic traceability / semantic zoom
-
-Decide how to preserve navigable links among scenarios, decisions, invariants, code symbols, tests, and qualification evidence without maintaining a parallel prose model of the software.
-
-### M2.5 Tool-call concurrency
-
-Account for runtimes/models capable of issuing asynchronous or concurrent tool calls. Distinguish tool concurrency from generation concurrency.
-
-### M2.6 Journal and evidence architecture
-
-Clarify boundaries among:
-
-- operational journal;
-- derived/projected state;
-- execution reports;
-- qualification evidence;
-- future Git-versionable documentary exports.
-
-## Exit criteria
-
-- explicit architectural decisions for the six topics above;
-- unresolved product questions identified separately from implementation questions;
-- revised dependency order for M3+ if needed;
-- no code change required to declare M2 complete.
-
----
-
-# M3 — Semantic Code Navigation substrate
-
-## Goal
-
-Give the coordinator and reviewers a compact semantic interface to the codebase so that normal inspection does not depend on repeated `rg`/file-dump exploration.
-
-## Minimal conceptual API
-
-```text
-code.definition(symbol)
-code.references(symbol)
-code.callers(symbol)
-code.callees(symbol)
-code.implementations(symbol)
-code.document_symbols(file)
-code.workspace_symbols(query)
-code.diagnostics(scope)
-code.search_text(query)
-```
-
-The exact interface is an M2 decision; this list describes required capability, not frozen syntax.
-
-## Backend strategy
-
-Initial intended order:
-
-1. `rust-analyzer`;
-2. Pyright or equivalent Python semantic backend;
-3. structured syntax/AST helpers where LSP is insufficient;
-4. exact text search as an explicit fallback.
-
-Rust is a useful first target even though Atlas Agent is implemented in Python because Rust semantic tooling is strong and immediately useful on real Atlas-managed projects.
-
-## Qualification model
-
-Language servers are controller-managed qualified tools. A model should not silently launch arbitrary language-server binaries from user state.
-
-Atlas should bind, where relevant:
-
-- executable identity;
-- version;
-- workspace root;
-- configuration;
-- environment;
-- response bounds.
-
-## Exit criteria
-
-For representative projects, a reviewer can answer questions such as:
-
-```text
-where is this symbol defined?
-who calls it?
-what implementations satisfy this interface/trait?
-what diagnostics affect it?
-```
-
-without normal reliance on iterative whole-file dumping.
-
----
-
-# M4 — Post-generation Assurance
-
-## Goal
-
-Move the currently manual coordination loop into an explicit Atlas lifecycle.
-
-Today the human/coordinator often performs:
-
-```text
-agent completed
-→ inspect report
-→ inspect diff
-→ infer affected area
-→ select host tests
-→ run qualification
-→ decide disposition
-→ request checkpoint
-```
-
-M4 should make this a first-class deterministic workflow with model assistance where reasoning is useful.
-
-## M4.1 Versioned qualification recipes
-
-Projects should be able to define authorized recipes such as:
-
-```text
-focused
-affected
-live
-full
-hygiene
-```
-
-The controller executes recipes. Models may recommend or select among authorized recipes; they do not receive unrestricted host shell authority merely because qualification is needed.
-
-## M4.2 Explicit proof states
-
-Implement durable or reportable proof-state distinctions, including host-required status for sandbox skips.
-
-## M4.3 Qualification selection
-
-Use diff information and, where available, semantic navigation to derive candidate affected areas and tests.
-
-The model can reason about sufficiency; the controller owns execution and records the evidence.
-
-## M4.4 Diff disposition
-
-Support an explicit outcome vocabulary such as:
-
-```text
-ACCEPT
-NEEDS_REVIEW
-NEEDS_FIX
-NEEDS_HOST_PROOF
-REJECT
-```
-
-Exact names are not frozen before M2/M4 design.
-
-## M4.5 Automatic checkpoint eligibility
-
-When all required obligations are closed, Atlas should be able to advance to checkpoint without repeated operator ceremony.
-
-The Git commit remains a neutral material snapshot. Qualification evidence is separate metadata.
-
-## M4.6 Crash-safe material preservation
-
-The lifecycle must account for:
-
-- agent termination after useful changes;
-- qualification interruption;
-- unexpected operator changes;
-- checkpoint interruption;
-- useful patch with failing qualification.
-
-Do not require exhaustive automatic repair; preserve evidence and maintain a diagnosable path to continuation.
-
-## Exit criteria
-
-A normal bounded implementation can proceed from completed generation to qualified checkpoint with no ad hoc host commands beyond explicitly authorized/operator-selected exceptions.
-
----
-
-# M5 — Executor Reliability and runtime identity
-
-M3 and M5 may be reordered after M2. They can also proceed partially in parallel if their interfaces remain independent.
-
-## M5.1 Preserve primary executor failures
-
-A secondary report/parser failure must never mask the primary executor failure.
-
-Known motivating case:
-
-```text
-primary event: model quota / service failure
-secondary event: oversized JSONL/tool-output record
-bad presentation: EXECUTOR_OUTPUT_MALFORMED hides primary cause
-```
-
-Required rule:
-
-> If execution fails and result/report extraction also fails, Atlas preserves and presents the primary execution failure while separately recording the secondary observation failure.
-
-## M5.2 Bounded model-facing tool output
-
-Large tool output should be retained durably but reinjected into model context through bounded observations.
-
-Conceptually:
-
-```text
-full output
-→ durable spool/blob + identity
-
-bounded excerpt/summary
-→ model context
-
-explicit range retrieval
-→ when needed
-```
-
-Limits should be large enough for modern development workflows and should not repeat the overly aggressive historical tiny-output limits.
-
-## M5.3 Refresh the qualified controller/runtime boundary
-
-Replace development-time dependence on an old frozen controller checkout with a current qualified runtime boundary and explicit provenance.
-
-## M5.4 Per-dispatch model/reasoning/tier selection
-
-Make selection explicit and provenance-aware:
-
-```text
-requested model / reasoning / tier
-resolved model / reasoning / tier
-observed model / reasoning / tier
-```
-
-This supports deliberate routing of routine implementation, bounded review, systemic review, and architecture work.
-
-## Exit criteria
-
-Executor failures remain truthful under secondary collection failures, tool-output context is bounded without discarding durable evidence, and dispatch provenance can represent model/reasoning/tier selection explicitly.
-
----
-
-# M6 — Tool concurrency
-
-## Goal
-
-Support safe intra-generation concurrency for runtimes/models that can issue asynchronous tool calls, without weakening the V1 one-`RUNNING`-generation rule.
-
-## Policy model
-
-Do not model this as an unqualified `async = true` flag.
-
-A likely policy shape is:
-
-```text
-tool concurrency requested
-tool concurrency resolved
-tool concurrency observed
-```
-
-with a requested mode similar to:
-
-```text
-serial
-parallel-safe
-```
-
-Exact names remain an M2/M6 design decision.
-
-## Effect classes
-
-Concurrency decisions should consider operation effects, for example:
-
-```text
-READ
 PURE_ANALYSIS
+IMMUTABLE_SEMANTIC_READ
+MUTABLE_WORKSPACE_READ
 WORKSPACE_WRITE
 DURABLE_CONTROL_WRITE
 EXTERNAL_SIDE_EFFECT
 ```
 
-Several semantic-navigation reads may safely run concurrently. Git index mutation, checkpoint transitions, and journal authority writes generally require stronger serialization.
+Concurrency should preserve requested / resolved / observed behavior.
 
-## Partial order
+Initial implementation should remain serial even if request structures become concurrency-ready. Qualified semantic reads are the preferred first real parallel workload once A2/C1 works serially.
 
-Concurrent tool execution means request order, completion order, and model-consumption order may differ.
-
-Atlas must not fabricate a false sequential causal history.
-
-Conceptually:
-
-```text
-batch 17
-  A requested
-  B requested
-  C requested
-
-  B completed
-  C completed
-  A completed
-
-model continuation
-```
-
-## Runtime fallback
-
-If concurrency is requested but unsupported by the selected runtime:
-
-```text
-requested = parallel-safe
-resolved = serial
-reason = runtime_unsupported
-```
-
-This is an expected fallback, not necessarily an error.
-
-## Exit criteria
-
-Safe read/analysis tools can execute concurrently under an explicit controller policy; mutating/control operations remain correctly ordered; journal/evidence representation preserves causal truth.
+The journal must not invent total causal order merely because durable event records are sequential.
 
 ---
 
-# M7 — Semantic Traceability and Semantic Zoom
+## A5 — Distribution / Install / Doctor
 
-## Goal
+Provide a supported installation path for the qualified Agent runtime and its machine prerequisites.
 
-Make product intent, invariants, implementation, tests, and qualification evidence navigable as one linked system without duplicating the software in a manually maintained requirements database.
+This remains important productization work but should not block early Core development on a machine where the current qualified environment already works.
 
-## Core graph
+Future responsibilities include:
 
-A minimal useful graph connects:
-
-```text
-scenario
-↕
-decision
-↕
-invariant
-↕
-enforcement boundary
-↕
-implementation symbol
-↕
-witness test
-↕
-qualification evidence
-```
-
-Example:
-
-```text
-INV-RUN-001
-"one RUNNING generation per repository"
-
-implemented by:
-  Workflow._admit_run_start
-
-reachable from:
-  Workflow.start_run
-  Workflow.execute
-  Workflow.dispatch
-  Workflow.recover
-
-witnessed by:
-  lifecycle admission/recovery tests
-
-introduced by:
-  41c3718
-
-qualified by:
-  host full suite
-```
-
-## Semantic zoom
-
-The same semantic object should be viewable at multiple resolutions:
-
-```text
-one-line intent
-user scenario
-product rule
-formal invariant
-enforcement boundaries
-tests
-implementation symbols
-qualification history
-```
-
-Comments should preserve rationale/invariants, not restate code.
-
-## Exit criteria
-
-A coordinator or reviewer can navigate from a user-facing rule to current enforcement code and proof evidence, and back, without relying on a separately maintained prose matrix.
+- qualified runtime artifact distribution;
+- deterministic installation;
+- machine-level install doctor;
+- stable launcher/activation;
+- explicit controller/runtime provenance.
 
 ---
 
-# M8 — Versionable documentary evidence
+## A6 — Policy / Network / Timeouts / Routing
 
-## Goal
+Refine policies only where concrete usage requires them.
 
-Keep the operational journal local and authoritative while producing a compact immutable documentary export that can be versioned with Git.
+Topics include:
 
-Do **not** put the raw operational `.git/atlas-agent/events.jsonl` into Git as the normal mechanism.
+- separate model/tool/generation/qualification timeouts;
+- truthful network requested/resolved/enforced/observed semantics;
+- per-dispatch model/reasoning/service-tier routing;
+- versioned prompt/project/role overlays.
 
-A future execution/decision manifest should be able to bind, as appropriate:
-
-- Git commit;
-- relevant generations;
-- decision/invariant identifiers;
-- qualification results;
-- important immutable artifact identities;
-- controller/runtime provenance.
-
-This is documentation and audit traceability, not a promise of model-output reproducibility.
-
-## Exit criteria
-
-A later reader can understand why an important commit exists and what qualified it without requiring the original live Atlas workflow directory.
+Avoid turning this milestone into a generalized policy framework before real consumers exist.
 
 ---
 
-# M9 — Distribution and operator experience
+## A7 — Isolated Parallel Generations
 
-Distribution remains important, but it is deliberately moved after the semantic/assurance architecture instead of dominating the immediate roadmap.
+Generation-level parallelism remains later work.
 
-## M9.1 Qualified runtime distribution
-
-Provide immutable retrievable qualified runtime artifacts with explicit source/version/SHA association.
-
-Initial platform remains Linux x86_64 unless evidence justifies broadening earlier.
-
-## M9.2 Installation
-
-Turn the current manual deployment knowledge into a supported machine-level operation.
-
-A successful install should not require:
+The V1 invariant stays:
 
 ```text
-manual PYTHONPATH
-source-tree archaeology
-manual asset copying
-hand-built activation scripts
+one RUNNING generation per controlled repository/workflow
 ```
 
-## M9.3 Install doctor
+Future parallelism requires explicit repository/workspace isolation, with independently controlled Git topology, journal ownership, caches, qualification, and integration.
 
-Keep project `doctor` and machine installation diagnosis distinct.
-
-Installation diagnosis should cover static identity, a zero-token production probe, and an optional authenticated smoke.
-
-## M9.4 Persistent project → runtime discovery
-
-Normal operation should reconstruct controller/runtime identity without requiring the user to remember ephemeral shell environment.
-
-The current development `aa` function remains useful but is not the final product UX.
-
-## Exit criteria
-
-A fresh supported host can install, diagnose, and activate Atlas through persistent qualified identities without maintainer-only knowledge.
+Worktree support, if desired, belongs here as an architectural feature rather than as an opportunistic Bubblewrap patch.
 
 ---
 
-# M10 — Policy composition, network, and timeouts
+# 6. Cross-track dependencies
 
-## M10.1 Timeout dimensions
+The roadmap is no longer one total ordering.
 
-Treat separately:
-
-```text
-model timeout
-tool timeout
-generation timeout
-qualification timeout
-```
-
-An interruption must not imply that legitimate material output never existed.
-
-## M10.2 Network authority
-
-Current networking restrictions partly rely on Codex/runtime behavior. Atlas should state precisely:
+Important dependencies are:
 
 ```text
-requested network capability
-resolved capability
-enforcement authority
-observed status
+A2.1 qualified semantic service
+        ↕
+C1 Semantic Observation
+
+C1 observations
+        → C2 coordinator can reason with better repository structure
+        → C3 assurance planning can improve impact selection
+        → C4 can derive symbol-level traceability
+
+C3 assurance planning
+        ↔ A3 qualification execution/evidence
+
+A2/C1 serial semantics
+        → A4 parallel semantic reads
+
+C1 + C2 + C3 + C4
+        → C5 higher-level orchestration
 ```
 
-Do not claim stronger isolation than the actual enforcement boundary provides.
+A1 executor robustness is an important independent maintenance lane. It should not automatically move in front of C1.
 
-## M10.3 Prompt / policy composition
-
-Clarify and version composition among:
-
-```text
-project authority/policy
-role/profile contract
-generation request
-runtime capability
-```
-
-Avoid an opaque accumulation of prompt layers.
-
-## Exit criteria
-
-Timeouts and network capabilities have explicit authority/provenance semantics, and prompt/policy composition is inspectable rather than implicit.
+A5/A6 are also largely independent until a Core feature actually requires their missing capability.
 
 ---
 
-# M11 — Parallel isolated generations
+# 7. Immediate next implementation
 
-## Goal
+The next implementation target is a **joint C1 / A2.1 vertical slice**:
 
-Revisit generation-level parallelism only after the single-workflow assurance model is mature.
+> **Semantic Observation v0 with rust-analyzer**
 
-The problem is not simply "launch two models". Correct parallelism requires isolation of:
-
-- repository/workspace state;
-- Git topology;
-- journal ownership;
-- caches;
-- qualification outputs;
-- checkpoint/integration operations.
-
-A likely first architecture is:
+The purpose is not merely to add an LSP wrapper. It is to validate the new component boundary in real code:
 
 ```text
-one running generation
-→ one explicitly isolated repository/workspace
+Rust Atlas Core
+    asks a semantic question
+
+Python Atlas Agent
+    authorizes and executes a qualified semantic service
+
+rust-analyzer
+    produces the language-specific observation
+
+Rust Atlas Core
+    receives and interprets the structured result
 ```
 
-rather than two writers sharing one checkout.
+Before implementation, define only the minimum boundary needed by this slice.
 
-Worktree support, explicitly outside the P0.6 sandbox contract, may return here as one possible implementation mechanism, but only as a designed capability with correct Git and sandbox semantics.
+### Initial operations
 
-## Exit criteria
+```text
+definition
+references
+implementations
+diagnostics
+search_text
+```
 
-Two generations can progress concurrently only when Atlas can prove their writable/control domains are isolated and their integration path is explicit.
+### Required qualities
+
+- explicit versioned Core/Agent message shape;
+- qualified backend identity;
+- workspace/material identity sufficient for the observation;
+- bounded deterministic presentation;
+- explicit unsupported/incomplete/error states;
+- exact text search remains distinguishable from semantic references;
+- serial execution initially.
+
+### Explicit non-goals
+
+- callers/callees if they materially complicate the first slice;
+- complete semantic impact analysis;
+- automatic test selection;
+- post-generation qualification automation;
+- semantic graph/database;
+- tool concurrency execution;
+- Pyright;
+- Atlas Agent Rust rewrite;
+- repository renaming;
+- standalone protocol project.
+
+The slice should be small enough that architectural lessons can change the next step without invalidating a large framework.
 
 ---
 
-# M12 — Atlas Core orchestration
+# 8. Durable principles retained from hardening
 
-Reserve the broad "Atlas Core" orchestration milestone for the point at which the lower-level primitives exist and are qualified.
+## 8.1 Requested / resolved / observed
 
-At that stage Atlas should have, in some form:
+Where runtime preference and actual behavior may differ, preserve the distinction rather than collapsing them.
 
-- durable workflow state;
-- qualified capabilities;
-- semantic code navigation;
-- specialized agents/review levels;
-- post-generation assurance;
-- semantic traceability;
-- tool-level concurrency;
-- versionable evidence;
-- possibly isolated parallel executions.
+## 8.2 Historical validity is not reproducibility
 
-Then a more general orchestration model can be built:
+Historical Agent audit/rebuild uses archived facts and authorities. It does not require old cloud services, models, or tool binaries to remain executable forever.
 
-```text
-goal
-↓
-decomposition
-↓
-dependency graph
-↓
-resource scheduling
-↓
-agent assignments
-↓
-deterministic execution
-↓
-qualification
-↓
-integration
-```
+## 8.3 Historical validity, execution success, material value, and qualification are separate
 
-The intended direction is an agent-configured but increasingly non-agentic execution substrate: models decide and parameterize work; deterministic planners/solvers/controllers handle ordering, resources, and mechanical execution where possible.
+An interrupted execution can leave valuable material. Qualification can later succeed or fail against that material without rewriting the historical execution outcome.
+
+## 8.4 Git checkpoint is not certification
+
+A Git commit records material state. Proof/evidence/disposition are separate concepts.
+
+## 8.5 Recoverability is not exhaustive auto-repair
+
+Diagnose precisely, fail safe, recover supported transactions, and preserve practical routes back to stable state. Do not build theoretical crash repair without demonstrated need.
+
+## 8.6 Semantic observation is not semantic authority
+
+LSP, AST, text search, compilers, tests, and models produce observations. Product decisions and accepted invariants remain distinct authority.
+
+## 8.7 Scope discipline
+
+Once the decided contract, witnesses, and required qualification for a bounded task are satisfied, close it.
+
+Do not use the existence of remaining possible hardening as evidence that Atlas Core must wait.
 
 ---
 
-## 13. Development operating model
+# 9. Review strategy
 
-The development process should scale its review weight to the actual class of change.
-
-| Change class | Default implementation | Default review | Qualification |
-| --- | --- | --- | --- |
-| Deterministic micro-correction | Luna Medium | none by default | focused + checkpoint |
-| Local feature | Luna Medium | Sol Medium when useful | affected |
-| Cross-module semantic change | Luna Medium | Sol Medium | affected + full when required |
-| Systemic checkpoint / coherence review | — | Astra Low | full |
-| Architecture / representation | — | Astra Medium | decision package, not code |
-
-Sol High remains an escalation tool, not a routine mandatory stage.
-
-Astra is scarce and should be used where representation, decomposition, or system-wide coherence is the question rather than for ordinary local correctness checks.
-
-### 13.1 Process metrics
-
-Do not estimate progress primarily as "number of generations remaining".
-
-Track instead:
+Use review effort proportionally:
 
 ```text
-open proof/product obligations
-remaining sequential dependencies
-marginal cost of the next cycle
-human attention required
+micro deterministic correction
+    → Luna Medium by default
+
+local feature
+    → Luna Medium; Sol Medium if nontrivial review is useful
+
+cross-module execution/lifecycle change
+    → Luna implementation + bounded Sol Medium review
+
+systemic checkpoint
+    → Astra Low only when the system-level question justifies scarce quota
+
+architecture / representation decision
+    → Astra Medium only when owner reasoning + cheaper models cannot resolve it efficiently
 ```
 
-Routine bounded cycles should remain cheap and predictable. Architecture/refinement cycles may remain substantially more variable.
+Astra results are advisory architecture input, not automatic product authority. Prompt scope must explicitly distinguish Atlas Core from Atlas Agent in future architecture reviews.
 
 ---
 
-## 14. Current dependency order
+# 10. Naming and future repository layout
 
-The current intended sequence is:
+Current working direction:
 
 ```text
-BASELINE 2fd88d5
-      │
-      ▼
-M1  Core Hygiene
-      │
-      ▼
-    Repomix v2
-      │
-      ▼
-M2  Astra Medium architecture
-      │
-      ├──────────────┐
-      ▼              ▼
-M3 Semantic Nav    M5 Executor Reliability
-      │              │
-      └──────┬───────┘
-             ▼
-M4 Post-generation Assurance
-             │
-             ▼
-M6 Tool Concurrency
-             │
-             ▼
-M7 Semantic Traceability
-             │
-             ▼
-M8 Versionable Evidence
-             │
-             ▼
-M9 Distribution / Install / Doctor
-             │
-             ▼
-M10 Policy / Network / Timeouts
-             │
-             ▼
-M11 Parallel Isolated Generations
-             │
-             ▼
-M12 Atlas Core
+cyrilmhansen/
+├── atlas-core        # Rust — semantic coordination product
+└── atlas-py          # Python — current Atlas Agent implementation
 ```
 
-M2 is explicitly allowed to revise the dependency order. In particular, M3 and M5 may be swapped or partially parallelized if the architecture review concludes that executor interfaces must stabilize before semantic-navigation services are integrated.
+Likely later:
 
----
+```text
+cyrilmhansen/
+├── atlas-core
+└── atlas-agent
+```
 
-## 15. Immediate next action
+Do not create `atlas-protocol` until a real independently versioned shared package is justified.
 
-The next implementation milestone is **M1 — Core Hygiene**.
-
-Before beginning M1, this roadmap itself is the new planning authority for sequencing. M1 must remain semantically conservative and should end with the Repomix v2 package required for M2.
-
-No new architectural feature should be pulled into M1 merely because it appears elsewhere in this roadmap.
+The final name of `atlas-core` may change after the first Core milestones. Naming should follow architecture rather than block it.
