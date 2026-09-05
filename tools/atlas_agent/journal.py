@@ -146,6 +146,7 @@ def _execution(value,line):
         permitted = {
             ("atlas-agent-execution-owner/2", "atlas-agent-policy-snapshot/1", 2, "atlas-bwrap-execution/1"),
             ("atlas-agent-execution-owner/2", "atlas-agent-policy-snapshot/2", 2, "atlas-bwrap-execution/1"),
+            ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/3", 3, "atlas-bwrap-execution/1"),
             ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/3", 3, "atlas-bwrap-execution/2"),
         }
         if (owner, snapshot_schema, provenance_version, backend) not in permitted:

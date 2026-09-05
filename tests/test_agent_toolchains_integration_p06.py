@@ -873,6 +873,60 @@ def test_journal_rejects_current_owner_snapshot_with_historical_backend(tmp_path
         workflow.journal.read()
 
 
+def test_journal_accepts_transitional_historical_schema_tuple(tmp_path):
+    """A synthetic journal record with the genuine transitional tuple replays."""
+    from tools.atlas_agent.journal import _hash_event, canonical
+    from tools.atlas_agent.workflow import replay_journal
+
+    _, workflow = _project(tmp_path, capabilities=False)
+    _accept(workflow)
+
+    class DescriptorFake(FakeExecutor):
+        def prepare_execution(self, spec):
+            prepared = super().prepare_execution(spec)
+            return PreparedExecution(
+                prepared.spec, prepared.executor, prepared.command,
+                prepared.version, prepared.permission_envelope,
+                prepared.policy_snapshot, {
+                    "schema": "atlas-bwrap/1", "provider": "atlas",
+                    "backend": "bubblewrap", "filesystem_mode": "workspace-write",
+                    "filesystem_enforcement": "atlas-bwrap",
+                    "process_enforcement": "atlas-bwrap", "network_enforcement": "codex",
+                    "requested_network_access": False, "resolved_network_access": False,
+                    "user_namespace": "bwrap-default", "pid_namespace": True,
+                    "ipc_namespace": True, "mount_roles": [],
+                    "temporary_storage": {
+                        "tmp": "private-tmpfs", "shm": "private-tmpfs",
+                        "var_tmp": "private-disk-scratch",
+                    },
+                    "bwrap": "bwrap", "bwrap_version": "1", "codex_executable": "codex",
+                    "codex_version": "1", "scratch_backing_class": "disk",
+                    "exec_server_transport": "websocket-loopback",
+                    "inner_codex_sandbox": "workspace-write",
+                    "inner_codex_network": "restricted",
+                },
+            )
+
+    workflow.execute(1, DescriptorFake(observed_thread_id="transitional-tuple"))
+    path = workflow.journal.path
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    for row in rows:
+        execution = (row.get("payload") or {}).get("execution")
+        if isinstance(execution, dict):
+            execution["execution_backend_schema"] = "atlas-bwrap-execution/1"
+            for key in ("capability_plan_sha256", "toolchains", "caches", "environment"):
+                (execution.get("sandbox") or {}).pop(key, None)
+    previous = "0" * 64
+    for row in rows:
+        row["previous_event_sha256"] = previous
+        row["event_sha256"] = _hash_event(row)
+        previous = row["event_sha256"]
+    path.write_text("".join(canonical(row) + "\n" for row in rows))
+
+    events = workflow.journal.read()
+    assert replay_journal(events)["generations"]["1"]["status"] == "COMPLETED"
+
+
 def test_native_bubblewrap_preflight_checks_command_discovery_identity(
     tmp_path, monkeypatch
 ):
@@ -1013,6 +1067,9 @@ def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
         descriptor = execution["sandbox"]
         for key in ("capability_plan_sha256", "toolchains", "caches", "environment"):
             descriptor.pop(key, None)
+        # Backend /1 is a supported transitional tuple when the other
+        # versions are /3; retain a genuinely mixed negative case here.
+        execution["provenance_version"] = 2
     target = execution
     key = field
     if "." in field:
@@ -1034,6 +1091,7 @@ def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
                 for descriptor_key in ("capability_plan_sha256", "toolchains",
                                        "caches", "environment"):
                     (other.get("sandbox") or {}).pop(descriptor_key, None)
+                other["provenance_version"] = 2
     previous = "0" * 64
     for row in rows:
         row["previous_event_sha256"] = previous
