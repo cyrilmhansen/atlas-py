@@ -1212,6 +1212,56 @@ def test_controller_reuse_uses_production_capability_compatibility(tmp_path, mon
     )
     assert third["execution"]["policy_snapshot"]["session_mode_resolved"] == "fresh"
     assert third["execution"]["policy_snapshot"]["reuse_fallback_reason"] == "incompatible_capabilities"
+    workflow._preflight()
+    assert workflow.rebuild()["generations"]["3"]["status"] == "COMPLETED"
+
+
+@pytest.mark.parametrize(
+    ("session", "observed"),
+    [("fresh", "history-thread-1"), ("reuse", "wrong-thread")],
+)
+def test_interrupted_invalid_session_observation_rebuilds_as_history(
+    tmp_path, session, observed
+):
+    _, workflow = _project(tmp_path, capabilities=False)
+    _accept(workflow)
+    workflow.execute(1, FakeExecutor(observed_thread_id="history-thread-1"))
+    first = workflow._state()["generations"]["1"]["execution"]
+    if session == "reuse":
+        _accept(workflow, 2, session="reuse", target=first["execution_id"])
+    else:
+        _accept(workflow, 2, session="fresh")
+    generation = 2
+    if session == "fresh":
+        with pytest.raises(Exception, match="FRESHNESS_VIOLATION"):
+            workflow.execute(generation, FakeExecutor(observed_thread_id=observed))
+    else:
+        with pytest.raises(Exception, match="REUSE_THREAD_MISMATCH"):
+            workflow.execute(generation, FakeExecutor(observed_thread_id=observed))
+    interrupted = workflow._state()["generations"][str(generation)]
+    assert interrupted["status"] == "INTERRUPTED"
+    workflow._preflight()
+    assert workflow.rebuild()["generations"][str(generation)]["status"] == "INTERRUPTED"
+
+
+def test_historical_validation_does_not_consult_current_assets(tmp_path, monkeypatch):
+    _, workflow = _project(tmp_path, capabilities=False)
+    _accept(workflow)
+    workflow.execute(1, FakeExecutor(observed_thread_id="asset-history"))
+
+    def current_assets_are_unavailable(*args, **kwargs):
+        raise AssertionError("historical validation consulted current assets")
+
+    monkeypatch.setattr(
+        "tools.atlas_agent.policy.asset_set_identity",
+        current_assets_are_unavailable,
+    )
+    monkeypatch.setattr(
+        "tools.atlas_agent.policy.prompt_set_identity",
+        current_assets_are_unavailable,
+    )
+    workflow._preflight()
+    assert workflow.rebuild()["generations"]["1"]["status"] == "COMPLETED"
 
 
 def test_historical_capability_validation_uses_archive_and_detects_tamper(tmp_path, monkeypatch):

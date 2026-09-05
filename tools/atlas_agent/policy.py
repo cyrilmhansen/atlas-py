@@ -166,7 +166,7 @@ def policy_config_sha256(data):
     return hashlib.sha256(semantic).hexdigest()
 
 
-def _snapshot_base(policy, prompt, action, profile, network_access):
+def _snapshot_base(policy, prompt, action, profile, network_access, *, historical=False):
     limits = policy["session_limits"]
     cfg = policy["profiles"][profile]
     snapshot = {
@@ -208,21 +208,24 @@ def _snapshot_base(policy, prompt, action, profile, network_access):
             "codex_catalog_sha256": cfg["codex_catalog_sha256"],
             "codex_profile_sha256": cfg["codex_profile_web_sha256"] if network_access else cfg["codex_profile_local_sha256"],
         })
-        assets = Path(__file__).parents[2] / "codex-assets" / ASSET_VERSION
-        try:
-            snapshot.update({"asset_set_sha256": asset_set_identity(assets),
-                             "prompt_set_sha256": prompt_set_identity(assets),
-                             "asset_version": ASSET_VERSION})
-        except (OSError, ValueError):
-            # Release assets are optional for historical/replay-only installs.
-            pass
+        # Current asset discovery is admission authority only. Historical
+        # reconstruction must not derive identities from this installation.
+        if not historical:
+            assets = Path(__file__).parents[2] / "codex-assets" / ASSET_VERSION
+            try:
+                snapshot.update({"asset_set_sha256": asset_set_identity(assets),
+                                 "prompt_set_sha256": prompt_set_identity(assets),
+                                 "asset_version": ASSET_VERSION})
+            except (OSError, ValueError):
+                # Release assets are optional for replay-only installs.
+                pass
     if action == "state_audit":
         snapshot["cold_policy"] = "conversational"
         snapshot["freshness_verification"] = "deferred"
     return snapshot
 
 
-def resolve_policy(policy, prompt, *, for_new_execution=False):
+def resolve_policy(policy, prompt, *, for_new_execution=False, historical=False):
     if for_new_execution and policy.get("schema") != POLICY_SCHEMA:
         raise PolicyError("POLICY_REPLAY_ONLY", "historical policy cannot create execution")
     action = prompt.action
@@ -237,10 +240,14 @@ def resolve_policy(policy, prompt, *, for_new_execution=False):
     if cfg["executor"] == "manual":
         if requested:
             raise PolicyError("NETWORK_ACCESS_FORBIDDEN", action)
-        return _snapshot_base(policy, prompt, action, action, False)
+        return _snapshot_base(policy, prompt, action, action, False, historical=historical)
     if requested and cfg["network_override"] == "forbidden":
         raise PolicyError("NETWORK_ACCESS_FORBIDDEN", action)
-    return _snapshot_base(policy, prompt, action, action, requested if cfg["network_override"] == "explicit" else cfg["network_default"])
+    return _snapshot_base(
+        policy, prompt, action, action,
+        requested if cfg["network_override"] == "explicit" else cfg["network_default"],
+        historical=historical,
+    )
 
 
 def validate_snapshot(snapshot, *, for_new_execution=False):

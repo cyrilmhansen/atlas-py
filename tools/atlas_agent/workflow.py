@@ -446,12 +446,21 @@ class Workflow:
             if payload.get("_terminal_event") == "RUN_COMPLETED":
                 raise WorkflowError("COMPLETED_SESSION_ID_MISSING")
             return                    # interruption may precede session establishment
+        # An interruption records the executor's observation as evidence,
+        # including the observation which caused session validation to fail.
+        # Successful-session identity rules must not rewrite that history.
+        if payload.get("_terminal_event") == "RUN_INTERRUPTED":
+            return
         mode=snapshot.get("session_mode")
         if mode == "reuse":
             if thread != snapshot.get("requested_thread_id"):
                 raise WorkflowError("REUSE_THREAD_MISMATCH")
         elif mode == "fresh":
-            if thread in self._known_thread_ids(state):
+            # A reuse request may be resolved to fresh when capabilities are
+            # incompatible. Live admission deliberately permits the observed
+            # existing thread in that narrow fallback.
+            if (thread in self._known_thread_ids(state)
+                    and snapshot.get("reuse_fallback_reason") != "incompatible_capabilities"):
                 raise WorkflowError("FRESHNESS_VIOLATION")
 
     def _historical_policy(self, execution):
@@ -529,7 +538,7 @@ class Workflow:
                 # independently reconstructible policy authority.  In
                 # particular, never reinterpret it using today's TOML.
                 raise WorkflowError("HISTORICAL_POLICY_PROVENANCE_INVALID")
-            base=resolve_policy(policy,prompt)
+            base=resolve_policy(policy,prompt,historical=True)
         except (PolicyError, WorkflowError) as error:
             raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID") from error
         # Do not permit a rehashed owner to change qualified policy identity.
@@ -849,7 +858,7 @@ class Workflow:
             if target_policy is None:
                 raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
             if target_policy is not None:
-                qualified=resolve_policy(target_policy,target_prompt)
+                qualified=resolve_policy(target_policy,target_prompt,historical=True)
                 for key,value in qualified.items():
                     if (target_policy.get("schema") == "atlas-agent-policy/1" and
                             key in {"required_toolchains", "writable_caches"}):
