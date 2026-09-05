@@ -387,7 +387,7 @@ def test_real_preflight_checks_every_exported_command(tmp_path, monkeypatch, req
     ))
     _accept(workflow)
     plan = workflow.resolve_capabilities({"toolchains": ["rust"], "caches": ["cargo"]})
-    accepted = next((workflow.base / "accepted").glob("g000001-*.txt"))
+    accepted = next((workflow.base / "accepted").glob("*.txt"))
     snapshot = resolve_policy(
         load_policy(workflow.root / "atlas-agent-policy.toml"),
         parse_prompt(accepted.read_bytes()),
@@ -422,7 +422,7 @@ def test_real_preflight_does_not_bypass_commandless_capability_plan(
     # An empty-command plan is constructed by the resolver from this
     # controller-authored cache-only requirement.
     plan = workflow.resolve_capabilities({"toolchains": [], "caches": ["cargo"]})
-    accepted = next((workflow.base / "accepted").glob("g000001-*.txt"))
+    accepted = next((workflow.base / "accepted").glob("*.txt"))
     snapshot = resolve_policy(
         load_policy(workflow.root / "atlas-agent-policy.toml"),
         parse_prompt(accepted.read_bytes()),
@@ -790,6 +790,39 @@ def test_start_run_cannot_replace_derived_empty_capability_plan(
     assert not any(event["event"] == "RUN_STARTED" for event in _events(workflow))
 
 
+@pytest.mark.parametrize("schema_kind", ["policy", "snapshot"])
+def test_start_run_rejects_replay_only_schema_as_new_execution(
+    tmp_path, schema_kind
+):
+    _, workflow = _project(tmp_path, capabilities=False)
+    _accept(workflow)
+    if schema_kind == "policy":
+        historical = json.loads(json.dumps(
+            load_policy(workflow.root / "atlas-agent-policy.toml")
+        ))
+        historical["schema"] = "atlas-agent-policy/1"
+        for profile in historical["profiles"].values():
+            if profile.get("executor") == "codex":
+                profile.pop("required_toolchains", None)
+                profile.pop("writable_caches", None)
+        workflow._policy_for = lambda record: historical
+    accepted = next((workflow.base / "accepted").glob("*.txt"))
+    prompt = parse_prompt(accepted.read_bytes())
+    policy = (historical if schema_kind == "policy" else
+              load_policy(workflow.root / "atlas-agent-policy.toml"))
+    snapshot = resolve_policy(policy, prompt)
+    if schema_kind == "snapshot":
+        snapshot = dict(snapshot)
+        snapshot["schema"] = "atlas-agent-policy-snapshot/2"
+    with pytest.raises(Exception, match="REPLAY|CURRENT|SCHEMA|POLICY|SESSION_PLAN|PERMISSION"):
+        workflow.start_run(1, execution={
+            "execution_id": "replay-schema-start",
+            "report_dir": "reports/executions/replay-schema-start",
+            "policy_snapshot": snapshot,
+        })
+    assert not any(event["event"] == "RUN_STARTED" for event in _events(workflow))
+
+
 def test_journal_rejects_current_owner_snapshot_with_historical_backend(tmp_path):
     """The real journal must reject a /3 owner paired with backend /1."""
     from tools.atlas_agent.journal import JournalError, _hash_event, canonical
@@ -885,6 +918,51 @@ def test_journal_rejects_mixed_historical_and_current_schema_tuple(tmp_path):
         workflow.journal.read()
 
 
+@pytest.mark.parametrize(("field", "value"), [
+    ("owner_schema", "atlas-agent-execution-owner/2"),
+    ("policy_snapshot.schema", "atlas-agent-policy-snapshot/2"),
+    ("provenance_version", 2),
+    ("execution_backend_schema", "atlas-bwrap-execution/1"),
+])
+def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
+    tmp_path, field, value
+):
+    from tools.atlas_agent.journal import JournalError, _hash_event, canonical
+
+    _, workflow = _project(tmp_path, capabilities=False)
+    _accept(workflow)
+    workflow.execute(1, FakeExecutor(observed_thread_id="tuple-matrix"))
+    path = workflow.journal.path
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    started = next(row for row in rows if row["event"] == "RUN_STARTED")
+    execution = started["payload"]["execution"]
+    target = execution
+    key = field
+    if "." in field:
+        key, nested = field.split(".", 1)
+        target = execution[key]
+        target[nested] = value
+    else:
+        target[key] = value
+    # Terminal events carry the same owner copy; keep the tamper structural so
+    # the journal reaches tuple validation rather than alias consistency.
+    for row in rows:
+        other = (row.get("payload") or {}).get("execution")
+        if isinstance(other, dict):
+            if "." in field:
+                other[key][nested] = value
+            else:
+                other[key] = value
+    previous = "0" * 64
+    for row in rows:
+        row["previous_event_sha256"] = previous
+        row["event_sha256"] = _hash_event(row)
+        previous = row["event_sha256"]
+    path.write_text("".join(canonical(row) + "\n" for row in rows))
+    with pytest.raises(JournalError, match="schema|provenance|backend|owner|snapshot"):
+        workflow.journal.read()
+
+
 def test_durable_plan_hash_surfaces_are_cross_bound_and_tamper_evident(tmp_path):
     from tools.atlas_agent.journal import JournalError, _hash_event, canonical
 
@@ -912,6 +990,53 @@ def test_durable_plan_hash_surfaces_are_cross_bound_and_tamper_evident(tmp_path)
     path.write_text("".join(canonical(row) + "\n" for row in rows))
     with pytest.raises(JournalError, match="PLAN|PROVENANCE|DESCRIPTOR|MISMATCH"):
         workflow.journal.read()
+
+
+def test_durable_archive_rejects_nested_capability_provenance_cross_binding(
+    tmp_path, monkeypatch
+):
+    from tools.atlas_agent.journal import _hash_event, canonical
+
+    _, workflow = _project(tmp_path)
+    monkeypatch.setenv("ATLAS_AGENT_CAPABILITIES_FILE", str(
+        tmp_path / "machine-capabilities.toml"
+    ))
+    _accept(workflow)
+    workflow.execute(1, FakeExecutor(observed_thread_id="nested-provenance"))
+    owner = workflow._state()["generations"]["1"]["execution"]
+    archive = workflow.base / owner["capability_archive_path"]
+    data = json.loads(archive.read_text())
+    # Keep the archive and its own recorded digest internally coherent, while
+    # binding its nested facts to a different plan than the owner claims.
+    data["capability_provenance"]["capability_plan_sha256"] = "f" * 64
+    data["capability_provenance"]["toolchains"][0]["qualification"] = "rust:tampered"
+    canonical_archive = {
+        key: data[key] for key in data if key != "archive_sha256"
+    }
+    data["archive_sha256"] = hashlib.sha256(json.dumps(
+        canonical_archive, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+    archive.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+    rows = [json.loads(line) for line in workflow.journal.path.read_text().splitlines()]
+    started = next(row for row in rows if row["event"] == "RUN_STARTED")
+    started["payload"]["execution"]["capability_archive_sha256"] = hashlib.sha256(
+        archive.read_bytes()).hexdigest()
+    for row in rows:
+        other = (row.get("payload") or {}).get("execution")
+        if isinstance(other, dict):
+            other["capability_archive_sha256"] = started["payload"]["execution"][
+                "capability_archive_sha256"
+            ]
+    previous = "0" * 64
+    for row in rows:
+        row["previous_event_sha256"] = previous
+        row["event_sha256"] = _hash_event(row)
+        previous = row["event_sha256"]
+    workflow.journal.path.write_text(
+        "".join(canonical(row) + "\n" for row in rows)
+    )
+    with pytest.raises(Exception, match="PROVENANCE|CAPABILITY|TAMPER|PLAN"):
+        workflow.rebuild()
 
 
 def test_controller_reuse_uses_production_capability_compatibility(tmp_path, monkeypatch):

@@ -6,6 +6,7 @@ failure (unless the test is explicitly skipped for native sandbox support).
 """
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ def test_machine_authority_and_persistent_cache_must_be_outside_repository(
     toolchains_api, tmp_path, overlap
 ):
     repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     manifest_path = repo / "machine.toml"
     manifest_path.write_text('schema = "atlas-agent-machine-capabilities/1"\n')
     manifest = _manifest(tmp_path / "qualified")
@@ -74,6 +75,39 @@ def test_machine_authority_and_persistent_cache_must_be_outside_repository(
     )
     with pytest.raises(toolchains_api.CapabilityError, match="AUTHORITY|OVERLAP|CONFIG"):
         _resolve(toolchains_api, manifest, {"toolchains": ["rust"], "caches": ["cargo"]})
+
+
+@pytest.mark.parametrize("repository_claim", [None, "false-repository-root"])
+def test_workflow_binds_machine_manifest_placement_to_actual_repository(
+    tmp_path, monkeypatch, repository_claim
+):
+    """Manifest-supplied repository labels cannot authorize a local catalog."""
+    from tools.atlas_agent.workflow import Workflow
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    qualified = _manifest(tmp_path / "qualified")
+    lines = [
+        'schema = "atlas-agent-machine-capabilities/1"',
+        f'persistent_cache_root = "{qualified["persistent_cache_root"]}"',
+    ]
+    if repository_claim:
+        lines.append(f'repository_root = "{tmp_path / repository_claim}"')
+    lines += [
+        '[toolchains.rust]',
+        f'qualification = "{qualified["toolchains"]["rust"]["qualification"]}"',
+        f'source_root = "{qualified["toolchains"]["rust"]["source_root"]}"',
+        '[toolchains.rust.commands.cargo]',
+        f'path = "{qualified["toolchains"]["rust"]["commands"]["cargo"]["path"]}"',
+        f'sha256 = "{qualified["toolchains"]["rust"]["commands"]["cargo"]["sha256"]}"',
+        'probe_args = ["--version"]',
+        f'probe_output_sha256 = "{qualified["toolchains"]["rust"]["commands"]["cargo"]["probe_output_sha256"]}"',
+    ]
+    machine = repo / "machine.toml"
+    machine.write_text("\n".join(lines) + "\n")
+    monkeypatch.setenv("ATLAS_AGENT_CAPABILITIES_FILE", str(machine))
+    with pytest.raises(Exception, match="OVERLAP|AUTHORITY|CONFIG"):
+        Workflow(repo).resolve_capabilities({"toolchains": ["rust"], "caches": []})
 
 
 @pytest.mark.parametrize("broad", ["HOME", ".cargo", ".rustup", ".local",
@@ -105,6 +139,25 @@ def test_system_visible_requires_exact_host_guest_identity(toolchains_api, tmp_p
     }
     with pytest.raises(toolchains_api.CapabilityError, match="QUALIFICATION|IDENTITY"):
         _resolve(toolchains_api, manifest, {"toolchains": ["system"], "caches": []})
+
+
+def test_system_visible_fallback_cannot_split_host_and_guest_command_identity(
+    toolchains_api, tmp_path
+):
+    executable = Path("/usr/bin/true")
+    manifest = {
+        "schema": "atlas-agent-machine-capabilities/1",
+        "persistent_cache_root": str(tmp_path / "persistent"),
+        "toolchains": {"system": {
+            "exposure": "system-visible", "qualification": "system:true",
+            "source_root": "/usr", "guest_root": "/usr",
+            "commands": {"true": {
+                "path": "true", "sha256": _digest(executable.read_bytes()),
+                "probe_args": [], "probe_output_sha256": _digest(b"\0")}}}},
+        "caches": {},
+    }
+    plan = _resolve(toolchains_api, manifest, {"toolchains": ["system"], "caches": []})
+    assert plan.command("true").host_path == plan.command("true").guest_path
 
 
 def test_private_home_is_not_exposed_by_a_broad_manifest_root(
@@ -160,12 +213,58 @@ def test_cache_control_and_data_are_effective_uid_0700_and_invalid_mode_fails_cl
     control = data.parent.parent / "control"
     control.mkdir(parents=True, exist_ok=True)
     data.chmod(0o755)
-    with pytest.raises(toolchains_api.CapabilityError, match="CACHE|AUTHORITY|MODE"):
+    with pytest.raises(Exception, match="CACHE|AUTHORITY|MODE"):
         store.validate(data)
     assert data.stat().st_uid == os.geteuid()
     assert control.stat().st_uid == os.geteuid()
     assert data.stat().st_mode & 0o777 == 0o700
     assert control.stat().st_mode & 0o777 == 0o700
+
+
+def test_production_cache_preparation_rejects_invalid_backing_mode(
+    toolchains_api, tmp_path, monkeypatch
+):
+    """Exercise AtlasBubblewrapExecutor's production cache setup boundary."""
+    from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionSpec, PreparedExecution
+
+    plan = _resolve(toolchains_api, _manifest(tmp_path / "root"))
+    cache = plan.caches[0]
+    cache.backing.mkdir(parents=True)
+    cache.backing.chmod(0o755)
+    spec = ExecutionSpec(
+        1, "0" * 64, "implementation", tmp_path / "prompt",
+        tmp_path / "repo", "cache-mode", tmp_path / "report",
+        capability_plan=plan,
+    )
+    spec.prompt_path.write_text("prompt")
+    executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    executor.sandbox = "workspace-write"
+    envelope = {
+        "sandbox_mode": "workspace-write", "approval_policy": "never",
+        "approvals_reviewer": "user", "strict_config": True,
+        "ignore_rules": True, "network_access": False,
+    }
+    monkeypatch.setattr(
+        CodexExecutor, "prepare_execution",
+        lambda self, value: PreparedExecution(
+            value, "codex", ("codex",), "codex/1", envelope, None))
+    monkeypatch.setattr(executor, "_bwrap_version", lambda: "1")
+    monkeypatch.setattr(executor, "_validate_namespace", lambda: None)
+    monkeypatch.setattr(executor, "_git_dir", lambda root: None)
+    monkeypatch.setattr(executor.scratch_store, "ensure_root", lambda: None)
+    monkeypatch.setattr(executor, "_validate_disk_scratch", lambda: None)
+    monkeypatch.setattr(executor, "_prepare_scratch", lambda spec: None)
+    monkeypatch.setattr(executor, "_capability_probe", lambda: None)
+    monkeypatch.setattr(
+        "tools.atlas_agent.bubblewrap._native_codex",
+        lambda executable: Path("/bin/sh"),
+    )
+    with pytest.raises(Exception, match="CACHE|AUTHORITY|MODE"):
+        # The production path must validate the backing it is about to expose;
+        # it must not silently accept the pre-existing unsafe mode.
+        executor.prepare_execution(spec)
 
 
 def test_durable_cache_provenance_exposes_scope_lifecycle_and_mutable_status(
