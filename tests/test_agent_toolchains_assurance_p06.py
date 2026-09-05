@@ -447,12 +447,29 @@ def test_recreated_repository_git_identity_cannot_reuse_cache_authority(
 
 def test_cache_control_lock_is_not_in_guest_writable_backing(toolchains_api, tmp_path):
     store = toolchains_api.CacheStore(tmp_path / "persistent")
-    backing = store.prepare("project", "rust:1", "cargo-cache/1")
-    backing.unlink()
-    backing.mkdir()
+    backing = store.root / "data" / "project" / "toolchain" / "cargo"
+    store.prepare_backing(backing)
     owner = store.lock_directory(backing)
     try:
         assert owner.path.parent.name == "control"
         assert not owner.path.is_relative_to(backing)
     finally:
         owner.release()
+
+
+def test_cache_lock_uses_exact_store_when_ancestor_is_named_data(
+    toolchains_api, tmp_path
+):
+    store = toolchains_api.CacheStore(tmp_path / "data" / "operator-cache")
+    backing = store.root / "data" / "project" / "toolchain" / "cargo"
+    store.prepare_backing(backing)
+
+    owner = store.lock_directory(backing)
+    try:
+        assert owner.path.is_relative_to(store.root / "control")
+        assert not owner.path.is_relative_to(tmp_path / "control")
+    finally:
+        owner.release()
+
+    with pytest.raises(toolchains_api.CapabilityError, match="CACHE_AUTHORITY"):
+        store.lock_directory(store.root.parent / "outside-cache")

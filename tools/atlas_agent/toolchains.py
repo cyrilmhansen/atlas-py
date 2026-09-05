@@ -625,17 +625,18 @@ class CacheStore:
     def lock_directory(self, directory):
         import fcntl
         directory = Path(directory)
-        directory.mkdir(parents=True, exist_ok=True)
         # The guest-visible directory is data only.  Derive a stable control
         # identity from its relative data path and keep the lock in the
         # controller-only sibling namespace.
         try:
-            marker = directory.parts.index("data")
-            root = Path(*directory.parts[:marker])
-            identity = "/".join(directory.parts[marker + 1:])
-            control = root / "control"
+            identity = "/".join(
+                directory.relative_to(self.root / "data").parts
+            )
         except ValueError:
-            root, identity, control = directory.parent, directory.name, directory.parent / "control"
+            _error("ATLAS_CACHE_AUTHORITY_INVALID",
+                   "backing outside cache data namespace")
+        directory.mkdir(parents=True, exist_ok=True)
+        control = self.root / "control"
         control.mkdir(parents=True, exist_ok=True)
         control.chmod(0o700)
         lock_path = control / (self._key(identity) + ".lock")

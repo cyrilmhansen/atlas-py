@@ -325,7 +325,7 @@ def test_real_preflight_failures_happen_before_run_started(
             {"toolchains": ["rust"], "caches": ["cargo"]}
         )
         cache = plan.caches[0]
-        held_cache_lock = CacheStore(cache.backing.parent.parent.parent).lock_directory(
+        held_cache_lock = CacheStore(cache.backing.parents[3]).lock_directory(
             cache.backing
         )
     # The production boundary must classify this requested failure; accepting
@@ -344,7 +344,7 @@ def test_real_preflight_failures_happen_before_run_started(
             held_cache_lock.release()
             # The failed preparation must not leave the production namespace
             # permanently wedged.
-            retry = CacheStore(plan.caches[0].backing.parent.parent.parent).lock_directory(
+            retry = CacheStore(plan.caches[0].backing.parents[3]).lock_directory(
                 plan.caches[0].backing
             )
             retry.release()
