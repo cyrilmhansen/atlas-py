@@ -1,80 +1,99 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.6**  
+Document version: **0.7**  
 Planning date: **2026-09-06**  
-Code baseline: **`2c97e706f394b9392f27eae3d50ca210b3daeeac`** (`M1 Core Hygiene`)  
-Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
+Agent code baseline: **`2c97e706f394b9392f27eae3d50ca210b3daeeac`** (`M1 Core Hygiene`)  
+Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)  
+Semantic observation baseline: [`docs/semantic-observation-v0.md`](semantic-observation-v0.md)
 
-This roadmap supersedes the single M3–M12 sequence from version 0.5.
+This roadmap supersedes version 0.6.
 
-The previous roadmap treated Atlas and Atlas Agent too much like one evolving component. The M2 Astra Medium review made useful observations about execution outcomes, material identity, evidence, and qualification, but its prompt and source package were dominated by Atlas Agent and blurred the product boundary. Its proposed global milestone order is therefore advisory rather than authoritative.
+Version 0.6 correctly separated Atlas from Atlas Agent, but it still described **Atlas Core** too narrowly as the new semantic-coordination product. That wording conflicted with the project's existing definition: Atlas is already an experimental **semantic computational knowledge system**, and the existing Core V1 profile already specifies a semantic model, persistent knowledge, structured rules, grounding, decision/selection, provenance, snapshots, and explanation.
 
-The current planning model separates two development tracks:
+Version 0.7 reconciles the new coordination work with that existing product model.
+
+The current planning model has three related lanes:
 
 ```text
-Atlas Core        semantic coordination product
-Atlas Agent       deterministic execution subsystem
+R — Rust Atlas Core implementation
+    production implementation of the existing semantic core
+
+S — Semantic coordination capabilities
+    code observation, task/obligation state, assurance planning,
+    traceability, semantic zoom, orchestration
+
+A — Atlas Agent infrastructure
+    deterministic execution, isolation, qualification,
+    journal/recovery, materialization, tool services
 ```
 
-They have explicit dependencies, but Atlas Core development must not be indefinitely postponed by unrelated Atlas Agent hardening.
+These lanes have explicit dependencies, but none is a universal prerequisite for all the others.
 
 ---
 
-## 1. Architectural boundary
+# 1. Product model
 
-The governing rule is:
+## 1.1 Atlas
 
-> **Atlas decides what must be understood or accomplished. Atlas Agent guarantees how an authorized operation is executed, recorded, and materialized.**
+Atlas remains the semantic computational knowledge system described by the existing specification and Core V1 profile.
 
-See [`architecture-boundaries.md`](architecture-boundaries.md) for the detailed ownership model.
-
-At a high level:
+The current semantic-core responsibilities include:
 
 ```text
-                         ATLAS CORE
-                   semantic coordination
-
- goals / decisions / work representation / obligations
- code understanding / impact / traceability / planning
- agent strategy / assurance planning / orchestration
-
-                             │
-                             ▼
-
-                         ATLAS AGENT
-                 deterministic execution
-
- admission / ownership / capabilities / sandbox
- model + tool execution / journal / recovery
- qualification execution / Git materialization
- provenance / durable runtime facts
-
-                             │
-                             ▼
-
-                    SPECIALIZED SERVICES
-
- Codex / models / rust-analyzer / Pyright / Git
- compilers / test runners / linters / other tools
+identity / descriptions / values
+facts / relations / vocabulary
+scope / provenance / epistemic state
+knowledge snapshots / supersession
+rules / grounding
+decision problems / selection
+derivation dependencies / explanation
 ```
 
-Semantic services are a useful example of the split:
+The new coordination work adds product capabilities around that semantic foundation:
 
 ```text
-Atlas Core       asks and interprets semantic questions
-Atlas Agent      qualifies and executes the service
-rust-analyzer    computes Rust semantic observations
+goals / accepted decisions / open questions
+work representation / obligations / dependencies
+software semantic observation / impact reasoning
+assurance planning
+semantic traceability / semantic zoom
+higher-level orchestration
 ```
 
-Atlas Agent must not grow until it absorbs Atlas Core responsibilities.
+Semantic coordination is therefore an extension of Atlas, not a replacement definition of Atlas Core.
+
+## 1.2 Atlas Agent
+
+Atlas Agent remains deterministic development and assurance infrastructure.
+
+The governing split is:
+
+> **Atlas owns semantic representation, interpretation, decision, and coordination. Atlas Agent guarantees how an authorized operation is executed, isolated, recorded, qualified, and materialized.**
+
+Atlas Agent must not grow until it absorbs Atlas semantic responsibilities.
+
+## 1.3 Specialized services
+
+Tools such as:
+
+```text
+rust-analyzer
+Pyright
+compilers
+test runners
+Git
+Codex / other models
+```
+
+supply domain computations or observations.
+
+Atlas Agent qualifies and executes them. Atlas interprets their results. An observation does not automatically become persistent Atlas knowledge.
 
 ---
 
-## 2. Completed foundation
+# 2. Completed Atlas Agent foundation
 
-### 2.1 Atlas Agent hardening baseline
-
-The following work is complete and remains the foundation for future execution services:
+The current Agent baseline remains the result of the v0.1.2 hardening, qualified-toolchain tranche, Astra Low review/adjudication, P0.6x closure, and M1 hygiene.
 
 | Capability / tranche | Status | Representative checkpoint |
 | --- | --- | --- |
@@ -102,15 +121,13 @@ repository witness: MATCH
 doctor: OK
 ```
 
-### 2.2 M1 Core Hygiene — DONE
-
-M1 intentionally changed no product semantics. It removed a small amount of stale/dead material, tightened deterministic test assertions, and refreshed documentation status.
-
-The M1 stop rule remains important:
+The M1 stop rule remains authoritative:
 
 > Once a bounded task satisfies its decided contract, required witnesses, and required qualification, close it. Do not convert task closure into generalized hardening.
 
-### 2.3 M2 architecture review — completed, scope-corrected
+---
+
+# 3. M2 architecture review — completed, scope-corrected
 
 The Astra Medium M2 review produced useful architecture observations, especially:
 
@@ -121,31 +138,73 @@ The Astra Medium M2 review produced useful architecture observations, especially
 - requested / resolved / observed remains a useful runtime distinction;
 - semantic navigation should expose backend capability and completeness rather than treating unsupported as empty.
 
-However, M2 was prompted as if Atlas itself were evolving from the transactional controller. That is not the current product boundary. Therefore M2 does **not** decide that Atlas Agent assurance work must precede Atlas Core semantic navigation.
+However, the M2 prompt and source package were dominated by Atlas Agent and framed Atlas as if it were evolving from the transactional controller. That distorted milestone ordering and underrepresented the pre-existing Atlas Core semantic model.
 
-The owner clarification following M2 is now authoritative: **Atlas Core and Atlas Agent are separate layers.**
+Therefore:
+
+```text
+M2 findings about Agent mechanics/evidence       useful input
+M2 global milestone ordering                    advisory only
+existing Atlas specification/Core V1 semantics  retained authority
+owner clarification after M2                    current architecture direction
+```
+
+Future architecture prompts must state explicitly that Atlas Agent is a subsystem of Atlas and that Atlas Core already has semantic responsibilities independent of Agent.
 
 ---
 
-## 3. Implementation-language and repository direction
+# 4. Implementation-language and repository direction
 
-### 3.1 Atlas Core
+## 4.1 Existing Python Atlas Core
 
-New Atlas Core development should begin in **Rust**.
+The existing Python Core V1 implementation is not discarded.
 
-Working repository/component name:
+Its specification, profile, tests, fixtures, persistent examples, and behavior should serve as:
 
 ```text
-atlas-core
+prototype / reference implementation
+semantic design history
+executable oracle where appropriate
+conformance evidence for Rust
 ```
 
-The name is provisional and descriptive. Do not block development on final naming.
+The semantic specification/profile remains above host-language details.
 
-Python was acceptable as a prototyping and long-lived implementation language for Atlas Agent. It should not automatically become the production language for a new Atlas Core merely because the current repository is Python.
+## 4.2 New Rust Atlas Core
 
-### 3.2 Atlas Agent
+New production Atlas Core development begins in **Rust**.
 
-The existing implementation remains Python for now.
+Repository:
+
+```text
+cyrilmhansen/atlas-core
+```
+
+Initial Rust bootstrap commit:
+
+```text
+52f69d5  chore: initialize Atlas Core Rust crate
+```
+
+The repository name is descriptive and may remain provisional. It is intended to host the production Rust implementation of the existing semantic core and product capabilities built around it; it does not redefine Core as code navigation alone.
+
+Migration rule:
+
+```text
+semantic contract
+    ↓
+Python reference behavior / fixtures / tests
+    ↓
+Rust implementation
+    ↓
+conformance comparison
+```
+
+Do not translate Python files mechanically and do not require a big-bang port before new Atlas product work can continue.
+
+## 4.3 Atlas Agent
+
+Atlas Agent remains Python for now.
 
 Current repository:
 
@@ -153,39 +212,110 @@ Current repository:
 atlas-py
 ```
 
-Likely future repository name:
+Likely future name:
 
 ```text
 atlas-agent
 ```
 
-Do not rename the repository yet solely for cosmetic consistency.
+Do not rename it yet solely for cosmetic consistency.
 
-### 3.3 Migration rule
-
-Do not perform a big-bang Python-to-Rust rewrite of Atlas Agent before beginning Atlas Core.
-
-If Atlas Agent is later migrated, prefer incremental replacement behind explicit versioned boundaries. Existing Python tests, journals, fixtures, error codes, and state transitions can serve as conformance evidence for replacement components.
-
-Atlas Core must not depend on importing internal Python objects from Atlas Agent. The Core/Agent boundary should be explicit and versioned; a simple process/CLI + structured JSON boundary is acceptable initially.
+If Agent is later migrated to Rust, prefer incremental replacement behind explicit contracts and reuse its existing tests/journals/fixtures as conformance evidence.
 
 ---
 
-# 4. Atlas Core track
+# 5. R track — Rust semantic-core implementation
 
-The Core track is labeled **C1–C5**. It describes product capabilities rather than implementation-language layers.
+The **R** track moves the existing Atlas semantic core toward its intended production Rust implementation.
 
-## C1 — Semantic Observation
+## R0 — Rust Core baseline
 
 ### Goal
 
-Give Atlas a compact, structured way to observe code semantics instead of repeatedly rediscovering repositories through text search and whole-file dumps.
+Establish the Rust repository as a real Atlas Core implementation rather than an unrelated greenfield application.
 
-This is the first major Atlas Core capability and the first intended Rust implementation milestone.
+### Scope
 
-### C1.1 Semantic Observation v0
+- document the relationship to the Atlas specification and Core V1 profile;
+- establish minimal crate/module boundaries without prematurely reproducing the Python file layout;
+- select the smallest existing semantic contract suitable for differential/conformance testing;
+- establish a way to reuse or translate stable fixtures/test vectors without duplicating product semantics manually.
 
-Initial capability:
+### Non-goals
+
+- porting the entire Knowledge Store;
+- reproducing all Python APIs;
+- rewriting Atlas Agent;
+- designing a universal plugin/RPC architecture;
+- mixing semantic-observation backend details into fundamental semantic types.
+
+### Exit direction
+
+At least one small existing semantic behavior is represented idiomatically in Rust and checked against the established Atlas contract/reference evidence.
+
+---
+
+## R1 — Semantic identity and value foundation
+
+Candidate first semantic behaviors include the stable, highly local invariants already defined by Core V1:
+
+```text
+nominal IDs are distinct from content
+host-language equality does not silently define Atlas equality
+TRUE / FALSE / UNKNOWN remain distinct
+ordered sequence != finite set
+validated value forms do not rely on implicit host coercions
+```
+
+The exact first slice should be chosen from existing implementation/tests rather than invented anew.
+
+---
+
+## R2 — Knowledge / provenance / snapshots
+
+Port the persistent semantic substrate only after the Rust value/identity model has proved stable enough.
+
+Responsibilities eventually include:
+
+- validated admission;
+- provenance;
+- vocabulary;
+- immutable snapshots;
+- supersession;
+- historical/stale interpretation;
+- dependency traversal.
+
+SQLite remains a Core V1 implementation choice, not the semantic definition.
+
+---
+
+## R3 — Rules / grounding / decision / explanation
+
+Migrate the higher semantic behavior:
+
+```text
+structured rule evaluation
+grounding
+finite decision problem construction
+selection
+reconstructed explanation from effective dependencies
+```
+
+Preserve the distinction between semantic requirements and Core V1 implementation choices.
+
+---
+
+# 6. S track — semantic coordination capabilities
+
+The **S** track adds the coordination capabilities that motivated the recent architecture work. It can progress while R migration is still incomplete, provided it respects the existing Atlas semantic model instead of creating a competing one.
+
+## S1 — Semantic Observation
+
+### Goal
+
+Give Atlas compact structured access to software semantics instead of repeatedly rediscovering repositories through whole-file dumps and lexical search.
+
+Initial query kinds:
 
 ```text
 definition
@@ -195,64 +325,46 @@ diagnostics
 search_text
 ```
 
-The precise wire/API syntax is not frozen yet.
+Backend order:
 
-Each observation should be able to report, as applicable:
+1. `rust-analyzer`;
+2. Pyright or equivalent Python semantic backend;
+3. syntax/AST helpers where needed;
+4. exact text search as an explicit lexical fallback.
 
-```text
-workspace/material identity
-backend identity
-query kind
-supported / unsupported / incomplete
-bounded result set
-truncation / expansion information
-source locations
-```
-
-The model-facing contract must distinguish:
+Normative distinctions include:
 
 ```text
 unsupported capability
 empty valid answer
-incomplete answer
+known-incomplete answer
 backend failure
+output truncation
 ```
 
-### Backend order
+Semantic observations are not automatically Atlas facts. They may remain ephemeral, become referenced evidence, or later be explicitly admitted as semantic knowledge with provenance.
 
-1. `rust-analyzer`;
-2. Pyright or equivalent Python semantic backend;
-3. syntax/AST helpers where language-server semantics are insufficient;
-4. exact text search as an explicit fallback.
+See [`semantic-observation-v0.md`](semantic-observation-v0.md).
 
-Rust is not merely a fixture language here. The new Core itself is intended to be Rust, and real Rust repositories such as existing Atlas-managed projects are valid integration subjects.
+### S1 non-goals
 
-### C1.1 non-goals
-
-Do not include yet:
-
-- persistent semantic database;
+- persistent code-intelligence database;
 - whole-program language-neutral graph;
 - complete impact analysis;
 - automatic test selection;
-- parallel LSP query execution;
-- Pyright in the first Rust backend slice;
-- semantic traceability UI;
+- parallel LSP execution;
+- Pyright in the first real backend slice;
 - generalized RPC framework.
-
-### Exit criteria
-
-Against a representative Rust project, Atlas can ask the initial semantic questions through an explicit Atlas/Agent boundary, receive bounded qualified observations, and fall back to exact text search without silently confusing lexical and semantic results.
 
 ---
 
-## C2 — Semantic Coordinator
+## S2 — Semantic Coordinator task state
 
 ### Goal
 
-Represent enough task semantics that Atlas can coordinate work without rebuilding the problem from conversation history and repository exploration at every step.
+Represent enough task semantics that Atlas can coordinate work without reconstructing the complete problem from conversation history and repository exploration at every step.
 
-Candidate durable/working concepts include:
+Candidate concepts include:
 
 ```text
 objective
@@ -264,51 +376,39 @@ candidate next action
 relevant semantic anchors
 ```
 
-The coordinator should preserve what matters to the task, not create a prose twin of the repository.
+Use existing Atlas semantic concepts where they genuinely fit. Do not automatically force transient operational state into the Knowledge Store.
 
-### Human authority
-
-The human/operator retains authority over consequential product ambiguity, scope changes, new privileges, risk acceptance, and externally meaningful side effects.
-
-Models may propose decomposition, next actions, engineering choices, and review strategy within granted policy.
-
-### Exit direction
-
-A bounded development task can be resumed from explicit task state and targeted semantic observations rather than requiring the coordinator to reconstruct the entire situation from scratch.
+Human/operator authority remains necessary for consequential product ambiguity, scope changes, new privileges, risk acceptance, and externally meaningful side effects.
 
 ---
 
-## C3 — Assurance Planning
+## S3 — Assurance Planning
 
 ### Goal
 
 Let Atlas decide what evidence is needed for a candidate change.
 
-Atlas owns reasoning such as:
+Atlas may reason:
 
 ```text
 this material affects subsystem X
-→ obligations A/B are open
+→ obligations A/B remain open
 → focused + integration qualification is required
 ```
 
-Atlas Agent owns execution of authorized recipes and truthful recording of results.
+Atlas Agent executes authorized qualification recipes and records evidence; it does not decide product correctness.
 
-Semantic navigation can improve impact reasoning, but passing static analysis or finding no callers must never silently erase mandatory qualification rules.
-
-### Non-goal
-
-Core must not acquire unrestricted host shell authority merely because it can reason about which tests should run.
+Semantic navigation can improve impact reasoning, but no static-analysis result may silently erase mandatory qualification policy.
 
 ---
 
-## C4 — Semantic Traceability / Semantic Zoom
+## S4 — Semantic Traceability / Semantic Zoom
 
 ### Goal
 
-Connect important product intent to implementation and evidence without maintaining a parallel manually curated requirements database.
+Connect product intent, semantic knowledge, implementation, tests, and evidence without maintaining a parallel manually curated requirements database.
 
-Useful links include:
+Useful links may include:
 
 ```text
 scenario
@@ -320,25 +420,17 @@ scenario
 → qualification evidence
 ```
 
-Important distinctions:
+Keep human-asserted, tool-derived, and model-inferred links distinct.
 
-- human-asserted links;
-- tool-derived links;
-- model-inferred links.
-
-Inference must not silently become authority.
-
-Semantic zoom should permit progressive disclosure from user intent down to exact code and proof evidence.
-
-Do not begin with a graph database. Start with stable identifiers and links only when a real consumer requires them.
+Do not begin with a new graph database. Reuse existing Atlas identities/knowledge when appropriate and introduce additional anchors only when a real consumer needs them.
 
 ---
 
-## C5 — Higher-level Orchestration
+## S5 — Higher-level orchestration
 
 ### Goal
 
-Use the semantic/task representation to coordinate larger work:
+Use semantic/task representations for larger work:
 
 - dependency graphs;
 - resource constraints;
@@ -346,21 +438,17 @@ Use the semantic/task representation to coordinate larger work:
 - deterministic scheduling where agent reasoning is unnecessary;
 - bounded replanning when evidence or product decisions change.
 
-This is the later Atlas Core layer corresponding to the broader orchestration vision. It should be built from real C1–C4 primitives, not designed as a speculative general scheduler first.
+Build this from real R/S/A primitives rather than designing a speculative general scheduler first.
 
 ---
 
-# 5. Atlas Agent track
+# 7. A track — Atlas Agent infrastructure
 
-The Agent track is labeled **A1–A7**. Work here improves deterministic execution services and can proceed when it either blocks Core or closes a concrete operational defect.
+Agent work should proceed when it blocks Atlas product work or closes a concrete operational defect. Remaining possible hardening is not by itself a reason to postpone R or S work.
 
 ## A1 — Executor Outcome Robustness
 
-### Goal
-
-Make execution outcomes truthful even when output/report collection also fails.
-
-Known motivating case:
+Known motivating defect:
 
 ```text
 primary event: model quota / service failure
@@ -370,33 +458,29 @@ bad presentation: EXECUTOR_OUTPUT_MALFORMED hides primary cause
 
 Required direction:
 
-1. preserve the primary execution/process/service failure;
-2. record report/parser/telemetry/collection failure separately;
+1. preserve primary execution/process/service failure;
+2. record parser/report/telemetry/collection failures separately;
 3. bound output reinjected into model context;
 4. retain full useful output as an artifact where feasible;
-5. support explicit bounded/range retrieval;
+5. support bounded/range retrieval;
 6. keep historical outcome records readable without current runtime assets.
 
-A1 is important maintenance, but it is **not a prerequisite for beginning C1** unless implementation discovers a direct dependency.
+A1 is important maintenance but does **not** automatically precede S1.
 
 ---
 
 ## A2 — Qualified Tool Services
 
-### Goal
-
-Expose long-lived or structured development services through explicit qualified Agent boundaries rather than allowing models to launch arbitrary user-state tools.
-
 ### A2.1 Semantic service runtime
 
-This is the Agent-side dependency for C1.
+Agent-side dependency for S1.
 
-For a language server, Agent should own or report, where relevant:
+For `rust-analyzer`, Agent should own or report, where relevant:
 
 ```text
 qualified executable identity
 version
-workspace root / material binding
+workspace/material binding
 configuration
 environment/capabilities
 process lifecycle
@@ -405,23 +489,19 @@ response bounds
 backend capability discovery
 ```
 
-The first consumer is `rust-analyzer`.
-
-Language servers may themselves execute build scripts, procedural macros, interpreters, or other helpers. Source-read semantics therefore do not automatically imply zero execution capability. Such behavior must be represented truthfully by the Agent service contract rather than hidden behind the word “read-only”.
+A logically read-only semantic query may still cause a language server to invoke compilers, build scripts, procedural macros, or caches. Agent must represent those requirements truthfully rather than hiding them behind a `read-only` label.
 
 ### A2.2 Additional semantic backends
 
-Add Pyright after the Rust contract has demonstrated useful shape. The second backend is intentionally a test of whether the interface generalizes across language semantics.
+Add Pyright after the Rust contract has demonstrated useful shape. The second backend tests whether the interface genuinely survives different language semantics.
 
 ---
 
 ## A3 — Qualification Execution and Evidence
 
-### Goal
+Execute authorized qualification recipes against identified material and record evidence without making Agent responsible for semantic sufficiency.
 
-Execute authorized project qualification recipes against identified candidate material and record evidence without making Agent responsible for deciding product correctness.
-
-Candidate recipe classes include:
+Candidate recipe classes:
 
 ```text
 focused
@@ -431,32 +511,17 @@ full
 hygiene
 ```
 
-Proof attempts should distinguish at least outcomes such as:
+Proof/evidence must distinguish sandbox, host, live, skip/host-required, failure, timeout, cancellation, and infrastructure failure truthfully.
 
-```text
-UNTESTED
-SANDBOX_PASS
-SANDBOX_SKIP_HOST_REQUIRED
-HOST_PASS
-HOST_FAIL
-LIVE_PASS
-```
-
-with timeout/cancellation/infrastructure failure represented separately rather than collapsed into pass/fail.
-
-Evidence must be bound to the material and environment it actually observed.
-
-Automatic checkpointing may eventually depend on policy plus evidence, but Git commits remain neutral material snapshots.
+Git commits remain neutral material snapshots.
 
 ---
 
 ## A4 — Tool Concurrency
 
-### Goal
-
 Permit safe intra-generation concurrency without weakening the V1 single-`RUNNING`-generation rule.
 
-Likely effect distinctions include:
+Potential effect classes include:
 
 ```text
 PURE_ANALYSIS
@@ -467,103 +532,104 @@ DURABLE_CONTROL_WRITE
 EXTERNAL_SIDE_EFFECT
 ```
 
-Concurrency should preserve requested / resolved / observed behavior.
+Design request/observation structures so requested / resolved / observed concurrency can be represented, but execute serially first.
 
-Initial implementation should remain serial even if request structures become concurrency-ready. Qualified semantic reads are the preferred first real parallel workload once A2/C1 works serially.
-
-The journal must not invent total causal order merely because durable event records are sequential.
+Qualified semantic reads are the preferred first real parallel workload after A2/S1 works serially.
 
 ---
 
 ## A5 — Distribution / Install / Doctor
 
-Provide a supported installation path for the qualified Agent runtime and its machine prerequisites.
+Provide a supported installation and activation path for qualified Agent runtimes and machine prerequisites.
 
-This remains important productization work but should not block early Core development on a machine where the current qualified environment already works.
-
-Future responsibilities include:
-
-- qualified runtime artifact distribution;
-- deterministic installation;
-- machine-level install doctor;
-- stable launcher/activation;
-- explicit controller/runtime provenance.
+Important productization work, but not a blocker for early R/S work on a machine where the qualified environment already functions.
 
 ---
 
 ## A6 — Policy / Network / Timeouts / Routing
 
-Refine policies only where concrete usage requires them.
+Refine policy only where concrete usage requires it:
 
-Topics include:
-
-- separate model/tool/generation/qualification timeouts;
+- distinct timeout classes;
 - truthful network requested/resolved/enforced/observed semantics;
 - per-dispatch model/reasoning/service-tier routing;
-- versioned prompt/project/role overlays.
+- versioned project/role prompt composition.
 
-Avoid turning this milestone into a generalized policy framework before real consumers exist.
+Avoid a generalized policy framework without consumers.
 
 ---
 
 ## A7 — Isolated Parallel Generations
 
-Generation-level parallelism remains later work.
-
-The V1 invariant stays:
+The V1 rule remains:
 
 ```text
 one RUNNING generation per controlled repository/workflow
 ```
 
-Future parallelism requires explicit repository/workspace isolation, with independently controlled Git topology, journal ownership, caches, qualification, and integration.
-
-Worktree support, if desired, belongs here as an architectural feature rather than as an opportunistic Bubblewrap patch.
+Future generation-level parallelism requires explicit repository/workspace isolation. Worktree support, if desired, belongs here as an architectural feature rather than an opportunistic Bubblewrap patch.
 
 ---
 
-# 6. Cross-track dependencies
+# 8. Cross-lane dependencies
 
-The roadmap is no longer one total ordering.
-
-Important dependencies are:
+The roadmap is intentionally not one total ordering.
 
 ```text
+existing Atlas semantic contract / Python reference
+        ↓
+R0 → R1 → R2 → R3
+
 A2.1 qualified semantic service
         ↕
-C1 Semantic Observation
+S1 Semantic Observation
 
-C1 observations
-        → C2 coordinator can reason with better repository structure
-        → C3 assurance planning can improve impact selection
-        → C4 can derive symbol-level traceability
+S1 observations
+        → S2 coordinator gets better software structure
+        → S3 assurance planning gets better impact evidence
+        → S4 can derive symbol-level traceability
 
-C3 assurance planning
+S2/S3/S4 may reuse R semantic concepts where appropriate
+but must not wait for complete Rust migration if the contract already exists
+
+S3 assurance planning
         ↔ A3 qualification execution/evidence
 
-A2/C1 serial semantics
+A2/S1 serial semantics
         → A4 parallel semantic reads
 
-C1 + C2 + C3 + C4
-        → C5 higher-level orchestration
+R semantic substrate + S coordination primitives
+        → S5 higher-level orchestration
 ```
 
-A1 executor robustness is an important independent maintenance lane. It should not automatically move in front of C1.
+A1 is an independent maintenance lane unless a concrete S/R implementation hits the defective outcome boundary.
 
-A5/A6 are also largely independent until a Core feature actually requires their missing capability.
+A5/A6 are also largely independent until a product slice requires them.
 
 ---
 
-# 7. Immediate next implementation
+# 9. Immediate development direction
 
-The next implementation target is a **joint C1 / A2.1 vertical slice**:
+Two early streams are now valid and complementary.
 
-> **Semantic Observation v0 with rust-analyzer**
+## 9.1 R0 — Rust Core foundation
 
-The purpose is not merely to add an LSP wrapper. It is to validate the new component boundary in real code:
+The new `atlas-core` repository exists and has a clean Rust bootstrap.
+
+Next R action:
+
+> choose one small, already-specified Atlas semantic behavior and establish the first Rust conformance slice against existing Python/specification evidence.
+
+Do not pick the semantic behavior by convenience alone; inspect the existing Core implementation/tests and prefer a stable local invariant with little persistence coupling.
+
+## 9.2 S1 / A2.1 — Semantic Observation v0
+
+The existing Agent development clone is prepared for the semantic-service slice.
+
+The first boundary is:
 
 ```text
-Rust Atlas Core
+Rust Atlas implementation
     asks a semantic question
 
 Python Atlas Agent
@@ -572,13 +638,13 @@ Python Atlas Agent
 rust-analyzer
     produces the language-specific observation
 
-Rust Atlas Core
-    receives and interprets the structured result
+Rust Atlas implementation
+    receives and interprets the bounded structured result
 ```
 
-Before implementation, define only the minimum boundary needed by this slice.
+A deterministic fake/fixture backend may prove transport and status normalization first, but completion requires the qualified real backend.
 
-### Initial operations
+Initial operations remain:
 
 ```text
 definition
@@ -588,68 +654,66 @@ diagnostics
 search_text
 ```
 
-### Required qualities
+The slice should be small enough that implementation experience can still change the protocol without invalidating a large framework.
 
-- explicit versioned Core/Agent message shape;
-- qualified backend identity;
-- workspace/material identity sufficient for the observation;
-- bounded deterministic presentation;
-- explicit unsupported/incomplete/error states;
-- exact text search remains distinguishable from semantic references;
-- serial execution initially.
+## 9.3 Scheduling between R0 and S1
 
-### Explicit non-goals
+Neither stream should be declared a hard prerequisite of the other.
 
-- callers/callees if they materially complicate the first slice;
-- complete semantic impact analysis;
-- automatic test selection;
-- post-generation qualification automation;
-- semantic graph/database;
-- tool concurrency execution;
-- Pyright;
-- Atlas Agent Rust rewrite;
-- repository renaming;
-- standalone protocol project.
+A practical sequence can alternate:
 
-The slice should be small enough that architectural lessons can change the next step without invalidating a large framework.
+```text
+small R conformance slice
+→ small S/A boundary slice
+→ reassess interfaces
+→ continue whichever next dependency is clearest
+```
+
+This is preferable to attempting either a complete Python→Rust migration or a complete semantic-navigation subsystem before obtaining feedback from real code.
 
 ---
 
-# 8. Durable principles retained from hardening
+# 10. Durable principles retained from hardening and Core V1
 
-## 8.1 Requested / resolved / observed
+## 10.1 Semantic authority is explicit
+
+Host-language equality, ordering, coercion, persistence behavior, LSP output, model prose, and test success do not silently define Atlas semantics.
+
+## 10.2 Requested / resolved / observed
 
 Where runtime preference and actual behavior may differ, preserve the distinction rather than collapsing them.
 
-## 8.2 Historical validity is not reproducibility
+## 10.3 Historical validity is not reproducibility
 
-Historical Agent audit/rebuild uses archived facts and authorities. It does not require old cloud services, models, or tool binaries to remain executable forever.
+Historical Agent audit/rebuild uses archived facts and authorities. Historical Atlas knowledge remains interpretable under its own snapshot/provenance rules. Neither requires arbitrary external model/tool behavior to remain re-executable forever.
 
-## 8.3 Historical validity, execution success, material value, and qualification are separate
+## 10.4 Execution success, material value, and qualification are distinct
 
-An interrupted execution can leave valuable material. Qualification can later succeed or fail against that material without rewriting the historical execution outcome.
+An interrupted execution may leave useful material. Qualification may later succeed or fail without rewriting the execution history.
 
-## 8.4 Git checkpoint is not certification
+## 10.5 Git checkpoint is not certification
 
-A Git commit records material state. Proof/evidence/disposition are separate concepts.
+A Git commit records material state. Semantic correctness, proof/evidence, and disposition are separate concepts.
 
-## 8.5 Recoverability is not exhaustive auto-repair
+## 10.6 Recoverability is not exhaustive auto-repair
 
 Diagnose precisely, fail safe, recover supported transactions, and preserve practical routes back to stable state. Do not build theoretical crash repair without demonstrated need.
 
-## 8.6 Semantic observation is not semantic authority
+## 10.7 Semantic observation is not semantic authority
 
-LSP, AST, text search, compilers, tests, and models produce observations. Product decisions and accepted invariants remain distinct authority.
+LSP, AST, exact text search, compilers, tests, and models produce observations. Admission as Atlas knowledge or acceptance as a product decision remains explicit.
 
-## 8.7 Scope discipline
+## 10.8 Avoid duplicated representations
+
+Do not build a second manually maintained prose/code-intelligence world beside the Atlas semantic model and actual source/tooling. Link or derive where possible.
+
+## 10.9 Scope discipline
 
 Once the decided contract, witnesses, and required qualification for a bounded task are satisfied, close it.
 
-Do not use the existence of remaining possible hardening as evidence that Atlas Core must wait.
-
 ---
 
-# 9. Review strategy
+# 11. Review strategy
 
 Use review effort proportionally:
 
@@ -670,18 +734,20 @@ architecture / representation decision
     → Astra Medium only when owner reasoning + cheaper models cannot resolve it efficiently
 ```
 
-Astra results are advisory architecture input, not automatic product authority. Prompt scope must explicitly distinguish Atlas Core from Atlas Agent in future architecture reviews.
+Astra results are advisory architecture input, not automatic product authority.
+
+Future architecture review packages must include enough of the **Atlas semantic specification/Core profile** to prevent the Agent implementation from dominating the apparent product model.
 
 ---
 
-# 10. Naming and future repository layout
+# 12. Repository naming and layout
 
-Current working direction:
+Current working layout:
 
 ```text
 cyrilmhansen/
-├── atlas-core        # Rust — semantic coordination product
-└── atlas-py          # Python — current Atlas Agent implementation
+├── atlas-core        # Rust — production Atlas Core implementation
+└── atlas-py          # Python — current mixed historical repository + Atlas Agent
 ```
 
 Likely later:
@@ -692,6 +758,8 @@ cyrilmhansen/
 └── atlas-agent
 ```
 
-Do not create `atlas-protocol` until a real independently versioned shared package is justified.
+Do not rename `atlas-py` yet merely for symmetry.
 
-The final name of `atlas-core` may change after the first Core milestones. Naming should follow architecture rather than block it.
+Do not create `atlas-protocol` until a real independently versioned shared package is justified by multiple consumers.
+
+The final boundaries inside `atlas-core` should be learned from the first Rust semantic conformance work and the first semantic-observation consumer rather than frozen from repository naming alone.
