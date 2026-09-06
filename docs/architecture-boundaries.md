@@ -1,84 +1,116 @@
 # Atlas architecture boundaries
 
-Status: **current architectural direction**  
+Status: **current architectural direction, reconciled with the existing Atlas Core model**  
 Decision date: **2026-09-06**
 
-This document defines the product boundary that should guide the next phase of Atlas development.
+This document defines the boundary between Atlas, Atlas Agent, and specialized execution services for the next development phase.
 
-The key distinction is simple:
+It does **not** redefine Atlas Core as a semantic coordinator. The repository already defines Atlas as an experimental **semantic computational knowledge system**, and Core V1 already gives Atlas Core concrete semantic responsibilities: identities and descriptions, facts and relations, snapshots and provenance, structured rules and grounding, finite decision/selection, and explanations reconstructed from effective dependencies.
 
-> **Atlas decides what must be understood or accomplished. Atlas Agent guarantees how an authorized operation is executed, recorded, and materialized.**
+The new coordination work extends that product model. It does not replace it.
 
-The two are related, but they are not the same component.
+The governing distinction is:
+
+> **Atlas owns semantic representation, interpretation, decision, and coordination. Atlas Agent guarantees how an authorized operation is executed, isolated, recorded, qualified, and materialized.**
 
 ---
 
 ## 1. System shape
 
 ```text
-                         ATLAS
-              semantic coordination system
+                              ATLAS
+                semantic computational knowledge system
 
-   goals / decisions / representation of work
-   decomposition / dependencies / obligations
-   code understanding / impact / traceability
-   agent selection / assurance planning
+          ┌───────────────────────────────────────────┐
+          │ Atlas semantic core                       │
+          │                                           │
+          │ identity / descriptions / values          │
+          │ facts / relations / provenance            │
+          │ snapshots / rules / grounding             │
+          │ decision / selection / explanation        │
+          └───────────────────────────────────────────┘
+                              │
+                              │ supports
+                              ▼
+          ┌───────────────────────────────────────────┐
+          │ semantic coordination capabilities         │
+          │                                           │
+          │ goals / decisions / representation of work│
+          │ decomposition / dependencies / obligations│
+          │ code understanding / impact / traceability│
+          │ assurance planning / orchestration        │
+          └───────────────────────────────────────────┘
+                              │
+                              │ commands + observations
+                              ▼
+                         ATLAS AGENT
+                 deterministic execution subsystem
 
-                          │
-                          │ commands + observations
-                          ▼
+          admission / ownership / capabilities / sandbox
+          model and qualified-tool execution
+          transactional journal / recovery
+          qualification execution
+          Git materialization / checkpoint
+          operation and artifact provenance
+                              │
+                              ▼
+                    SPECIALIZED SERVICES / TOOLS
 
-                     ATLAS AGENT
-             deterministic execution subsystem
-
-   admission / ownership / capabilities / sandbox
-   model and tool execution
-   transactional journal / recovery
-   qualification execution
-   Git materialization / checkpoint
-   operation and artifact provenance
-
-                          │
-                          ▼
-
-                SPECIALIZED SERVICES / TOOLS
-
-   Codex / other models
-   rust-analyzer / Pyright
-   Git
-   compilers
-   test runners
-   linters
-   other qualified tools
+          Codex / other models / rust-analyzer / Pyright
+          Git / compilers / test runners / linters / others
 ```
 
-Atlas is the product-level coordination system. Atlas Agent is one subsystem used by Atlas to perform controlled operations against repositories, tools, models, and host resources.
+Atlas Agent is a subsystem used by Atlas and by other software projects. It is not the semantic core of Atlas.
 
 ---
 
-## 2. Atlas responsibilities
+## 2. Atlas semantic core responsibilities
 
-Atlas owns product-level and semantic coordination concerns, including:
+The semantic core retains the responsibilities already established by the Atlas specification and Core V1 profile.
 
-- the current objective;
+These include, at the current implementation level:
+
+- nominal semantic identities that are distinct from content equality;
+- descriptions, values, facts, relations, vocabulary, scopes, and provenance;
+- explicit epistemic states, including the open-world distinction among `TRUE`, `FALSE`, and `UNKNOWN`;
+- multivalued relations and explicit ordering where order is semantic;
+- validated persistent knowledge with immutable snapshots;
+- supersession and historical/stale interpretation relative to snapshots;
+- structured rules and grounding;
+- finite decision problems and exact selection for the supported Core V1 profile;
+- derivation dependencies and explanations reconstructed from the dependencies actually used.
+
+The semantic core is therefore more fundamental than software code navigation. Language-server observations are one possible source of structured evidence for Atlas; they are not a replacement for Atlas's semantic model.
+
+---
+
+## 3. Semantic coordination responsibilities
+
+Atlas is also gaining product-level coordination capabilities built on and around the semantic core.
+
+These include:
+
+- the current objective and bounded completion criteria;
 - accepted product decisions and unresolved product questions;
 - representation of work and decomposition into obligations or tasks;
 - dependency and resource reasoning;
-- semantic understanding of code and project structure;
+- semantic understanding of software and project structure;
 - interpretation of code-navigation observations;
 - impact reasoning;
 - selection of specialized agents and strategies;
 - deciding what evidence is needed before work can be considered complete;
-- semantic traceability and progressive explanation/semantic zoom;
+- semantic traceability and progressive explanation / semantic zoom;
 - higher-level orchestration, including non-agentic scheduling when appropriate.
 
-Atlas may ask models and tools for observations or proposals. Those observations do not become authority merely because a model or language server produced them.
+This coordination state should reuse Atlas semantic concepts where they genuinely fit, but it must not force every operational observation into the persistent Knowledge Store merely because Atlas can represent knowledge.
+
+Observations may remain ephemeral, become referenced evidence, or be admitted as durable Atlas knowledge according to an explicit semantic and provenance decision.
 
 Atlas should not maintain a manually duplicated prose model of every source file or symbol. Structural knowledge should be derived from source, compilers, language services, Git, tests, and explicit product decisions wherever possible.
 
 ---
 
-## 3. Atlas Agent responsibilities
+## 4. Atlas Agent responsibilities
 
 Atlas Agent owns deterministic execution and materialization concerns, including:
 
@@ -96,7 +128,7 @@ Atlas Agent owns deterministic execution and materialization concerns, including
 - runtime, tool, execution, and artifact provenance;
 - truthful requested / resolved / observed runtime facts where applicable.
 
-Atlas Agent does **not** own the semantic meaning of the project being changed. It may expose qualified semantic services to Atlas, but Atlas interprets their observations in the context of product goals and obligations.
+Atlas Agent does **not** own the semantic meaning of the project being changed. It may expose qualified semantic services to Atlas, but Atlas interprets their observations in the context of its semantic model, current goals, decisions, and obligations.
 
 The existing V1 rule remains:
 
@@ -109,7 +141,7 @@ Tool-level concurrency and future isolated generation-level concurrency are sepa
 
 ---
 
-## 4. Specialized services and tools
+## 5. Specialized services and tools
 
 Specialized tools supply computations or observations under explicit execution authority.
 
@@ -127,12 +159,12 @@ A tool may know more than Atlas Agent about a language or build system. Atlas Ag
 
 ---
 
-## 5. Semantic observation example
+## 6. Semantic observation example
 
 A semantic navigation request should cross the component boundary approximately as follows:
 
 ```text
-Atlas
+Atlas coordination
   asks: references(Foo::bar)
 
 Atlas Agent
@@ -142,24 +174,29 @@ Atlas Agent
   returns bounded observation + provenance + completeness status
 
 rust-analyzer
-  computes the semantic observation
+  computes the language-specific observation
 
-Atlas
+Atlas coordination
   interprets the result in the context of the current goal,
-  affected invariants, obligations, and proposed next action
+  semantic model, affected invariants, obligations, and next action
+
+Atlas semantic core
+  may receive selected durable facts/evidence only when Atlas
+  explicitly chooses to represent them as knowledge
 ```
 
 This distinction is important:
 
 - the language server owns language-specific analysis;
 - Atlas Agent owns qualified execution of that service;
-- Atlas owns the semantic use of the resulting observation.
+- Atlas owns the semantic use of the resulting observation;
+- persistence into Atlas knowledge is an explicit semantic act, not an automatic side effect of an LSP response.
 
 A missing language-server capability must be distinguishable from an empty semantic answer.
 
 ---
 
-## 6. Qualification example
+## 7. Qualification example
 
 Post-generation assurance is also split across the boundary.
 
@@ -183,17 +220,32 @@ in environment E
 
 Atlas interprets whether the evidence satisfies the semantic obligation, subject to operator policy. Atlas Agent records and materializes the authorized durable transition.
 
-Passing tests are evidence, not a proof of product correctness. A Git checkpoint is a neutral material snapshot, not a success certificate.
+Passing tests are evidence, not proof of product correctness. A Git checkpoint is a neutral material snapshot, not a success certificate.
 
 ---
 
-## 7. Implementation-language direction
+## 8. Implementation-language and migration direction
 
 The current implementation strategy is intentionally asymmetric.
 
-### Atlas Core
+### 8.1 Existing Python Atlas Core
 
-The new Atlas Core should begin in **Rust** rather than creating a large new production subsystem in Python with the expectation of translating it later.
+The existing Python Core V1 implementation, specification, profile, tests, and persisted examples are not discarded by the creation of a Rust repository.
+
+They should be treated as:
+
+```text
+prototype / reference implementation
++ executable semantic oracle where appropriate
++ conformance evidence
++ historical design record
+```
+
+The specification and profile remain the semantic authority above language-specific implementation details.
+
+### 8.2 New Rust Atlas Core
+
+New production Atlas Core development should begin in **Rust** rather than growing a second large production generation in Python with an assumed future translation.
 
 Working repository/component name:
 
@@ -201,9 +253,23 @@ Working repository/component name:
 atlas-core
 ```
 
-The name is descriptive and provisional. The architectural role matters more than freezing a final product name today.
+The repository is the intended production home for the Rust implementation of the existing Atlas semantic core and for new product capabilities built around it. The repository name does not redefine Atlas Core as code navigation or coordination alone.
 
-### Atlas Agent
+Migration should be behavior-by-behavior and contract-by-contract:
+
+```text
+existing semantic contract
+        ↓
+reference Python behavior / fixtures / tests
+        ↓
+Rust implementation
+        ↓
+conformance comparison
+```
+
+Do not translate Python files mechanically. Rust types, ownership, errors, and resource models should express the semantic invariants directly.
+
+### 8.3 Atlas Agent
 
 The existing Atlas Agent implementation remains in **Python for now**.
 
@@ -219,23 +285,17 @@ Likely future repository name:
 atlas-agent
 ```
 
-The repository should not be renamed merely to satisfy this document. Rename when the Core/Agent boundary is concrete enough that the change improves clarity rather than creating migration noise.
+Do not rename the repository merely for cosmetic consistency. Rename when the Core/Agent boundary is concrete enough that the change improves clarity rather than creating migration noise.
 
-### No big-bang rewrite
-
-Do not rewrite Atlas Agent in Rust before beginning Atlas Core.
-
-The existing Python implementation already contains substantial transactional behavior and a large regression suite. If Atlas Agent is later migrated, prefer incremental replacement behind explicit contracts rather than a monolithic port.
-
-The existing tests and historical fixtures should become conformance evidence for any future Rust implementation.
+Do not rewrite Atlas Agent in Rust before beginning the Rust Core. If Agent is later migrated, prefer incremental replacement behind explicit contracts, using its tests, journals, fixtures, error codes, and state transitions as conformance evidence.
 
 ---
 
-## 8. Core/Agent interface direction
+## 9. Core/Agent interface direction
 
-Atlas Core must not depend on importing Atlas Agent's internal Python objects.
+The Rust Atlas implementation must not depend on importing Atlas Agent's internal Python objects.
 
-The boundary should become explicit and versioned. Initially, a simple process/CLI boundary with structured JSON is acceptable if it provides the required semantics.
+The boundary should become explicit and versioned. Initially, a process/CLI boundary with structured JSON is acceptable if it provides the required semantics.
 
 Conceptual messages include:
 
@@ -254,9 +314,9 @@ Do not create a separate `atlas-protocol` repository until multiple real consume
 
 ---
 
-## 9. Semantic navigation as a product capability
+## 10. Semantic navigation as an Atlas capability
 
-Semantic Code Navigation is primarily an **Atlas capability**, implemented using qualified services supplied through Atlas Agent.
+Semantic Code Navigation is primarily an **Atlas product capability**, implemented using qualified services supplied through Atlas Agent.
 
 Its purpose is broader than post-generation test selection. It changes how Atlas understands and explores software:
 
@@ -269,39 +329,47 @@ what declarations changed?
 what code should be inspected next?
 ```
 
-For this reason, semantic observation should not be delayed until every remaining Atlas Agent reliability or assurance feature is complete.
+It should therefore not be delayed until every remaining Atlas Agent reliability or assurance feature is complete.
 
-A minimal Rust-oriented semantic observation path is an appropriate first implementation test of the new Atlas/Agent boundary.
+At the same time, it is not the semantic foundation of Atlas. The existing Atlas model already defines semantic identity, knowledge, provenance, rules, decisions, and explanation independently of programming-language analysis.
+
+A Rust-oriented semantic observation path is an appropriate early integration test of the new Rust implementation and the Core/Agent boundary while semantic-core migration proceeds in parallel.
 
 ---
 
-## 10. Current non-goals
+## 11. Current non-goals
 
 Do not treat this architectural clarification as authorization for:
 
 - renaming the current repository immediately;
 - rewriting Atlas Agent in Rust immediately;
-- moving all existing Python tests to Rust;
+- discarding or mechanically translating the existing Python Core V1 implementation;
+- moving all existing Python tests to Rust at once;
+- treating LSP observations as automatically admitted Atlas facts;
 - introducing a standalone protocol repository;
-- building a graph database;
+- building a new graph database;
+- building a second persistent code-intelligence database that duplicates the Atlas Knowledge Store;
 - implementing a universal language-neutral semantic database;
 - implementing parallel generation mutation in one checkout;
-- folding the semantic coordinator into `Workflow.execute()` or any equivalent Atlas Agent execution function;
+- folding semantic coordination into `Workflow.execute()` or any equivalent Atlas Agent execution function;
 - expanding Atlas Agent until it becomes Atlas.
 
 ---
 
-## 11. Development rule
+## 12. Development rule
 
 When deciding where a new responsibility belongs, ask:
 
-1. **Does this decide what the project means, what should happen, or what evidence is sufficient?**  
-   Prefer Atlas.
+1. **Does this define semantic identity, knowledge, rules, decision, explanation, or what the project means?**  
+   Prefer the Atlas semantic core.
 
-2. **Does this authorize, execute, isolate, record, qualify, or materialize an operation?**  
+2. **Does this decide what should happen next, what evidence is sufficient, or how semantic observations affect the task?**  
+   Prefer Atlas coordination.
+
+3. **Does this authorize, execute, isolate, record, qualify, or materialize an operation?**  
    Prefer Atlas Agent.
 
-3. **Does an existing specialized tool already implement the domain computation?**  
+4. **Does an existing specialized tool already implement the domain computation?**  
    Use that tool through an explicit qualified boundary rather than rebuilding it in either layer.
 
 This boundary should be refined from real usage. It is deliberately smaller than a complete final architecture.
