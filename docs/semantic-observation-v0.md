@@ -1,40 +1,65 @@
 # Semantic Observation v0
 
-Status: **design baseline for C1 / A2.1**  
-Decision date: **2026-09-06**
+Status: **design baseline for semantic observation / Agent qualified-tool integration**  
+Decision date: **2026-09-06**  
+Reconciled with the existing Atlas Core model: **2026-09-06**
 
-This document defines the smallest useful boundary for Atlas Core to obtain semantic code observations through Atlas Agent.
+This document defines the smallest useful boundary for Atlas to obtain semantic code observations through Atlas Agent.
 
-It is deliberately narrower than a general code-intelligence protocol. Its purpose is to let the first Rust Atlas Core capability consume qualified semantic observations without importing Atlas Agent's Python internals and without turning Atlas Agent into the semantic coordinator.
+It is deliberately narrower than a general code-intelligence protocol and narrower than Atlas Core itself.
 
-The governing component rule remains:
+Atlas already has a semantic model covering identity, descriptions, facts, relations, provenance, snapshots, rules, grounding, decisions, and explanations. Semantic Observation does **not** replace or redefine that model. It supplies structured external observations that Atlas coordination can interpret and, when semantically justified, relate to or admit into Atlas knowledge with explicit provenance.
 
-> **Atlas Core asks and interprets semantic questions. Atlas Agent qualifies and executes the semantic service. The language service computes the language-specific observation.**
+The governing component rule is:
+
+> **Atlas asks and interprets semantic questions. Atlas Agent qualifies and executes the semantic service. The language service computes the language-specific observation. Persistence as Atlas knowledge is a separate semantic decision.**
 
 ---
 
-## 1. First vertical slice
+## 1. Role in the wider Atlas architecture
 
-The first implementation slice is:
+Semantic Observation is an early product capability for software-oriented coordination.
+
+It exists because repeatedly exploring repositories through whole-file dumps and lexical search wastes model context and loses semantic structure. It should provide targeted observations such as definitions, references, implementations, and diagnostics while keeping the authority boundary explicit.
+
+Conceptually:
 
 ```text
-Atlas Core (Rust)
+Atlas semantic coordination
     ↓ structured request
-Atlas Agent (Python)
+Atlas Agent
     ↓ qualified service execution
 rust-analyzer
     ↓ language-specific result
 Atlas Agent
     ↓ bounded observation + provenance
-Atlas Core
+Atlas semantic coordination
     ↓ interpretation in task/product context
+Atlas semantic core
+    ↓ optional explicit representation of selected durable knowledge/evidence
 ```
 
-The first real subject should be a representative Rust repository. Rust is not merely a fixture language: Atlas Core itself is intended to begin in Rust, and existing Atlas-managed Rust projects are valid integration targets.
+The final arrow is **not automatic**. Most exploratory LSP results may remain observations rather than persistent Atlas facts.
+
+Semantic Observation and migration of the existing Python Atlas Core to Rust may proceed in parallel. Neither should be described as the definition of the other.
 
 ---
 
-## 2. Initial query kinds
+## 2. First implementation slice
+
+The first real backend is `rust-analyzer` against a representative Rust repository.
+
+Rust is not merely a fixture language:
+
+- the new production Atlas Core implementation is beginning in Rust;
+- existing Atlas-managed Rust projects are valid integration subjects;
+- Rust semantic tooling is strong enough to pressure-test the boundary early.
+
+The implementation may first prove the Core/Agent message boundary with deterministic fixtures or a fake backend, but completion of the slice requires a qualified real `rust-analyzer` path.
+
+---
+
+## 3. Initial query kinds
 
 Semantic Observation v0 supports only:
 
@@ -59,14 +84,14 @@ automatic test selection
 semantic traceability graph
 parallel query execution
 Pyright
-persistent semantic index
+persistent code-intelligence index
 ```
 
-These may be added after the first vertical slice demonstrates the right boundary.
+A future persistent code-intelligence index must not silently become a second manually maintained semantic source of truth beside the Atlas Knowledge Store.
 
 ---
 
-## 3. Request contract
+## 4. Request contract
 
 The wire syntax is intentionally not frozen yet. A request must nevertheless carry enough information to identify the operation without relying on shared Python objects.
 
@@ -83,11 +108,11 @@ result_bounds
 
 ### `protocol_version`
 
-Identifies the observation contract version, not the version of rust-analyzer or Atlas Agent.
+Identifies the observation contract version, not the version of rust-analyzer, Atlas Agent, or the Atlas semantic model.
 
 ### `request_id`
 
-Caller-provided operation identity used to correlate the response. It is not semantic authority.
+Caller-provided operation identity used to correlate the response. It is not semantic authority and is not automatically an Atlas knowledge identity.
 
 ### `query_kind`
 
@@ -97,7 +122,9 @@ One of the v0 query kinds.
 
 Identifies the source workspace/material view against which the observation is requested.
 
-For v0, this may be a controller-validated repository/workspace identity rather than a universal content-addressed material manifest. Do not solve the complete future material-identity problem inside C1.
+This identity is distinct from an Atlas **Knowledge Store snapshot**. A repository/material snapshot and a semantic-knowledge snapshot may later be related, but they are not the same concept and must not be conflated merely because both use snapshot-like terminology.
+
+For v0, `workspace_ref` may be a controller-validated repository/workspace identity rather than a universal content-addressed material manifest. Do not solve the complete future material-identity problem inside Semantic Observation.
 
 The response must make clear which workspace view was actually used.
 
@@ -105,17 +132,17 @@ The response must make clear which workspace view was actually used.
 
 Language/query-specific input. v0 should use the smallest representation needed by each query kind, such as a source position or exact text pattern.
 
-Do not require Atlas Core to encode rust-analyzer-specific protocol objects directly.
+Do not require Atlas to encode rust-analyzer-specific protocol objects directly.
 
 ### `result_bounds`
 
-Explicit limits for model-facing/consumer-facing results, such as maximum records and maximum excerpt bytes.
+Explicit limits for consumer/model-facing results, such as maximum records and maximum excerpt bytes.
 
 The full backend response need not be exposed when a bounded normalized observation is sufficient.
 
 ---
 
-## 4. Response contract
+## 5. Response contract
 
 Every response must distinguish operation status from the returned result set.
 
@@ -158,7 +185,7 @@ Exact serialized names may change before implementation, but these distinctions 
 
 ### Results
 
-Each result should use a compact normalized source-location representation sufficient for Atlas Core to request or display the relevant source later.
+Each result should use a compact normalized source-location representation sufficient for Atlas to request or display the relevant source later.
 
 Conceptually:
 
@@ -170,7 +197,7 @@ bounded excerpt when useful
 relationship/query-specific metadata
 ```
 
-Do not create a universal language-neutral semantic object model in v0.
+Do not create a universal language-neutral semantic object model in v0. Atlas already has its own semantic representation; backend normalization should expose useful observations without pretending that language-server protocol objects are Atlas ontology.
 
 ### Completeness and truncation
 
@@ -182,7 +209,30 @@ The response must preserve that distinction.
 
 ---
 
-## 5. Backend identity and qualification
+## 6. Observation versus Atlas knowledge
+
+A semantic observation is evidence about source state, not automatically an admitted Atlas `Fact`, `Relation`, or other knowledge item.
+
+Three broad dispositions are possible:
+
+```text
+ephemeral observation
+    used for immediate navigation/reasoning and then discarded
+
+referenced evidence
+    retained or referenced because a decision/qualification depends on it
+
+durable Atlas knowledge
+    explicitly normalized/admitted under Atlas semantic rules and provenance
+```
+
+The admission boundary must preserve the existing Atlas rules for identity, vocabulary, provenance, epistemic status, scope, and historical interpretation.
+
+For example, `rust-analyzer` returning zero references does not by itself establish a timeless Atlas fact that a symbol is unused. It is an observation produced by a particular backend, configuration, and source view.
+
+---
+
+## 7. Backend identity and qualification
 
 Atlas Agent owns backend execution authority.
 
@@ -204,7 +254,7 @@ relevant launch/configuration identity
 capability availability
 ```
 
-Do not make Atlas Core responsible for locating arbitrary user-installed language servers.
+Do not make Atlas responsible for locating arbitrary user-installed language servers.
 
 Do not interpret an executable path alone as sufficient qualification identity.
 
@@ -212,27 +262,29 @@ The exact durable provenance record can reuse or extend Atlas Agent's existing q
 
 ---
 
-## 6. Workspace and material identity
+## 8. Workspace and material identity
 
 Semantic observations are only meaningful relative to source state.
 
-However, C1 must not attempt to define the final universal `MaterialRef` before assurance and candidate-material workflows exist.
+However, this slice must not attempt to define the final universal `MaterialRef` before assurance and candidate-material workflows exist.
 
 For v0, the required invariant is smaller:
 
-> The controller must be able to state which repository/workspace view the semantic service observed, and Atlas Core must not silently reuse the observation after that view becomes incompatible or unknown.
+> Atlas Agent must be able to state which repository/workspace view the semantic service observed, and Atlas must not silently reuse the observation after that view becomes incompatible or unknown.
 
 At minimum, v0 should support a validated repository/workspace reference plus enough state identity to detect obvious drift during an observation session.
 
 Future material-bound qualification may introduce a stronger exact material identity. Semantic Observation should be able to adopt that identity later without changing the ownership boundary.
 
+Repository/material identity remains distinct from Atlas Knowledge Store snapshot identity even when later links are introduced between them.
+
 ---
 
-## 7. Source access and expansion
+## 9. Source access and expansion
 
 Semantic Observation is intended to reduce repeated whole-file dumping, not eliminate source reading.
 
-Atlas Core will still need exact source for:
+Atlas will still need exact source for:
 
 - function/body behavior;
 - ordering and control flow;
@@ -248,7 +300,7 @@ If expansion/range retrieval is needed, it should remain an explicit later reque
 
 ---
 
-## 8. rust-analyzer lifecycle
+## 10. rust-analyzer lifecycle
 
 The first implementation should prefer correctness and truthful status over clever lifecycle optimization.
 
@@ -262,9 +314,9 @@ Disabling such capabilities must not silently produce an apparently complete ans
 
 ---
 
-## 9. Error and authority boundary
+## 11. Error and authority boundary
 
-Atlas Core may request an observation. It does not authorize itself to launch tools or enlarge capabilities.
+Atlas may request an observation. It does not authorize itself to launch tools or enlarge capabilities.
 
 Atlas Agent may reject a request because:
 
@@ -279,13 +331,13 @@ result could not be normalized safely
 
 These are operation outcomes, not product-semantic conclusions.
 
-Atlas Core decides how the observation affects task reasoning. For example, zero references may be evidence that a symbol appears unused, but Agent must not turn that observation into a product decision or deletion authorization.
+Atlas decides how the observation affects task reasoning and whether any selected content becomes durable semantic knowledge.
 
 ---
 
-## 10. Initial transport
+## 12. Initial transport
 
-The first Core/Agent implementation may use a process/CLI boundary with structured JSON.
+The first Rust/Python implementation may use a process/CLI boundary with structured JSON.
 
 Requirements:
 
@@ -302,24 +354,25 @@ Do not create a separate `atlas-protocol` repository for v0.
 
 ---
 
-## 11. First implementation exit criteria
+## 13. First implementation exit criteria
 
-C1 / A2.1 v0 is complete when, against a representative Rust project:
+Semantic Observation v0 is complete when, against a representative Rust project:
 
-1. Atlas Core can issue each implemented v0 request through the explicit Core/Agent boundary.
-2. Atlas Agent selects and executes a qualified rust-analyzer backend rather than an arbitrary user-state binary.
-3. `definition`, `references`, and `implementations` return bounded normalized source locations where supported.
-4. `diagnostics` returns bounded normalized diagnostics with backend identity.
-5. `search_text` remains explicitly lexical and distinguishable from semantic results.
-6. unsupported, empty, incomplete, backend-failure, and truncated outcomes cannot be silently confused.
-7. observations identify the workspace/source view actually observed strongly enough to detect incompatible reuse.
-8. no persistent semantic database, impact engine, parallel scheduler, Pyright integration, or generalized RPC framework is introduced.
+1. the Rust Atlas implementation can issue each implemented v0 request through the explicit Atlas/Agent boundary;
+2. Atlas Agent selects and executes a qualified rust-analyzer backend rather than an arbitrary user-state binary;
+3. `definition`, `references`, and `implementations` return bounded normalized source locations where supported;
+4. `diagnostics` returns bounded normalized diagnostics with backend identity;
+5. `search_text` remains explicitly lexical and distinguishable from semantic results;
+6. unsupported, empty, incomplete, backend-failure, and truncated outcomes cannot be silently confused;
+7. observations identify the workspace/source view actually observed strongly enough to detect incompatible reuse;
+8. observations are not automatically persisted as Atlas semantic facts;
+9. no new persistent code-intelligence database, impact engine, parallel scheduler, Pyright integration, or generalized RPC framework is introduced.
 
-The implementation should use the smallest test corpus necessary to prove the boundary, then exercise it on at least one real Rust repository.
+The implementation should use the smallest deterministic test corpus necessary to prove the boundary, then exercise it on at least one real Rust repository.
 
 ---
 
-## 12. Questions intentionally left open until implementation
+## 14. Questions intentionally left open until implementation
 
 The following should be refined from the first vertical slice rather than decided speculatively:
 
@@ -330,6 +383,7 @@ The following should be refined from the first vertical slice rather than decide
 - the smallest useful workspace drift identity before full `MaterialRef` exists;
 - output record and excerpt limits;
 - whether range/source expansion belongs in this protocol or in a generic repository-observation service;
-- which rust-analyzer operations should be added immediately after v0.
+- which rust-analyzer operations should be added immediately after v0;
+- which observations, if any, deserve direct adapters into durable Atlas knowledge rather than remaining evidence or working state.
 
-These open questions do not weaken the component boundary. They deliberately avoid freezing implementation details before the first real consumer exists.
+These open questions do not weaken the component boundary. They deliberately avoid freezing implementation details before real consumers exist.
