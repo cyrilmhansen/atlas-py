@@ -1,16 +1,15 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.7**  
-Planning date: **2026-09-06**  
+Document version: **0.8**  
+Planning date: **2026-09-10**  
 Agent code baseline: **`2c97e706f394b9392f27eae3d50ca210b3daeeac`** (`M1 Core Hygiene`)  
 Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)  
-Semantic observation baseline: [`docs/semantic-observation-v0.md`](semantic-observation-v0.md)
+PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)  
+Semantic navigation baseline: [`docs/semantic-observation-v0.md`](semantic-observation-v0.md)
 
-This roadmap supersedes version 0.6.
+This roadmap supersedes version 0.7.
 
-Version 0.6 correctly separated Atlas from Atlas Agent, but it still described **Atlas Core** too narrowly as the new semantic-coordination product. That wording conflicted with the project's existing definition: Atlas is already an experimental **semantic computational knowledge system**, and the existing Core V1 profile already specifies a semantic model, persistent knowledge, structured rules, grounding, decision/selection, provenance, snapshots, and explanation.
-
-Version 0.7 reconciles the new coordination work with that existing product model.
+Version 0.7 reconciled semantic coordination with the pre-existing Atlas Core semantic model. Version 0.8 adds the first concrete external observation service to that architecture: `pi-visual-context` (PVC), now available as a headless one-shot service with a portable `SourceContextSnapshot v1` bundle.
 
 The current planning model has three related lanes:
 
@@ -19,7 +18,7 @@ R — Rust Atlas Core implementation
     production implementation of the existing semantic core
 
 S — Semantic coordination capabilities
-    code observation, task/obligation state, assurance planning,
+    software observations, task/obligation state, assurance planning,
     traceability, semantic zoom, orchestration
 
 A — Atlas Agent infrastructure
@@ -54,7 +53,7 @@ The new coordination work adds product capabilities around that semantic foundat
 ```text
 goals / accepted decisions / open questions
 work representation / obligations / dependencies
-software semantic observation / impact reasoning
+software observations / impact reasoning
 assurance planning
 semantic traceability / semantic zoom
 higher-level orchestration
@@ -74,9 +73,10 @@ Atlas Agent must not grow until it absorbs Atlas semantic responsibilities.
 
 ## 1.3 Specialized services
 
-Tools such as:
+Tools and services such as:
 
 ```text
+pi-visual-context (PVC)
 rust-analyzer
 Pyright
 compilers
@@ -88,6 +88,8 @@ Codex / other models
 supply domain computations or observations.
 
 Atlas Agent qualifies and executes them. Atlas interprets their results. An observation does not automatically become persistent Atlas knowledge.
+
+PVC is the first real one-shot observation-service consumer. `rust-analyzer` remains the first planned interactive semantic-service consumer. Their different lifecycle shapes should exercise common qualification principles without forcing a premature universal provider framework.
 
 ---
 
@@ -247,7 +249,7 @@ Establish the Rust repository as a real Atlas Core implementation rather than an
 - reproducing all Python APIs;
 - rewriting Atlas Agent;
 - designing a universal plugin/RPC architecture;
-- mixing semantic-observation backend details into fundamental semantic types.
+- mixing observation-backend details into fundamental semantic types.
 
 ### Exit direction
 
@@ -307,15 +309,46 @@ Preserve the distinction between semantic requirements and Core V1 implementatio
 
 # 6. S track — semantic coordination capabilities
 
-The **S** track adds the coordination capabilities that motivated the recent architecture work. It can progress while R migration is still incomplete, provided it respects the existing Atlas semantic model instead of creating a competing one.
+The **S** track adds coordination capabilities around the Atlas semantic foundation. It can progress while R migration is still incomplete, provided it respects the existing Atlas semantic model instead of creating a competing one.
 
-## S1 — Semantic Observation
+## S1 — Software Observation
 
 ### Goal
 
-Give Atlas compact structured access to software semantics instead of repeatedly rediscovering repositories through whole-file dumps and lexical search.
+Give Atlas compact structured access to useful software observations without repeatedly rediscovering the same material through whole-file dumps, ad-hoc rendering, or lexical search.
 
-Initial query kinds:
+S1 intentionally includes more than language-server semantics. Different specialized services may produce different observation forms, provided capability, completeness, provenance, and material identity remain explicit.
+
+### S1a — Visual Source Observation / PVC
+
+`pi-visual-context` now provides a headless service that transforms selected sources into a portable immutable bundle:
+
+```text
+SourceContextSnapshot v1
++ content-addressed PNG tablets
++ source/line provenance
++ best-effort symbol anchors
+```
+
+Qualified PVC source baseline:
+
+```text
+cyrilmhansen/pi-visual-context
+818786a3a702cf314c2e18528b7b613523c316a6
+fix: separate runtime and rendering work roots
+```
+
+PVC remains a specialized observation/representation service. Atlas Agent owns qualified invocation, isolation, operation provenance, bundle validation, cancellation/recovery, and materialization. Atlas owns interpretation and any later decision to retain an observation as semantic knowledge.
+
+The initial Atlas integration is deliberately one-shot. Metadata-only tablet/symbol resolution must not trigger a new render.
+
+See [`pvc-observation-v0.md`](pvc-observation-v0.md).
+
+### S1b — Semantic Code Navigation
+
+Give Atlas compact structured access to software semantics through language-aware backends.
+
+Initial query kinds remain:
 
 ```text
 definition
@@ -352,9 +385,10 @@ See [`semantic-observation-v0.md`](semantic-observation-v0.md).
 - whole-program language-neutral graph;
 - complete impact analysis;
 - automatic test selection;
-- parallel LSP execution;
-- Pyright in the first real backend slice;
-- generalized RPC framework.
+- parallel semantic-service execution;
+- Pyright in the first real semantic backend slice;
+- generalized RPC/provider framework;
+- folding PVC artifact storage into Atlas semantic storage.
 
 ---
 
@@ -398,7 +432,7 @@ this material affects subsystem X
 
 Atlas Agent executes authorized qualification recipes and records evidence; it does not decide product correctness.
 
-Semantic navigation can improve impact reasoning, but no static-analysis result may silently erase mandatory qualification policy.
+Software observations can improve impact reasoning, but no visual/static-analysis result may silently erase mandatory qualification policy.
 
 ---
 
@@ -406,7 +440,7 @@ Semantic navigation can improve impact reasoning, but no static-analysis result 
 
 ### Goal
 
-Connect product intent, semantic knowledge, implementation, tests, and evidence without maintaining a parallel manually curated requirements database.
+Connect product intent, semantic knowledge, implementation, observations, tests, and evidence without maintaining a parallel manually curated requirements database.
 
 Useful links may include:
 
@@ -415,7 +449,7 @@ scenario
 → decision
 → invariant
 → enforcement boundary
-→ symbol
+→ source/symbol observation
 → witness test
 → qualification evidence
 ```
@@ -471,9 +505,37 @@ A1 is important maintenance but does **not** automatically precede S1.
 
 ## A2 — Qualified Tool Services
 
-### A2.1 Semantic service runtime
+A2 now has two deliberately different initial lifecycle shapes. Share qualification and authority machinery where it genuinely fits; do not force one universal runtime abstraction before both consumers exist.
 
-Agent-side dependency for S1.
+### A2.0 — One-shot qualified tool operations
+
+First consumer: **PVC / S1a**.
+
+Goal: execute a controller-owned qualified non-model tool operation with explicit argv, capability plan, bounded streams, process ownership/cancellation, durable operation identity, result validation, and materialization.
+
+The first slice should reuse existing qualified-toolchain/capability-plan mechanisms and existing process/isolation techniques where appropriate, but should not force PVC into Codex prompt/session/report semantics.
+
+PVC-specific requirements include:
+
+```text
+qualified runtime identity
+read-only runtime root
+private writable work/output roots
+no network
+bounded stdout/stderr
+SourceContextSnapshot schemaVersion 1
+bundle/hash/path validation
+atomic/durable publication
+operation cancellation/recovery
+```
+
+Keep process success, snapshot acceptance, bundle validity, materialization success, and qualification status distinct.
+
+The purpose of A2.0 is to establish the smallest real reusable substrate justified by PVC. Do not generalize it into a provider registry, daemon, RPC system, or artifact marketplace.
+
+### A2.1 — Semantic service runtime
+
+Agent-side dependency for S1b.
 
 For `rust-analyzer`, Agent should own or report, where relevant:
 
@@ -491,7 +553,9 @@ backend capability discovery
 
 A logically read-only semantic query may still cause a language server to invoke compilers, build scripts, procedural macros, or caches. Agent must represent those requirements truthfully rather than hiding them behind a `read-only` label.
 
-### A2.2 Additional semantic backends
+A2.1 may reuse A2.0 qualification/environment/process primitives, but its long-lived interactive lifecycle must not be constrained by assumptions that are only true for one-shot PVC execution.
+
+### A2.2 — Additional semantic backends
 
 Add Pyright after the Rust contract has demonstrated useful shape. The second backend tests whether the interface genuinely survives different language semantics.
 
@@ -534,7 +598,7 @@ EXTERNAL_SIDE_EFFECT
 
 Design request/observation structures so requested / resolved / observed concurrency can be represented, but execute serially first.
 
-Qualified semantic reads are the preferred first real parallel workload after A2/S1 works serially.
+Qualified observation/semantic reads are the preferred first real parallel workload after the relevant A2/S1 paths work serially.
 
 ---
 
@@ -580,14 +644,18 @@ existing Atlas semantic contract / Python reference
         ↓
 R0 → R1 → R2 → R3
 
+A2.0 one-shot qualified tool operation
+        ↕
+S1a PVC visual-source observation
+
 A2.1 qualified semantic service
         ↕
-S1 Semantic Observation
+S1b semantic code navigation
 
 S1 observations
-        → S2 coordinator gets better software structure
+        → S2 coordinator gets better software structure/context
         → S3 assurance planning gets better impact evidence
-        → S4 can derive symbol-level traceability
+        → S4 can derive source/symbol-level traceability
 
 S2/S3/S4 may reuse R semantic concepts where appropriate
 but must not wait for complete Rust migration if the contract already exists
@@ -595,12 +663,14 @@ but must not wait for complete Rust migration if the contract already exists
 S3 assurance planning
         ↔ A3 qualification execution/evidence
 
-A2/S1 serial semantics
-        → A4 parallel semantic reads
+A2/S1 serial operation semantics
+        → A4 parallel observation/semantic reads
 
 R semantic substrate + S coordination primitives
         → S5 higher-level orchestration
 ```
+
+A2.0 may inform A2.1, but completing every PVC-specific lifecycle concern is not a prerequisite for semantic navigation. Reuse only the substrate demonstrated common by both consumers.
 
 A1 is an independent maintenance lane unless a concrete S/R implementation hits the defective outcome boundary.
 
@@ -610,7 +680,7 @@ A5/A6 are also largely independent until a product slice requires them.
 
 # 9. Immediate development direction
 
-Two early streams are now valid and complementary.
+Three early streams are now valid and complementary.
 
 ## 9.1 R0 — Rust Core foundation
 
@@ -622,11 +692,40 @@ Next R action:
 
 Do not pick the semantic behavior by convenience alone; inspect the existing Core implementation/tests and prefer a stable local invariant with little persistence coupling.
 
-## 9.2 S1 / A2.1 — Semantic Observation v0
+## 9.2 S1a / A2.0 — PVC visual-source observation
 
-The existing Agent development clone is prepared for the semantic-service slice.
+PVC headless preparation is now available and its runtime/work-root prerequisite is closed at:
 
-The first boundary is:
+```text
+818786a3a702cf314c2e18528b7b613523c316a6
+fix: separate runtime and rendering work roots
+```
+
+The next Agent action is a bounded integration slice:
+
+```text
+Atlas / workflow requests selected source observation
+        ↓
+Atlas Agent admits a one-shot qualified tool operation
+        ↓
+qualified PVC prepare runs without network
+        ↓
+Agent validates process result + snapshot/bundle boundary
+        ↓
+Agent durably materializes observation + provenance
+        ↓
+consumer receives portable SourceContextSnapshot v1
+```
+
+Implement the smallest operation lifecycle that preserves existing Agent authority, crash/recovery, and provenance invariants. Do not design generalized service or artifact frameworks in advance.
+
+See [`pvc-observation-v0.md`](pvc-observation-v0.md).
+
+## 9.3 S1b / A2.1 — Semantic Code Navigation v0
+
+The existing semantic-observation design remains valid for `rust-analyzer`.
+
+The intended boundary remains:
 
 ```text
 Rust Atlas implementation
@@ -656,20 +755,22 @@ search_text
 
 The slice should be small enough that implementation experience can still change the protocol without invalidating a large framework.
 
-## 9.3 Scheduling between R0 and S1
+## 9.4 Scheduling between R0, PVC, and semantic navigation
 
-Neither stream should be declared a hard prerequisite of the other.
+None of the three streams is a universal hard prerequisite of the others.
 
-A practical sequence can alternate:
+A practical near-term sequence is:
 
 ```text
-small R conformance slice
-→ small S/A boundary slice
-→ reassess interfaces
-→ continue whichever next dependency is clearest
+PVC A2.0 first real qualified observation consumer
+→ extract only demonstrated reusable one-shot substrate
+→ continue rust-analyzer A2.1/S1b without inheriting PVC-only assumptions
+
+in parallel / alternating:
+R0 small semantic conformance slices
 ```
 
-This is preferable to attempting either a complete Python→Rust migration or a complete semantic-navigation subsystem before obtaining feedback from real code.
+This is preferable to attempting a complete Python→Rust migration, a complete generic observation framework, or a complete language-navigation subsystem before obtaining feedback from real consumers.
 
 ---
 
@@ -677,7 +778,7 @@ This is preferable to attempting either a complete Python→Rust migration or a 
 
 ## 10.1 Semantic authority is explicit
 
-Host-language equality, ordering, coercion, persistence behavior, LSP output, model prose, and test success do not silently define Atlas semantics.
+Host-language equality, ordering, coercion, persistence behavior, PVC/LSP output, model prose, and test success do not silently define Atlas semantics.
 
 ## 10.2 Requested / resolved / observed
 
@@ -691,6 +792,8 @@ Historical Agent audit/rebuild uses archived facts and authorities. Historical A
 
 An interrupted execution may leave useful material. Qualification may later succeed or fail without rewriting the execution history.
 
+For observation services, process success, observation validity, publication/materialization, and qualification are likewise distinct.
+
 ## 10.5 Git checkpoint is not certification
 
 A Git commit records material state. Semantic correctness, proof/evidence, and disposition are separate concepts.
@@ -699,9 +802,9 @@ A Git commit records material state. Semantic correctness, proof/evidence, and d
 
 Diagnose precisely, fail safe, recover supported transactions, and preserve practical routes back to stable state. Do not build theoretical crash repair without demonstrated need.
 
-## 10.7 Semantic observation is not semantic authority
+## 10.7 Observation is not semantic authority
 
-LSP, AST, exact text search, compilers, tests, and models produce observations. Admission as Atlas knowledge or acceptance as a product decision remains explicit.
+PVC, LSP, AST, exact text search, compilers, tests, and models produce observations. Admission as Atlas knowledge or acceptance as a product decision remains explicit.
 
 ## 10.8 Avoid duplicated representations
 
@@ -762,4 +865,4 @@ Do not rename `atlas-py` yet merely for symmetry.
 
 Do not create `atlas-protocol` until a real independently versioned shared package is justified by multiple consumers.
 
-The final boundaries inside `atlas-core` should be learned from the first Rust semantic conformance work and the first semantic-observation consumer rather than frozen from repository naming alone.
+The final boundaries inside `atlas-core` should be learned from Rust semantic conformance work and multiple real observation consumers rather than frozen from repository naming alone.
