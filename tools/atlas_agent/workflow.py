@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib, json, os, re, tempfile, uuid, tomllib
 from dataclasses import replace
 from pathlib import Path
-from .model import Prompt
+from .model import Prompt, PROMPT_SCHEMA_V2
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
 from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness
@@ -654,6 +654,112 @@ class Workflow:
             self.base.mkdir(parents=True,exist_ok=True)
             for d in DIRS: (self.base/d).mkdir(parents=True,exist_ok=True)
             w=witness(self.root,self.allowed); self.journal.append("WORKFLOW_INITIALIZED",repository_root=str(self.root),head=w["head"],branch=w["branch"],witness=w,validation_epoch=2); self._save(replay_journal(self.journal.read()))
+    def prompt_create(self, checkpoint, action, body, session_mode="fresh",
+                      reuse_execution_id=None, network_access=False):
+        """Create, but do not admit, one validated candidate in the inbox."""
+        if not isinstance(body, bytes):
+            raise WorkflowError("PROMPT_BODY_MUST_BE_BYTES")
+        with lock(self.base/"lock"):
+            _, state = self._preflight(require_state=True)
+            if not state["initialized"]:
+                raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
+            current = witness(self.root, self.allowed)
+            if current != state["latest_repository_witness"]:
+                raise WorkflowError("REPOSITORY_WITNESS_MISMATCH_BOUNDARY")
+            generation = max((int(x) for x in state["generations"]), default=0) + 1
+            parent = "genesis" if generation == 1 else generation - 1
+            # json's quoting is also valid TOML basic-string quoting and
+            # prevents operator input from becoming header syntax.
+            quote = lambda value: json.dumps(value, ensure_ascii=False)
+            header = (
+                "+++\n"
+                f"schema = {quote(PROMPT_SCHEMA_V2)}\n"
+                f"generation = {generation}\n"
+                f"parent = {quote(parent) if isinstance(parent, str) else parent}\n"
+                f"checkpoint = {quote(checkpoint)}\n"
+                f"action = {quote(action)}\n"
+                f"expected_head = {quote(current['head'])}\n"
+                f"session_mode = {quote(session_mode)}\n"
+                f"network_access = {'true' if network_access else 'false'}\n"
+            )
+            if reuse_execution_id is not None:
+                header += f"reuse_execution_id = {quote(reuse_execution_id)}\n"
+            raw = header.encode("utf-8") + b"+++\n" + body
+            try:
+                parsed = parse_prompt(raw)
+            except PromptError as error:
+                raise WorkflowError(f"{error.code}: {error}") from error
+            if parsed.generation != generation or parsed.parent != parent:
+                raise WorkflowError("PROMPT_DERIVATION_MISMATCH")
+            inbox = self.base/"inbox"
+            if inbox.is_symlink() or not inbox.is_dir():
+                raise WorkflowError("INBOX_INVALID")
+            name = f"g{generation:06d}-{parsed.checkpoint}-{parsed.sha256}.txt"
+            path = inbox/name
+            # Keep the candidate private until it is complete.  A hard link
+            # publishes that complete inode without the overwrite semantics
+            # of os.replace (and therefore retains collision safety).
+            staged = None
+            fd = None
+            try:
+                fd, staged_name = tempfile.mkstemp(
+                    prefix=".prompt-create-", dir=inbox
+                )
+                staged = Path(staged_name)
+                os.fchmod(fd, 0o600)
+                stream = os.fdopen(fd, "wb")
+                # fdopen now owns the descriptor.  Keep fd set until that
+                # ownership transfer succeeds so setup failures cannot leak it.
+                fd = None
+                with stream:
+                    stream.write(raw)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if staged.read_bytes() != raw:
+                    raise WorkflowError("PROMPT_STAGING_INCOMPLETE")
+
+                # This is deliberately the last authority check before the
+                # link below.  Do not regenerate metadata if either the
+                # repository or canonical workflow state moved on.
+                self._revalidate_prompt_create_boundary(
+                    state, current, generation, parent
+                )
+                try:
+                    os.link(staged, path)
+                except FileExistsError as error:
+                    raise WorkflowError("INBOX_FILE_EXISTS") from error
+                # Remove the second hard-link name before completing directory
+                # durability.  The final name is the only visible name for
+                # this inode, including if an interruption follows.
+                staged.unlink()
+                fsync_dir(inbox)
+            finally:
+                if fd is not None:
+                    os.close(fd)
+                if staged is not None and (staged.exists() or staged.is_symlink()):
+                    staged.unlink()
+            return path, parsed
+
+    def _revalidate_prompt_create_boundary(
+        self, expected_state, expected_witness, generation, parent
+    ):
+        """Confirm prompt metadata still matches authority immediately pre-publish."""
+        _, state = self._preflight(require_state=True)
+        if state != expected_state:
+            raise WorkflowError("WORKFLOW_BOUNDARY_CHANGED")
+        if not state["initialized"]:
+            raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
+        current = witness(self.root, self.allowed)
+        if current != expected_witness or current != state["latest_repository_witness"]:
+            raise WorkflowError("REPOSITORY_WITNESS_MISMATCH_BOUNDARY")
+        next_generation = max(
+            (int(value) for value in state["generations"]), default=0
+        ) + 1
+        if next_generation != generation:
+            raise WorkflowError("WORKFLOW_GENERATION_BOUNDARY_CHANGED")
+        expected_parent = "genesis" if generation == 1 else generation - 1
+        if parent != expected_parent:
+            raise WorkflowError("WORKFLOW_PARENT_BOUNDARY_CHANGED")
     def rebuild(self):
         with lock(self.base/"lock"):
             events,s=self._replayed()

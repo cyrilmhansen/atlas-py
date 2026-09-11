@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 
 from .workflow import Workflow,WorkflowError,replay_journal,witness_matches_policy
+from .model import ACTIONS
 from .spool import validate_spool
 from .repository import witness
 from .codex_executor import CodexExecutor
@@ -100,11 +101,22 @@ class DispatchPresenter:
 
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
-    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create"])
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
+        elif a.command=="prompt-create":
+            if a.checkpoint is None: raise WorkflowError("--checkpoint is required")
+            if a.action is None: raise WorkflowError("--action is required")
+            stream = getattr(sys.stdin, "buffer", sys.stdin)
+            body = stream.read()
+            if isinstance(body, str): body = body.encode("utf-8")
+            path, prompt = w.prompt_create(a.checkpoint, a.action, body,
+                                           a.session_mode, a.reuse_execution_id,
+                                           a.network_access)
+            print(f"g{prompt.generation} · prompt created")
+            print(path)
         elif a.command=="ingest": w.ingest()
         elif a.command=="rebuild-state": w.rebuild()
         elif a.command=="recover": w.recover()

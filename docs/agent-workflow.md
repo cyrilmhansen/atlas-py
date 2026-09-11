@@ -96,6 +96,13 @@ atlas-agent dispatch
 atlas-agent status
 ```
 
+To create a validated v2 candidate directly from standard input (without
+ingesting it):
+
+```text
+atlas-agent prompt-create --checkpoint CHECKPOINT --action implementation < body.txt
+```
+
 `dispatch` executes at most one already accepted generation and then returns
 to the shell. It does not watch the inbox, repeat dispatches, or choose the
 next methodological action. A manual `checkpoint` prompt is reported as
