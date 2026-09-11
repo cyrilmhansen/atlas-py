@@ -1,15 +1,16 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.8**  
-Planning date: **2026-09-10**  
-Agent code baseline: **`2c97e706f394b9392f27eae3d50ca210b3daeeac`** (`M1 Core Hygiene`)  
+Document version: **0.9**
+Planning date: **2026-09-11**
+Agent code baseline: **`ed00e53a258ba2b636b1e9f8c612e9a71d26ff4c`** (`feat(agent): add qualified one-shot PVC execution boundary`)
+
 Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)  
 PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)  
 Semantic navigation baseline: [`docs/semantic-observation-v0.md`](semantic-observation-v0.md)
 
-This roadmap supersedes version 0.7.
+This roadmap supersedes version 0.8.
 
-Version 0.7 reconciled semantic coordination with the pre-existing Atlas Core semantic model. Version 0.8 adds the first concrete external observation service to that architecture: `pi-visual-context` (PVC), now available as a headless one-shot service with a portable `SourceContextSnapshot v1` bundle.
+Version 0.9 reframes PVC around its near-term product purpose: optimizing context supplied to Luna, Sol, and Astra through dense multimodal SOURCE and TASK tablets. The prototype provides empirical evidence for a model-specific strategy, not a universal quota, latency, or cost invariant. PVC-derived context material remains optional and secondary as input to Atlas-interpreted observations.
 
 The current planning model has three related lanes:
 
@@ -85,11 +86,30 @@ Git
 Codex / other models
 ```
 
-supply domain computations or observations.
+supply qualified domain material or results. A specialized-service result may
+be:
 
-Atlas Agent qualifies and executes them. Atlas interprets their results. An observation does not automatically become persistent Atlas knowledge.
+- consumed directly as model context;
+- interpreted by Atlas as an observation/evidence source;
+- used in both ways.
 
-PVC is the first real one-shot observation-service consumer. `rust-analyzer` remains the first planned interactive semantic-service consumer. Their different lifecycle shapes should exercise common qualification principles without forcing a premature universal provider framework.
+The context path is:
+
+```text
+service material → model context → model reasoning
+```
+
+The observation path is:
+
+```text
+service result → Atlas interpretation/evidence → optional semantic admission
+```
+
+These paths may overlap, but neither implies the other. Atlas Agent qualifies
+and executes the service; Atlas semantic admission remains a separate explicit
+decision. PVC's primary near-term path is direct multimodal model context.
+
+PVC is the first real one-shot context-compilation consumer. `rust-analyzer` remains the first planned interactive semantic-service consumer. Their different lifecycle shapes should exercise common qualification principles without forcing a premature universal provider framework.
 
 ---
 
@@ -311,36 +331,42 @@ Preserve the distinction between semantic requirements and Core V1 implementatio
 
 The **S** track adds coordination capabilities around the Atlas semantic foundation. It can progress while R migration is still incomplete, provided it respects the existing Atlas semantic model instead of creating a competing one.
 
-## S1 — Software Observation
+## S1 — Software Context and Observation
 
 ### Goal
 
-Give Atlas compact structured access to useful software observations without repeatedly rediscovering the same material through whole-file dumps, ad-hoc rendering, or lexical search.
+Give Atlas and its model-facing workflows compact structured access to useful
+software context and observations without repeatedly rediscovering the same
+material through whole-file dumps, ad-hoc rendering, or lexical search.
 
-S1 intentionally includes more than language-server semantics. Different specialized services may produce different observation forms, provided capability, completeness, provenance, and material identity remain explicit.
-
-### S1a — Visual Source Observation / PVC
-
-`pi-visual-context` now provides a headless service that transforms selected sources into a portable immutable bundle:
+Specialized software services can serve two distinct product paths:
 
 ```text
-SourceContextSnapshot v1
-+ content-addressed PNG tablets
-+ source/line provenance
-+ best-effort symbol anchors
+context path
+    service material → model context → model reasoning
+
+observation path
+    service result → Atlas interpretation/evidence
+    → optional semantic admission
 ```
 
-Qualified PVC source baseline:
+The paths may overlap, but neither implies the other. S1a PVC and S1b
+semantic code navigation therefore remain distinct capabilities.
+
+### S1a — Visual Context Compilation / PVC
+
+Near-term product goal: construct compact multimodal context for Atlas/model work. PVC transforms selected source/reference material into SOURCE tablets and, once an appropriate deterministic headless TASK operation exists, long task/specification material into TASK tablets. VC IDs, source/line ranges, and conservative symbol anchors provide an address map into supplied context, not authoritative language semantics or Atlas facts.
+
+The prototype is `cyrilmhansen/pi-visual-context`, baseline:
 
 ```text
-cyrilmhansen/pi-visual-context
 818786a3a702cf314c2e18528b7b613523c316a6
 fix: separate runtime and rendering work roots
 ```
 
-PVC remains a specialized observation/representation service. Atlas Agent owns qualified invocation, isolation, operation provenance, bundle validation, cancellation/recovery, and materialization. Atlas owns interpretation and any later decision to retain an observation as semantic knowledge.
+Classical, PVC, and hybrid context modes remain first-class. Critical instructions, authorization boundaries, and small exact constraints normally remain text; normal tools remain available for exact, local, current, omitted, and verification material. A secondary role is portable visual-source context material that Atlas may later interpret as observation/evidence, but prepared context is not automatically admitted to Atlas semantic storage.
 
-The initial Atlas integration is deliberately one-shot. Metadata-only tablet/symbol resolution must not trigger a new render.
+PVC and `rust-analyzer` are complementary: PVC provides broad dense visual context and addressable tablets; rust-analyzer later provides precise interactive language semantics.
 
 See [`pvc-observation-v0.md`](pvc-observation-v0.md).
 
@@ -505,61 +531,54 @@ A1 is important maintenance but does **not** automatically precede S1.
 
 ## A2 — Qualified Tool Services
 
-A2 now has two deliberately different initial lifecycle shapes. Share qualification and authority machinery where it genuinely fits; do not force one universal runtime abstraction before both consumers exist.
+A2 develops the controlled execution substrate and then uses it for context compilation and semantic services. Share qualification and authority machinery where it genuinely fits; do not force one universal runtime abstraction.
 
-### A2.0 — One-shot qualified tool operations
+### A2.0 — One-shot qualified tool-operation substrate — COMPLETE
 
-First consumer: **PVC / S1a**.
-
-Goal: execute a controller-owned qualified non-model tool operation with explicit argv, capability plan, bounded streams, process ownership/cancellation, durable operation identity, result validation, and materialization.
-
-The first slice should reuse existing qualified-toolchain/capability-plan mechanisms and existing process/isolation techniques where appropriate, but should not force PVC into Codex prompt/session/report semantics.
-
-PVC-specific requirements include:
+Completed at current repository HEAD (`ed00e53a258ba2b636b1e9f8c612e9a71d26ff4c`):
 
 ```text
-qualified runtime identity
-read-only runtime root
-private writable work/output roots
-no network
-bounded stdout/stderr
-SourceContextSnapshot schemaVersion 1
-bundle/hash/path validation
-atomic/durable publication
-operation cancellation/recovery
+qualified controller-owned one-shot non-model operation
+explicit argv
+CapabilityPlan command/mount authority
+isolated Bubblewrap execution
+private operation scratch
+bounded stdout/stderr, process ownership, timeout/process teardown
+narrow PVC prepare adapter
 ```
 
-Keep process success, snapshot acceptance, bundle validity, materialization success, and qualification status distinct.
+A2.0 establishes substrate only. It does not complete snapshot validation,
+durable operation-result/bundle publication, or full PVC qualification.
 
-The purpose of A2.0 is to establish the smallest real reusable substrate justified by PVC. Do not generalize it into a provider registry, daemon, RPC system, or artifact marketplace.
+### A2.1 — Qualified PVC context preparation
 
-### A2.1 — Semantic service runtime
+Complete the real PVC/runtime qualification and prepare execution, including:
 
-Agent-side dependency for S1b.
+- `SourceContextSnapshot` and bundle/artifact validation;
+- operation provenance, lifecycle, and materialization;
+- explicit source policy and portable publication;
+- qualification evidence bound to the prepared material.
 
-For `rust-analyzer`, Agent should own or report, where relevant:
+### A2.2 — Multimodal model-context injection
 
-```text
-qualified executable identity
-version
-workspace/material binding
-configuration
-environment/capabilities
-process lifecycle
-resource bounds
-response bounds
-backend capability discovery
-```
+Make a real model invocation consume selected context:
 
-A logically read-only semantic query may still cause a language server to invoke compilers, build scripts, procedural macros, or caches. Agent must represent those requirements truthfully rather than hiding them behind a `read-only` label.
+- SOURCE tablet injection;
+- deterministic headless TASK tablet support/injection;
+- model-facing tablet/address index;
+- real Luna/Sol/Astra dogfood;
+- explicit classical/PVC/hybrid context modes;
+- measurement of quality, context coverage, quota/accounting, latency, render cost, task time, and sequential tool-call trade-offs.
 
-A2.1 may reuse A2.0 qualification/environment/process primitives, but its long-lived interactive lifecycle must not be constrained by assumptions that are only true for one-shot PVC execution.
+The near-term dogfood milestone is: for one real Agent generation, explicitly choose a bounded set of principal files and optionally long task material, prepare and validate it through qualified PVC, attach the tablets to the model invocation, and retain normal tools. Compare all three modes on the same representative task. Do not build an automatic context-selection optimizer yet.
 
-### A2.2 — Additional semantic backends
+### A2.3 — Persistent semantic service runtime
 
-Add Pyright after the Rust contract has demonstrated useful shape. The second backend tests whether the interface genuinely survives different language semantics.
+First consumer: `rust-analyzer`. Agent owns qualification, workspace/material binding, configuration, capabilities, lifecycle, bounds, and truthful backend status; Atlas interprets semantic results.
 
----
+### A2.4 — Additional semantic backends
+
+Add Pyright or an equivalent backend after the first service contract is demonstrated.
 
 ## A3 — Qualification Execution and Evidence
 
@@ -644,11 +663,11 @@ existing Atlas semantic contract / Python reference
         ↓
 R0 → R1 → R2 → R3
 
-A2.0 one-shot qualified tool operation
+A2.0 one-shot qualified tool-operation substrate
         ↕
-S1a PVC visual-source observation
+S1a PVC visual context compilation
 
-A2.1 qualified semantic service
+A2.3 qualified semantic service
         ↕
 S1b semantic code navigation
 
@@ -692,36 +711,27 @@ Next R action:
 
 Do not pick the semantic behavior by convenience alone; inspect the existing Core implementation/tests and prefer a stable local invariant with little persistence coupling.
 
-## 9.2 S1a / A2.0 — PVC visual-source observation
+## 9.2 S1a / A2.1 / A2.2 — PVC context dogfood
 
-PVC headless preparation is now available and its runtime/work-root prerequisite is closed at:
-
-```text
-818786a3a702cf314c2e18528b7b613523c316a6
-fix: separate runtime and rendering work roots
-```
-
-The next Agent action is a bounded integration slice:
+A2.0's one-shot substrate is complete. The next product slice is qualified PVC context preparation followed by multimodal model-context injection:
 
 ```text
-Atlas / workflow requests selected source observation
-        ↓
-Atlas Agent admits a one-shot qualified tool operation
-        ↓
-qualified PVC prepare runs without network
-        ↓
-Agent validates process result + snapshot/bundle boundary
-        ↓
-Agent durably materializes observation + provenance
-        ↓
-consumer receives portable SourceContextSnapshot v1
+real Agent generation
+    ↓ explicit bounded source/task selection
+qualified PVC preparation
+    ↓ validate provenance and bundle
+SOURCE + TASK tablets and address index
+    ↓
+Luna / Sol / Astra invocation
+    ↓
+normal tools remain available
 ```
 
-Implement the smallest operation lifecycle that preserves existing Agent authority, crash/recovery, and provenance invariants. Do not design generalized service or artifact frameworks in advance.
+The first comparison must run classical, PVC, and hybrid strategies on the same representative task and measure quality/coverage, quota/accounting, latency, preparation cost, task time, and tool-call count. Selection may initially be explicit and deterministic.
 
 See [`pvc-observation-v0.md`](pvc-observation-v0.md).
 
-## 9.3 S1b / A2.1 — Semantic Code Navigation v0
+## 9.3 S1b / A2.3 — Semantic Code Navigation v0
 
 The existing semantic-observation design remains valid for `rust-analyzer`.
 
@@ -762,9 +772,9 @@ None of the three streams is a universal hard prerequisite of the others.
 A practical near-term sequence is:
 
 ```text
-PVC A2.0 first real qualified observation consumer
-→ extract only demonstrated reusable one-shot substrate
-→ continue rust-analyzer A2.1/S1b without inheriting PVC-only assumptions
+PVC A2.1/A2.2 qualified context-preparation and model-invocation dogfood
+→ use only demonstrated reusable one-shot substrate
+→ continue rust-analyzer A2.3/S1b without inheriting PVC-only assumptions
 
 in parallel / alternating:
 R0 small semantic conformance slices
@@ -804,7 +814,11 @@ Diagnose precisely, fail safe, recover supported transactions, and preserve prac
 
 ## 10.7 Observation is not semantic authority
 
-PVC, LSP, AST, exact text search, compilers, tests, and models produce observations. Admission as Atlas knowledge or acceptance as a product decision remains explicit.
+PVC produces context material/results that may serve as input to
+Atlas-interpreted observations or evidence; materialization alone does not
+create an Atlas observation. LSP, AST, exact text search, compilers, tests,
+and models may produce observations. Admission as Atlas knowledge or
+acceptance as a product decision remains explicit.
 
 ## 10.8 Avoid duplicated representations
 
@@ -840,6 +854,9 @@ architecture / representation decision
 Astra results are advisory architecture input, not automatic product authority.
 
 Future architecture review packages must include enough of the **Atlas semantic specification/Core profile** to prevent the Agent implementation from dominating the apparent product model.
+
+Handoffs and reviews must preserve both product intent and engineering
+contract; see [`agent-workflow.md`](agent-workflow.md).
 
 ---
 

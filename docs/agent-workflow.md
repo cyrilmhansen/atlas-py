@@ -101,6 +101,29 @@ to the shell. It does not watch the inbox, repeat dispatches, or choose the
 next methodological action. A manual `checkpoint` prompt is reported as
 `CHECKPOINT_MANUAL_REQUIRED` without launching Codex.
 
+## Normative project handoff rule
+
+A project handoff or review must preserve both the **PRODUCT INTENT** and the
+**ENGINEERING CONTRACT** when they are established.
+
+**PRODUCT INTENT** records why the capability exists, its immediate or
+near-term use, the end-to-end functional scenario, the expected useful result,
+near-term proof or dogfood, alternatives and when another approach is
+preferable, and owner-supplied hypotheses or product intent. Owner-provided
+intent remains labelled as owner input even when it is an empirical hypothesis
+rather than a proven invariant.
+
+**ENGINEERING CONTRACT** records interfaces, invariants, security and
+authority, provenance, lifecycle, tests, qualification, and related
+implementation obligations.
+
+An agent must not silently delete or abstract away functional intent merely
+because it is less mechanically verifiable than an engineering invariant. If
+the available sources do not establish the immediate use, end-to-end scenario,
+why the capability exists, or near-term functional proof, the handoff must say
+`OWNER_INPUT_REQUIRED` and identify the missing product question. An agent must
+not invent product intent to fill that gap.
+
 ## W2.1 — generic Codex executor
 
 W2.1 adds an explicit executor boundary without choosing a model, role, or
