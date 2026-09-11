@@ -2,11 +2,14 @@
 
 Document version: **0.9**
 Planning date: **2026-09-11**
-Agent code baseline: **`ed00e53a258ba2b636b1e9f8c612e9a71d26ff4c`** (`feat(agent): add qualified one-shot PVC execution boundary`)
+Agent code baseline: **`6a0d300dbf0d40ea1666280109350d366c823ee2`** (`feat(agent): add qualified PVC prepare execution`)
 
-Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)  
-PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)  
+Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
+PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)
 Semantic navigation baseline: [`docs/semantic-observation-v0.md`](semantic-observation-v0.md)
+Specialized-service qualification workflow: [`docs/qualified-service-workflow.md`](qualified-service-workflow.md)
+Release procedure: [`docs/atlas-release-process.md`](atlas-release-process.md)
+Project deployment: [`docs/deploy-existing-project.md`](deploy-existing-project.md)
 
 This roadmap supersedes version 0.8.
 
@@ -535,7 +538,7 @@ A2 develops the controlled execution substrate and then uses it for context comp
 
 ### A2.0 — One-shot qualified tool-operation substrate — COMPLETE
 
-Completed at current repository HEAD (`ed00e53a258ba2b636b1e9f8c612e9a71d26ff4c`):
+Completed at current repository HEAD (`6a0d300dbf0d40ea1666280109350d366c823ee2`):
 
 ```text
 qualified controller-owned one-shot non-model operation
@@ -550,14 +553,34 @@ narrow PVC prepare adapter
 A2.0 establishes substrate only. It does not complete snapshot validation,
 durable operation-result/bundle publication, or full PVC qualification.
 
-### A2.1 — Qualified PVC context preparation
+### A2.1a — Qualified real PVC execution — COMPLETE
 
-Complete the real PVC/runtime qualification and prepare execution, including:
+Checkpoint: **`6a0d300`** (`feat(agent): add qualified PVC prepare execution`).
+The completed tranche records:
 
-- `SourceContextSnapshot` and bundle/artifact validation;
-- operation provenance, lifecycle, and materialization;
-- explicit source policy and portable publication;
-- qualification evidence bound to the prepared material.
+- qualified runtime `cyrilmhansen/pi-visual-context` at
+  `54777ee0254c6f3f4bc04ea8a5cdb2d58cf43221`;
+- deterministic `pvc probe`, CapabilityResolver/CapabilityPlan authority, and
+  exact command identity without ambient `PATH` fallback;
+- read-only source project and controller-owned bundle, work, state,
+  stdout, and stderr;
+- a real Bubblewrap host witness for qualified PVC → `pvc prepare`.
+
+This is qualified execution evidence, not a validated bundle and not Atlas
+semantic observation/admission. See
+[`pvc-observation-v0.md`](pvc-observation-v0.md) and
+[`qualified-service-workflow.md`](qualified-service-workflow.md).
+
+### A2.1b — Validated/materialized PVC result — NEXT
+
+The next tranche remains responsible for:
+
+- accepting `SourceContextSnapshot`;
+- stdout/snapshot equivalence;
+- bundle/artifact validation, including path, hash, media, and length checks;
+- provenance binding;
+- durable materialization/publication;
+- lifecycle and recovery as required.
 
 ### A2.2 — Multimodal model-context injection
 
@@ -570,7 +593,12 @@ Make a real model invocation consume selected context:
 - explicit classical/PVC/hybrid context modes;
 - measurement of quality, context coverage, quota/accounting, latency, render cost, task time, and sequential tool-call trade-offs.
 
-The near-term dogfood milestone is: for one real Agent generation, explicitly choose a bounded set of principal files and optionally long task material, prepare and validate it through qualified PVC, attach the tablets to the model invocation, and retain normal tools. Compare all three modes on the same representative task. Do not build an automatic context-selection optimizer yet.
+The near-term dogfood milestone follows the A2.1b result boundary: for one
+real Agent generation, explicitly choose a bounded set of principal files and
+optionally long task material, prepare and validate it through qualified PVC,
+attach the tablets to the model invocation, and retain normal tools. Compare
+all three modes on the same representative task. Do not build an automatic
+context-selection optimizer yet.
 
 ### A2.3 — Persistent semantic service runtime
 

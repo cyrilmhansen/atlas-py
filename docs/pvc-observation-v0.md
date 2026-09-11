@@ -2,12 +2,27 @@
 
 Status: design baseline for the first Atlas Agent dogfood integration of `pi-visual-context` (PVC).
 
+The generic qualification gates are in
+[`qualified-service-workflow.md`](qualified-service-workflow.md); machine
+deployment and release engineering remain covered by
+[`deploy-existing-project.md`](deploy-existing-project.md) and
+[`atlas-release-process.md`](atlas-release-process.md).
+
 PVC source baseline:
 
 ```text
 cyrilmhansen/pi-visual-context
 818786a3a702cf314c2e18528b7b613523c316a6
 fix: separate runtime and rendering work roots
+```
+
+Historical prototype provenance is retained above. The qualified headless
+runtime witnessed by Atlas Agent was:
+
+```text
+cyrilmhansen/pi-visual-context
+54777ee0254c6f3f4bc04ea8a5cdb2d58cf43221
+fix(cli): externalize headless project state
 ```
 
 This document reframes the historical filename and contract around PVC's near-term purpose: compiling suitable source material and, where useful, long task material into dense multimodal tablets for Luna, Sol, and Astra. The prototype is an experiment/proof of concept whose visual representation aims to give multimodal models large amounts of useful context efficiently. It provides empirical evidence for, and motivates, a model-specific optimization strategy; visual encoding is not a universal guarantee of lower quota, latency, or cost.
@@ -102,16 +117,44 @@ A PVC snapshot may become an Atlas observation, but model-context preparation do
 
 ## 3. Headless PVC contract
 
-The current headless contract is centered on source preparation:
+Interactive/legacy PVC defaults may keep project state below the project
+directory. That is not the qualified Atlas Agent contract. Qualified headless
+execution externalizes all operation-owned writable state:
 
 ```text
 pvc prepare \
     --cwd <authorized-project-root> \
     --output <private-operation-scratch>/bundle \
-    --work-root <private-operation-work-root> \
+    --work-root <private-operation-scratch>/work \
+    --state-root <private-operation-scratch>/state \
     [--profile normal|conservative] \
     <validated-relative-sources...>
 ```
+
+The roots have distinct authority and lifecycle:
+
+```text
+projectRoot
+    authorized source input; read-only to PVC
+
+runtimeRoot
+    qualified immutable PVC runtime, assets, and helpers
+
+workRoot
+    ephemeral rendering intermediates
+
+stateRoot
+    writable PVC project state/cache for this controlled operation or a
+    controller-defined lifecycle
+
+output/bundle
+    prepared result awaiting Atlas validation
+```
+
+`--cwd` identifies `projectRoot`; it is not permission to write project-local
+state. Qualified Agent execution must not require
+`<project>/.pi/visual-context`. Agent owns the private bundle, work, state,
+stdout, and stderr locations and binds them to the operation record.
 
 PVC provides:
 
@@ -198,14 +241,33 @@ marketplace.
 
 Before invocation, reject absolute paths, `..` traversal, workspace escapes, and symlink source/path escapes. Pass explicit validated relative paths rather than exposing PVC glob expansion as an authority boundary. Bind generated source identities (`contentSha256`) to the repository/workspace witness or material identity available at invocation so drift is visible.
 
-PVC's runtime/work-root invariant is:
+PVC's qualified runtime/work-root/state invariant is:
 
 ```text
 runtimeRoot    immutable/read-only package code, assets, fonts, helpers
 workRoot       writable execution-local intermediates and template copy
+stateRoot      writable controlled PVC project state/cache
+projectRoot    read-only authorized source input
 ```
 
-Persistent PVC project state/cache under `.pi/visual-context` remains separate. The effective environment should expose only required qualified Node, Typst, ImageMagick, Poppler/font, Git/provenance, and compacting helpers. Writable scratch does not make the runtime mutable.
+The effective environment should expose only required qualified Node, Typst,
+ImageMagick, Poppler/font, Git/provenance, and compacting helpers. Writable
+scratch does not make the runtime mutable.
+
+The A2.1a qualification established a deterministic `pvc probe`,
+CapabilityResolver/CapabilityPlan authority, the exact qualified command
+identity, and no ambient `PATH` fallback. The real host witness was:
+
+```text
+qualified PVC → CapabilityPlan → Bubblewrap → pvc prepare
+```
+
+It produced `snapshot.json`, a PNG artifact, and external `project.json` with
+process success, exit code 0, and no timeout. The source project remained
+read-only and unchanged: project-local `.pi` was absent, project status was
+unchanged, and the tracked diff was unchanged. This execution evidence was
+deliberately not yet semantic admission or a validated/materialized result:
+`bundle_validated: false` and `output_interpreted: false`.
 
 ## 6. Validation, provenance, lifecycle, and materialization
 
