@@ -72,8 +72,8 @@ class OneShotExecutor:
         *,
         capability_plan,
         cwd: Path,
-        stdout_path: Path,
-        stderr_path: Path,
+        stdout_path: Path | None = None,
+        stderr_path: Path | None = None,
     ) -> ProcessResult:
         if not isinstance(command, ResolvedCommand):
             raise TypeError("one-shot execution requires a ResolvedCommand")
@@ -114,6 +114,13 @@ class OneShotExecutor:
             launch = self._namespace_command(
                 bwrap, capability_plan, root, scratch, argv,
             )
+            # A caller that does not supply output paths gets operation-local
+            # material.  PVC uses this branch so its retained process output
+            # has the same lifetime and ownership boundary as its scratch.
+            stdout_path = (scratch / "stdout" if stdout_path is None
+                           else Path(stdout_path))
+            stderr_path = (scratch / "stderr" if stderr_path is None
+                           else Path(stderr_path))
             stdout_path.parent.mkdir(parents=True, exist_ok=True)
             stderr_path.parent.mkdir(parents=True, exist_ok=True)
             stdout, stderr = self._open_outputs(stdout_path, stderr_path)

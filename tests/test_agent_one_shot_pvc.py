@@ -67,10 +67,13 @@ def test_qualified_argv_and_separate_output_and_exit_code(tmp_path):
     source = tmp_path / "image one.png"
     source.write_bytes(b"fixture")
     request = PvcPrepareRequest(tmp_path, ("image one.png",), "conservative")
+    project_stdout = tmp_path / "stdout"
+    project_stderr = tmp_path / "stderr"
+    project_stdout.write_text("must remain untouched")
+    project_stderr.write_text("must remain untouched")
     with _plan(executable, tmp_path) as plan:
         result = execute_prepare(
             request, capability_plan=plan, executor=OneShotExecutor(),
-            stdout_path=tmp_path / "stdout", stderr_path=tmp_path / "stderr",
         )
         scratch = result.process.scratch_path
         try:
@@ -78,15 +81,63 @@ def test_qualified_argv_and_separate_output_and_exit_code(tmp_path):
             assert str(Path("/opt/qualified") / executable.name) in result.process.command
             assert result.process.command[-len((
                 "prepare", "--cwd", str(tmp_path), "--output", "/var/tmp/bundle",
-                "--work-root", "/var/tmp/work", "--profile", "conservative",
+                "--work-root", "/var/tmp/work", "--state-root", "/var/tmp/state",
+                "--profile", "conservative",
                 "image one.png",)):] == (
                 "prepare", "--cwd", str(tmp_path), "--output", "/var/tmp/bundle",
-                "--work-root", "/var/tmp/work", "--profile", "conservative",
+                "--work-root", "/var/tmp/work", "--state-root", "/var/tmp/state",
+                "--profile", "conservative",
                 "image one.png")
-            assert (tmp_path / "stdout").read_text().startswith("STDOUT prepare")
-            assert (tmp_path / "stderr").read_text().startswith("STDERR prepare")
+            assert "/var/tmp/state" in result.process.command
+            assert str(tmp_path) not in result.process.command[
+                result.process.command.index("--state-root") + 1]
+            assert result.stdout_path.read_text().startswith("STDOUT prepare")
+            assert result.stderr_path.read_text().startswith("STDERR prepare")
+            assert result.stdout_path.parent == scratch
+            assert result.stderr_path.parent == scratch
+            assert result.stdout_path != project_stdout
+            assert result.stderr_path != project_stderr
+            assert project_stdout.read_text() == "must remain untouched"
+            assert project_stderr.read_text() == "must remain untouched"
             assert (scratch / "bundle").is_dir()
             assert not (scratch / "work").exists()
+            assert result.scratch_path == scratch
+            assert result.bundle_path == scratch / "bundle"
+            assert result.work_path == scratch / "work"
+            assert not result.process_succeeded
+            assert not result.bundle_validated
+            assert not result.output_interpreted
+        finally:
+            shutil.rmtree(scratch)
+
+
+@pytest.mark.skipif(not _namespace_available(), reason="bubblewrap namespace unavailable")
+def test_success_retains_prepare_result_without_validation(tmp_path):
+    executable = tmp_path / "qualified-pvc.py"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "mkdir /var/tmp/bundle /var/tmp/work\n"
+        "printf '{\"process\":\"ok\"}\\n'\n"
+    )
+    executable.chmod(0o755)
+    source = tmp_path / "source.txt"
+    source.write_text("source")
+    request = PvcPrepareRequest(tmp_path, ("source.txt",))
+    with _plan(executable, tmp_path) as plan:
+        result = execute_prepare(
+            request, capability_plan=plan, executor=OneShotExecutor(),
+        )
+        scratch = result.scratch_path
+        try:
+            assert result.process_succeeded
+            assert result.bundle_path.is_dir()
+            assert result.work_path.is_dir()
+            assert result.stdout_path.parent == result.scratch_path
+            assert result.stderr_path.parent == result.scratch_path
+            assert result.stdout_path.is_file()
+            assert result.stderr_path.is_file()
+            assert result.stdout_path.read_text() == '{"process":"ok"}\n'
+            assert not result.bundle_validated
             assert not result.output_interpreted
         finally:
             shutil.rmtree(scratch)

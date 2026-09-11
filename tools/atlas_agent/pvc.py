@@ -57,7 +57,8 @@ class PvcPrepareRequest:
     def argv(self) -> tuple[str, ...]:
         args = ["prepare", "--cwd", str(self.project_root),
                 "--output", "/var/tmp/bundle",
-                "--work-root", "/var/tmp/work"]
+                "--work-root", "/var/tmp/work",
+                "--state-root", "/var/tmp/state"]
         if self.profile is not None:
             args += ["--profile", self.profile]
         return tuple(args + list(self.sources))
@@ -71,14 +72,53 @@ def build_prepare_command(command,
 
 @dataclass(frozen=True)
 class PvcPrepareResult:
+    """The non-durable result of one qualified PVC prepare operation.
+
+    The scratch directory is intentionally retained on successful execution.
+    These paths describe where this invocation wrote (or was expected to
+    write) its output; they are not a claim that the output is a valid PVC
+    bundle.  The next slice can therefore validate these exact bytes without
+    invoking PVC again.
+    """
+
     process: ProcessResult
     request: PvcPrepareRequest
 
     @property
-    def output_interpreted(self) -> bool:
-        # This slice executes PVC only; snapshot/bundle interpretation is a
-        # separate operation and must never be inferred from exit status.
+    def scratch_path(self) -> Path:
+        """Private operation scratch retained for a subsequent validator."""
+        if self.process.scratch_path is None:
+            raise RuntimeError("PVC result has no retained scratch")
+        return self.process.scratch_path
+
+    @property
+    def bundle_path(self) -> Path:
+        return self.scratch_path / "bundle"
+
+    @property
+    def work_path(self) -> Path:
+        return self.scratch_path / "work"
+
+    @property
+    def stdout_path(self) -> Path:
+        return self.process.stdout_path
+
+    @property
+    def stderr_path(self) -> Path:
+        return self.process.stderr_path
+
+    @property
+    def process_succeeded(self) -> bool:
+        return self.process.succeeded
+
+    @property
+    def bundle_validated(self) -> bool:
+        """Process success is deliberately not bundle validation."""
         return False
+
+    @property
+    def output_interpreted(self) -> bool:
+        return self.bundle_validated
 
 
 def execute_prepare(
@@ -86,15 +126,14 @@ def execute_prepare(
     *,
     capability_plan: CapabilityPlan,
     executor: OneShotExecutor,
-    stdout_path: Path,
-    stderr_path: Path,
 ) -> PvcPrepareResult:
+    """Execute PVC with process output retained in its private scratch."""
     if not isinstance(capability_plan, CapabilityPlan):
         raise TypeError("capability_plan is required")
     command = capability_plan.command("pvc")
     return PvcPrepareResult(
         executor.run(command, request.argv(), cwd=request.project_root,
                      capability_plan=capability_plan,
-                     stdout_path=Path(stdout_path), stderr_path=Path(stderr_path)),
+                     stdout_path=None, stderr_path=None),
         request,
     )
