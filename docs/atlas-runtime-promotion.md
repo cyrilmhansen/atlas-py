@@ -274,7 +274,7 @@ The qualified source recipe is versioned in
 `codex-runtime-recipes/atlas-codex-0.154.toml`. Reconstruction does not
 re-cherry-pick patches. It resolves the exact qualified final commit already
 present in the Codex source repository, verifies the upstream tag/commit and
-the ordered required-commit ancestry, then creates a detached clean worktree:
+the ordered required-commit ancestry `6b9826e3… -> 513e4a57… -> 123825e5…`, then creates a detached clean worktree:
 
 ```bash
 env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     reconstruct-codex     --source-repo /home/john/luna/codex-atlas     --worktree /home/john/luna/codex-atlas/builds/atlas-codex-0.154

@@ -171,3 +171,19 @@ def test_build_runtime_invokes_cargo_on_clean_qualified_worktree(tmp_path, monke
     assert result["head"] == final
     assert result["version"] == "codex-cli test"
     assert result["status"] == "PASS"
+
+
+def test_production_recipe_encodes_qualified_0154_lineage():
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    recipe = tomllib.loads(
+        (root / "codex-runtime-recipes" / "atlas-codex-0.154.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert recipe["upstream_commit"] == "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"
+    assert recipe["required_commits"] == ["513e4a57eb", "123825e5d3"]
+    assert recipe["final_ref"] == "123825e5d3"
