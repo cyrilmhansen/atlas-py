@@ -1,8 +1,8 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.10**
-Planning date: **2026-09-12**
-Agent code baseline: **`b3a6f4d0e416bac7b54238a737c25ec903e7fda4`** (`atlas-agent: validate and retain qualified PVC results`)
+Document version: **0.11**
+Planning date: **2026-09-13**
+Agent code baseline: **`cc0d687a1c94c926ade7ed6262b98a81c62e757c`** (`Qualify rebuilt Codex runtime`)
 
 Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
 PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)
@@ -11,14 +11,26 @@ Specialized-service qualification workflow: [`docs/qualified-service-workflow.md
 Release procedure: [`docs/atlas-release-process.md`](atlas-release-process.md)
 Project deployment: [`docs/deploy-existing-project.md`](deploy-existing-project.md)
 
-This roadmap supersedes version 0.9.
+This roadmap supersedes version 0.10.
 
-Version 0.10 records the validated-result tranche of A2.1b and keeps PVC's
-near-term product purpose explicit: optimizing context supplied to Luna, Sol,
-and Astra through dense multimodal SOURCE and TASK tablets. The prototype
-provides empirical evidence for a model-specific strategy, not a universal
-quota, latency, or cost invariant. PVC-derived context material remains
-optional and secondary as input to Atlas-interpreted observations.
+Version 0.11 records three completed infrastructure/product steps since 0.10:
+
+- the core A2.2 SOURCE-tablet path is qualified end to end through real Atlas
+  execution, including validated PVC selection, sealed descriptor authority,
+  Bubblewrap/Codex transport, deterministic provenance, and original-detail
+  image injection;
+- Atlas Agent now has an immutable qualified-host release/install path covering
+  custom Codex reconstruction/build, runtime preparation, repository-boundary
+  promotion, immutable controller installation/activation, verification, and
+  stripped-environment startup;
+- the rebuilt qualified Codex 0.154 runtime is bound into policy at
+  `27b9ce2f13b4f344207250cb913457549bee8ef56525ec9617e8092a64acb568`.
+
+The explicit next implementation priority moves from A2.2 to **A6.1 selectable
+model execution profiles**. PVC retains only bounded follow-up work such as
+TASK tablets and comparative dogfood where it provides concrete value.
+`rust-analyzer` A2.3/S1b and the first Rust Atlas Core conformance slice R0
+remain the next larger product fronts.
 
 The current planning model has three related lanes:
 
@@ -596,31 +608,52 @@ publication/materialization and lifecycle/recovery:
 - durable materialization/publication;
 - lifecycle and recovery as required.
 
-### A2.2 — Multimodal model-context injection — NEXT IMPLEMENTATION PRIORITY
+### A2.2 — Multimodal model-context injection — CORE COMPLETE
 
-This is the immediate next product implementation slice: consume the validated
-PVC material as multimodal model context for one bounded real generation.
-Preserve textual critical constraints where appropriate, retain normal exact
-tools, and attribute the context to the validated PVC result. PVC is optional
-and secondary context machinery, not a replacement for exact tools.
+The core SOURCE-tablet path is complete.
 
-Make a real model invocation consume selected context:
+Representative implementation checkpoints:
 
-- SOURCE tablet injection;
-- deterministic headless TASK tablet support/injection;
-- model-facing tablet/address index;
-- real Luna/Sol/Astra dogfood;
-- explicit classical/PVC/hybrid context modes;
-- measurement of quality, context coverage, quota/accounting, latency, render cost, task time, and sequential tool-call trade-offs.
+```text
+b724c398d9359de92f1c6b1ae3c0310947d7116a
+Integrate validated PVC source context into Atlas execution
 
-The near-term dogfood must keep validation separate from interpretation:
-preparing context does not make it an Atlas semantic observation. Explicitly
-choose a bounded set of principal files and optionally long task material,
-prepare and validate it through qualified PVC, attach the tablets to the model
-invocation, and retain normal tools. Compare classical, PVC, and hybrid modes
-on the same representative task. Do not build an automatic context-selection
-optimizer yet. The open A2.1b durability work is not a prerequisite for A2.2
-unless a concrete blocking defect appears.
+5af7774fde08e9a629cac5d8f6d2d2929a71f345
+Use original image detail for PVC source context
+```
+
+A real Atlas generation can now consume an explicitly selected subset of a
+validated PVC result as multimodal context. The qualified boundary includes:
+
+- validated-result-only selection;
+- deterministic ordered tablet selection and provenance framing;
+- sealed controller-owned image descriptors exposed through `/proc/self/fd/N`;
+- preservation of Bubblewrap runtime/server/lock/scratch semantics and
+  `pass_fds`;
+- repeated Codex `--image` transport with `--image-detail original`;
+- fail-closed rejection of forged, stale, tampered, unsealed, or
+  cross-executor image authority;
+- unchanged text-only execution when no PVC context is selected;
+- a real host witness where SOURCE tablets were semantically useful to the
+  model.
+
+This closes the core requirement that qualified PVC material can reach a real
+model invocation without becoming Atlas semantic truth merely by transport.
+
+Remaining PVC work is bounded follow-up, not a prerequisite for the next
+product milestone:
+
+- deterministic headless TASK-tablet preparation/injection when long task
+  material justifies it;
+- model-facing address/index refinements only for demonstrated consumers;
+- classical/PVC/hybrid comparative dogfood when useful to quantify quality,
+  context coverage, latency, render cost, quota/accounting, task time, and
+  tool-call trade-offs;
+- A2.1b durable publication/lifecycle work only when a concrete consumer needs
+  it.
+
+Do not build an automatic context-selection optimizer or universal visual
+context framework without evidence from real consumers.
 
 ### A2.3 — Persistent semantic service runtime
 
@@ -646,7 +679,7 @@ hygiene
 
 Proof/evidence must distinguish sandbox, host, live, skip/host-required, failure, timeout, cancellation, and infrastructure failure truthfully.
 
-### Operator-facing identity explanation — planned support, behind A2.2
+### Operator-facing identity explanation — planned support, non-priority
 
 The existing `doctor` and `status` commands provide workflow/state,
 provenance, and repository-witness checks; they do not yet provide a
@@ -679,9 +712,9 @@ mismatch localization is part of the required operational return on that
 complexity. Security that says only “no” is incomplete operationally when the
 available evidence can explain precisely why. Simplification remains an
 explicit option where retained complexity does not produce enough identifiable
-value. This planned support is not a prerequisite for **A2.2 — multimodal
-model-context injection** unless a concrete defect blocks that slice. Do not
-prescribe a new storage model or fingerprint-manager subsystem.
+value. This planned support remains non-priority unless a concrete defect
+blocks current product work. Do not prescribe a new storage model or
+fingerprint-manager subsystem.
 
 Git commits remain neutral material snapshots.
 
@@ -749,16 +782,67 @@ UNKNOWN/UNAVAILABLE provider exposes insufficient information
 Atlas must never present inferred quota as authoritative or fabricate
 precision. Likely consumers include model selection, scheduling, avoiding
 avoidable exhaustion, choosing Luna/Sol/Astra or deferring work, and explaining
-a lower-cost/lower-capacity route. This later support item does not block
-**A2.2 — multimodal model-context injection** by default.
+a lower-cost/lower-capacity route. This later support item does not block current product work by default.
 
 ---
 
 ## A5 — Distribution / Install / Doctor
 
-Provide a supported installation and activation path for qualified Agent runtimes and machine prerequisites.
+### A5.0 — Qualified-host release/install baseline — COMPLETE
 
-Important productization work, but not a blocker for early R/S work on a machine where the qualified environment already functions.
+Atlas Agent now has a supported immutable release/activation path on the
+qualified development host.
+
+Baseline:
+
+```text
+cc0d687a1c94c926ade7ed6262b98a81c62e757c
+Qualify rebuilt Codex runtime
+```
+
+The release chain now covers:
+
+```text
+qualified Codex source recipe / exact lineage
+    ↓
+reconstruct detached clean source worktree
+    ↓
+build with pinned effective cargo/rustc identities
+    ↓
+bounded release-version-only Cargo.lock refresh + restoration
+    ↓
+verify ELF/version/CLI contract
+    ↓
+prepare immutable runtime + update policy digest
+    ↓
+preflight policy/assets/native resolution + Luna/Sol/Astra smoke
+    ↓
+repository-boundary promotion
+    ↓
+git-archive immutable controller installation
+    ↓
+stable ~/.local/bin/aa activation
+    ↓
+installation verification + stripped-environment status/doctor witness
+```
+
+The active qualified runtime is:
+
+```text
+/home/john/luna/codex-atlas/releases/atlas-codex-20260913-1/codex
+sha256 27b9ce2f13b4f344207250cb913457549bee8ef56525ec9617e8092a64acb568
+```
+
+The reconstruction contract pins exact source lineage, the effective build
+toolchain, bounded Cargo.lock behavior, public runtime contract, policy digest,
+and qualification witnesses. Byte identity across arbitrary absolute build
+paths is not required for this historical release because the non-stripped
+binary embeds build paths; repeated builds in the qualified environment are
+stable.
+
+This baseline is a qualified-host release/install path, not yet a claim of
+cross-platform packaging or a general-purpose installer. Further release
+hardening should occur only for a concrete defect or distribution consumer.
 
 ### A5.1 — Graphical operator golden path — FUTURE
 
@@ -779,16 +863,47 @@ simplification remains an explicit option.
 
 ## A6 — Policy / Network / Timeouts / Routing
 
-Refine policy only where concrete usage requires it:
+Refine policy only where concrete usage requires it.
+
+### A6.1 — Selectable model execution profiles — NEXT IMPLEMENTATION PRIORITY
+
+Provide a small explicit execution-profile selection layer for model/reasoning
+choice without coupling compute choice to security authority.
+
+Initial proven smoke points are:
+
+```text
+Luna  High
+Sol   Medium
+Astra Medium
+```
+
+The first implementation should remain deliberately small:
+
+- preserve all existing action defaults when no profile is requested;
+- allow a bounded named profile to select only model/reasoning and, where
+  already supported, service tier;
+- keep sandbox, network authority, capabilities, session/storage semantics,
+  tool allowlists, and approval policy owned by the action/policy rather than
+  by the compute profile;
+- fail closed on unknown or incompatible profile/model combinations;
+- preserve requested / resolved / observed identity in execution evidence;
+- avoid immediately encoding a large Luna/Sol/Astra × reasoning-level matrix.
+
+The first useful consumer is operator selection among already demonstrated
+compute points. Broaden the matrix only after real usage shows which additional
+profiles are worth retaining.
+
+### A6.2 — Later policy refinements
+
+Possible later work remains:
 
 - distinct timeout classes;
 - truthful network requested/resolved/enforced/observed semantics;
-- per-dispatch model/reasoning/service-tier routing;
+- broader per-dispatch model/reasoning/service-tier routing;
 - versioned project/role prompt composition.
 
 Avoid a generalized policy framework without consumers.
-
----
 
 ## A7 — Isolated Parallel Generations
 
@@ -847,45 +962,49 @@ A5/A6 are also largely independent until a product slice requires them.
 
 # 9. Immediate development direction
 
-Three early streams are valid and complementary. The explicit next
-implementation priority is **A2.2 — multimodal model-context injection**.
-Explainable qualification identity diagnostics and provider-neutral
-quota/capacity telemetry are later supporting work, not new prerequisite
-milestones.
+Version 0.11 deliberately returns attention from release plumbing to product
+work. The release/install baseline is closed unless a concrete defect appears.
 
-## 9.1 R0 — Rust Core foundation
+The explicit next implementation priority is **A6.1 selectable model execution
+profiles**. The two next larger product fronts remain **A2.3/S1b semantic code
+navigation with `rust-analyzer`** and **R0/R1 Rust Atlas Core conformance**.
 
-The new `atlas-core` repository exists and has a clean Rust bootstrap.
+## 9.1 A6.1 — Selectable model execution profiles — next
 
-Next R action:
-
-> choose one small, already-specified Atlas semantic behavior and establish the first Rust conformance slice against existing Python/specification evidence.
-
-Do not pick the semantic behavior by convenience alone; inspect the existing Core implementation/tests and prefer a stable local invariant with little persistence coupling.
-
-## 9.2 S1a / A2.1 / A2.2 — PVC context dogfood (next)
-
-A2.0's one-shot substrate is complete. The next product slice is qualified PVC context preparation followed by multimodal model-context injection:
+Implement the smallest useful routing surface over the already-qualified model
+smoke points:
 
 ```text
-real Agent generation
-    ↓ explicit bounded source/task selection
-qualified PVC preparation
-    ↓ validate provenance and bundle
-SOURCE + TASK tablets and address index
-    ↓
-Luna / Sol / Astra invocation
-    ↓
-normal tools remain available
+existing action/policy authority
+        +
+explicit bounded compute profile
+        ↓
+model + reasoning (+ existing service tier where applicable)
+        ↓
+same sandbox/network/capabilities/session/tool authority
 ```
 
-The first comparison must run classical, PVC, and hybrid strategies on the same representative task and measure quality/coverage, quota/accounting, latency, preparation cost, task time, and tool-call count. Selection may initially be explicit and deterministic.
+The initial purpose is operator control and reproducible execution identity,
+not dynamic optimization. Do not allow a model profile to weaken or silently
+change security policy.
 
-See [`pvc-observation-v0.md`](pvc-observation-v0.md).
+## 9.2 PVC — bounded closure only
+
+The A2.2 SOURCE-context path is already functional and qualified. Remaining PVC
+work should be selected only when it provides concrete product value:
+
+```text
+TASK tablets if long task material needs them
+comparative classical/PVC/hybrid dogfood
+small address/index refinements for real consumers
+durability/lifecycle only when required
+```
+
+PVC is no longer the global next milestone.
 
 ## 9.3 S1b / A2.3 — Semantic Code Navigation v0
 
-The existing semantic-observation design remains valid for `rust-analyzer`.
+The first persistent semantic-service consumer remains `rust-analyzer`.
 
 The intended boundary remains:
 
@@ -903,8 +1022,6 @@ Rust Atlas implementation
     receives and interprets the bounded structured result
 ```
 
-A deterministic fake/fixture backend may prove transport and status normalization first, but completion requires the qualified real backend.
-
 Initial operations remain:
 
 ```text
@@ -915,24 +1032,52 @@ diagnostics
 search_text
 ```
 
-The slice should be small enough that implementation experience can still change the protocol without invalidating a large framework.
+A deterministic fake/fixture backend may prove transport and truthful status
+normalization first, but completion requires the qualified real backend. Keep
+the slice small enough that implementation experience can still change the
+protocol without invalidating a large framework.
 
-## 9.4 Scheduling between R0, PVC, and semantic navigation
+## 9.4 R0/R1 — Rust Core conformance
 
-None of the three streams is a universal hard prerequisite of the others.
+In parallel or alternating with A2.3/S1b, choose one small already-specified
+Atlas semantic behavior and establish the first Rust conformance slice against
+the Python/specification evidence.
 
-A practical near-term sequence is:
+Prefer stable local invariants with little persistence coupling, such as:
 
 ```text
-PVC A2.1/A2.2 qualified context-preparation and model-invocation dogfood
-→ use only demonstrated reusable one-shot substrate
-→ continue rust-analyzer A2.3/S1b without inheriting PVC-only assumptions
-
-in parallel / alternating:
-R0 small semantic conformance slices
+nominal identity
+TRUE / FALSE / UNKNOWN
+sequence versus finite set
+validated value forms without implicit host coercion
 ```
 
-This is preferable to attempting a complete Python→Rust migration, a complete generic observation framework, or a complete language-navigation subsystem before obtaining feedback from real consumers.
+Do not block S1b on a complete Python-to-Rust migration.
+
+## 9.5 Practical near-term sequence
+
+```text
+A6.1 selectable compute profiles
+        ↓
+bounded PVC follow-up only if justified
+        ↓
+A2.3 / S1b rust-analyzer semantic navigation
+
+in parallel / alternating:
+R0 → R1 Rust semantic conformance
+```
+
+After these primitives are exercised by real consumers, continue toward:
+
+```text
+S2 task / obligation state
+→ S3 assurance planning
+→ S4 semantic traceability / semantic zoom
+→ S5 higher-level orchestration
+```
+
+Do not reopen release hardening, generalized provider frameworks, or speculative
+multi-agent scheduling without a concrete blocker or consumer.
 
 ---
 
