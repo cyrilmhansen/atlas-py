@@ -268,6 +268,47 @@ after model execution begins.
 
 ---
 
+## Immutable controller installation
+
+After controller qualification and repository-boundary promotion, install the
+controller from the committed Git tree rather than executing the mutable
+development worktree:
+
+```bash
+env PYTHONPATH="$ATLAS_AGENT_SRC" python3 -P -m tools.atlas_agent.release     install-controller
+```
+
+The installation is created under
+`~/.local/share/atlas-agent/controllers/<git-head>/`. Its `src/` tree comes
+from `git archive HEAD`, excludes untracked working-tree content, rejects
+symlinks and unsupported archive entries, and is made read-only. A release
+manifest binds the Git HEAD/tree and snapshot digest to the currently
+qualified Codex runtime, CODEX_HOME, and optional machine capability manifest.
+
+Activate an installed release with:
+
+```bash
+env PYTHONPATH="$ATLAS_AGENT_SRC" python3 -P -m tools.atlas_agent.release     activate-controller --head <40-hex-git-head>
+```
+
+Activation atomically updates
+`~/.local/share/atlas-agent/current-controller`, writes the active controller
+state, and installs the managed launcher `~/.local/bin/aa`. The launcher
+restores the controller-specific `ATLAS_AGENT_SRC`, `ATLAS_CODEX_EXECUTABLE`,
+`ATLAS_CODEX_HOME`, and capability manifest on every invocation. It refuses
+to overwrite an existing unmanaged `~/.local/bin/aa`.
+
+Verify the stable installation from the managed project repository:
+
+```bash
+~/.local/bin/aa status --history 0
+env PYTHONPATH="$ATLAS_AGENT_SRC" python3 -P -m tools.atlas_agent.release     verify-installation
+```
+
+Rollback is activation of a previously installed release. Because each
+controller manifest records its qualified Codex runtime, rollback restores the
+controller/runtime pair rather than only the controller source.
+
 ## Automated release checks
 
 A built and already qualified Codex candidate can be prepared for promotion

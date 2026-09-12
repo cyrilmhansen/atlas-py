@@ -22,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import tarfile
+from pathlib import PurePosixPath
 from typing import Iterable
 
 MODEL_SMOKES = (
@@ -487,6 +489,435 @@ def prepare_runtime(*, candidate: Path, release_id: str,
     }
 
 
+
+MANAGED_LAUNCHER_MARKER = "# atlas-agent-managed-launcher-v1"
+
+
+def _default_data_root() -> Path:
+    xdg = os.environ.get("XDG_DATA_HOME")
+    return (Path(xdg).expanduser() if xdg else Path.home() / ".local/share") / "atlas-agent"
+
+
+def _snapshot_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ReleaseCheckError(f"controller snapshot contains symlink: {rel}")
+        if path.is_dir():
+            digest.update(b"D\0" + rel.encode("utf-8") + b"\0")
+            continue
+        if not path.is_file():
+            raise ReleaseCheckError(f"controller snapshot contains unsupported entry: {rel}")
+        digest.update(b"F\0" + rel.encode("utf-8") + b"\0")
+        digest.update(_sha256(path).encode("ascii") + b"\0")
+    return digest.hexdigest()
+
+
+def _extract_head(root: Path, destination: Path) -> None:
+    process = subprocess.Popen(
+        ["git", "archive", "--format=tar", "HEAD"],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    try:
+        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+            for member in archive:
+                rel = PurePosixPath(member.name)
+                if (
+                    rel.is_absolute()
+                    or not rel.parts
+                    or any(part in {"", ".", ".."} for part in rel.parts)
+                ):
+                    raise ReleaseCheckError(f"unsafe git archive path: {member.name!r}")
+                target = destination.joinpath(*rel.parts)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if not member.isfile():
+                    raise ReleaseCheckError(
+                        f"controller archive contains unsupported entry: {member.name}"
+                    )
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ReleaseCheckError(f"cannot read archived file: {member.name}")
+                with source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                mode = 0o555 if member.mode & 0o111 else 0o444
+                os.chmod(target, mode)
+    finally:
+        process.stdout.close()
+    stderr = process.stderr.read().decode("utf-8", "replace") if process.stderr else ""
+    returncode = process.wait()
+    if returncode != 0:
+        raise ReleaseCheckError(f"git archive failed ({returncode}): {stderr[-2000:]}")
+    for directory in sorted(
+        (path for path in destination.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        os.chmod(directory, 0o555)
+    os.chmod(destination, 0o555)
+
+
+def _read_json(path: Path, label: str) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ReleaseCheckError(f"{label} is unreadable: {error}") from error
+    if not isinstance(value, dict):
+        raise ReleaseCheckError(f"{label} must be a JSON object")
+    return value
+
+
+def _write_new_json(path: Path, value: dict, mode: int = 0o444) -> None:
+    data = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, mode)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_replace_bytes(path: Path, data: bytes, mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    staged = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(staged, mode)
+        os.replace(staged, path)
+    finally:
+        if staged.exists():
+            staged.unlink()
+
+
+def _verify_controller_release(release_dir: Path) -> dict:
+    if release_dir.is_symlink() or not release_dir.is_dir():
+        raise ReleaseCheckError(f"controller release is missing/unsafe: {release_dir}")
+    manifest = _read_json(release_dir / "release.json", "controller release manifest")
+    if manifest.get("schema") != "atlas-controller-release/1":
+        raise ReleaseCheckError("unsupported controller release manifest schema")
+    head = manifest.get("head")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ReleaseCheckError("controller release manifest has invalid HEAD")
+    src = release_dir / "src"
+    if src.is_symlink() or not src.is_dir():
+        raise ReleaseCheckError("controller release source is missing/unsafe")
+    observed = _snapshot_digest(src)
+    if observed != manifest.get("snapshot_sha256"):
+        raise ReleaseCheckError(
+            f"controller snapshot digest mismatch: "
+            f"expected={manifest.get('snapshot_sha256')} observed={observed}"
+        )
+    runtime_raw = manifest.get("codex_executable")
+    runtime_digest = manifest.get("codex_sha256")
+    codex_home_raw = manifest.get("codex_home")
+    if not all(isinstance(value, str) and value for value in (
+        runtime_raw, runtime_digest, codex_home_raw
+    )):
+        raise ReleaseCheckError("controller release runtime authority is incomplete")
+    runtime = Path(runtime_raw)
+    if not runtime.is_file() or _sha256(runtime) != runtime_digest:
+        raise ReleaseCheckError("controller release Codex runtime identity mismatch")
+    codex_home = Path(codex_home_raw)
+    if not codex_home.is_dir():
+        raise ReleaseCheckError("controller release CODEX_HOME is missing")
+    return manifest
+
+
+def install_controller(*, root: Path | None = None,
+                       controllers_dir: Path | None = None) -> dict:
+    root = _repository_root(root)
+    pre = preflight(root=root, model_smoke=False)
+
+    head = pre["head"]
+    tree = _git(root, "rev-parse", "HEAD^{tree}")
+    branch = pre["branch"]
+    controllers = (
+        controllers_dir.expanduser()
+        if controllers_dir is not None
+        else _default_data_root() / "controllers"
+    )
+    controllers.mkdir(parents=True, exist_ok=True)
+    controllers = controllers.resolve(strict=True)
+    if controllers.is_symlink():
+        raise ReleaseCheckError(f"unsafe controllers directory: {controllers}")
+
+    release_dir = controllers / head
+    if release_dir.exists():
+        manifest = _verify_controller_release(release_dir)
+        if manifest.get("head") != head or manifest.get("tree") != tree:
+            raise ReleaseCheckError("existing controller release identity mismatch")
+        return {
+            "schema": "atlas-controller-installation/1",
+            "status": "ALREADY_INSTALLED",
+            "head": head,
+            "tree": tree,
+            "release_dir": str(release_dir),
+            "controller_src": str(release_dir / "src"),
+            "snapshot_sha256": manifest["snapshot_sha256"],
+        }
+
+    temp_dir = Path(tempfile.mkdtemp(prefix=".controller-", dir=controllers))
+    try:
+        src = temp_dir / "src"
+        src.mkdir()
+        _extract_head(root, src)
+        snapshot = _snapshot_digest(src)
+
+        capability_raw = os.environ.get("ATLAS_AGENT_CAPABILITIES_FILE")
+        capability = None
+        if capability_raw:
+            try:
+                capability = str(Path(capability_raw).expanduser().resolve(strict=True))
+            except OSError as error:
+                raise ReleaseCheckError(
+                    f"ATLAS_AGENT_CAPABILITIES_FILE cannot be resolved: {error}"
+                ) from error
+
+        manifest = {
+            "schema": "atlas-controller-release/1",
+            "head": head,
+            "tree": tree,
+            "branch": branch,
+            "snapshot_sha256": snapshot,
+            "source_repository": str(root),
+            "codex_executable": pre["runtime"],
+            "codex_sha256": pre["runtime_sha256"],
+            "codex_home": pre["codex_home"],
+            "capabilities_file": capability,
+        }
+        _write_new_json(temp_dir / "release.json", manifest)
+        os.chmod(temp_dir / "release.json", 0o444)
+        os.chmod(temp_dir, 0o555)
+        os.replace(temp_dir, release_dir)
+    except BaseException:
+        try:
+            if temp_dir.exists():
+                for directory in sorted(
+                    (path for path in temp_dir.rglob("*") if path.is_dir()),
+                    key=lambda path: len(path.parts),
+                    reverse=True,
+                ):
+                    os.chmod(directory, 0o755)
+                os.chmod(temp_dir, 0o755)
+                shutil.rmtree(temp_dir)
+        except OSError:
+            pass
+        raise
+
+    verified = _verify_controller_release(release_dir)
+    return {
+        "schema": "atlas-controller-installation/1",
+        "status": "INSTALLED",
+        "head": head,
+        "tree": tree,
+        "release_dir": str(release_dir),
+        "controller_src": str(release_dir / "src"),
+        "snapshot_sha256": verified["snapshot_sha256"],
+    }
+
+
+def _managed_launcher(state_path: Path) -> bytes:
+    body = f'''#!/usr/bin/env python3
+{MANAGED_LAUNCHER_MARKER}
+import json
+import os
+from pathlib import Path
+import sys
+
+state_path = Path({str(state_path)!r})
+state = json.loads(state_path.read_text(encoding="utf-8"))
+environment = state.get("environment")
+if not isinstance(environment, dict):
+    raise SystemExit("Atlas active controller state is invalid")
+
+env = dict(os.environ)
+for key, value in environment.items():
+    if isinstance(key, str) and isinstance(value, str):
+        env[key] = value
+env["PYTHONDONTWRITEBYTECODE"] = "1"
+
+os.execvpe(
+    sys.executable,
+    [sys.executable, "-P", "-m", "tools.atlas_agent", *sys.argv[1:]],
+    env,
+)
+'''
+    return body.encode("utf-8")
+
+
+def activate_controller(*, head: str, controllers_dir: Path | None = None,
+                        state_path: Path | None = None,
+                        launcher_path: Path | None = None) -> dict:
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ReleaseCheckError("activate-controller requires a full 40-hex HEAD")
+
+    data_root = _default_data_root()
+    controllers = (
+        controllers_dir.expanduser()
+        if controllers_dir is not None
+        else data_root / "controllers"
+    ).resolve(strict=True)
+    release_dir = controllers / head
+    manifest = _verify_controller_release(release_dir)
+
+    current = data_root / "current-controller"
+    state = state_path.expanduser() if state_path else data_root / "active-controller.json"
+    launcher = launcher_path.expanduser() if launcher_path else Path.home() / ".local/bin/aa"
+
+    # Validate every replace target before changing active authority.
+    if current.exists() and not current.is_symlink():
+        raise ReleaseCheckError(
+            f"refusing to replace non-symlink current controller: {current}"
+        )
+    if launcher.exists():
+        try:
+            existing = launcher.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise ReleaseCheckError(f"existing launcher is unreadable: {error}") from error
+        if MANAGED_LAUNCHER_MARKER not in existing:
+            raise ReleaseCheckError(
+                f"refusing to replace unmanaged launcher: {launcher}"
+            )
+
+    current.parent.mkdir(parents=True, exist_ok=True)
+    staged_link = current.parent / f".current-controller.{os.getpid()}"
+    try:
+        if staged_link.exists() or staged_link.is_symlink():
+            staged_link.unlink()
+        os.symlink(release_dir, staged_link, target_is_directory=True)
+        os.replace(staged_link, current)
+    finally:
+        if staged_link.exists() or staged_link.is_symlink():
+            staged_link.unlink()
+
+    environment = {
+        "ATLAS_AGENT_SRC": str(current / "src"),
+        "ATLAS_CODEX_EXECUTABLE": manifest["codex_executable"],
+        "ATLAS_CODEX_HOME": manifest["codex_home"],
+    }
+    capability = manifest.get("capabilities_file")
+    if isinstance(capability, str) and capability:
+        environment["ATLAS_AGENT_CAPABILITIES_FILE"] = capability
+
+    state_value = {
+        "schema": "atlas-active-controller/1",
+        "head": head,
+        "release_dir": str(release_dir),
+        "snapshot_sha256": manifest["snapshot_sha256"],
+        "current_controller": str(current),
+        "environment": environment,
+    }
+    _atomic_replace_bytes(
+        state,
+        (json.dumps(state_value, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+        0o600,
+    )
+
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_replace_bytes(launcher, _managed_launcher(state), 0o755)
+
+    return {
+        "schema": "atlas-controller-activation/1",
+        "head": head,
+        "release_dir": str(release_dir),
+        "current_controller": str(current),
+        "state_path": str(state),
+        "launcher": str(launcher),
+        "codex_executable": manifest["codex_executable"],
+    }
+
+
+def verify_installation(*, start: Path | None = None,
+                        state_path: Path | None = None,
+                        launcher_path: Path | None = None,
+                        timeout: float = 60.0) -> dict:
+    root = _repository_root(start)
+    data_root = _default_data_root()
+    state = state_path.expanduser() if state_path else data_root / "active-controller.json"
+    launcher = launcher_path.expanduser() if launcher_path else Path.home() / ".local/bin/aa"
+
+    active = _read_json(state, "active controller state")
+    if active.get("schema") != "atlas-active-controller/1":
+        raise ReleaseCheckError("unsupported active controller state schema")
+    head = active.get("head")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ReleaseCheckError("active controller state has invalid HEAD")
+    release_dir = Path(active.get("release_dir", ""))
+    manifest = _verify_controller_release(release_dir)
+    if manifest["head"] != head:
+        raise ReleaseCheckError("active controller HEAD does not match release manifest")
+
+    current = Path(active.get("current_controller", ""))
+    try:
+        if current.resolve(strict=True) != release_dir.resolve(strict=True):
+            raise ReleaseCheckError("current-controller symlink targets the wrong release")
+    except OSError as error:
+        raise ReleaseCheckError(f"current-controller cannot be resolved: {error}") from error
+
+    environment = active.get("environment")
+    if not isinstance(environment, dict):
+        raise ReleaseCheckError("active controller environment is invalid")
+    expected_src = str(current / "src")
+    if environment.get("ATLAS_AGENT_SRC") != expected_src:
+        raise ReleaseCheckError("active ATLAS_AGENT_SRC does not use current-controller/src")
+    if environment.get("ATLAS_CODEX_EXECUTABLE") != manifest["codex_executable"]:
+        raise ReleaseCheckError("active Codex runtime differs from release manifest")
+    if environment.get("ATLAS_CODEX_HOME") != manifest["codex_home"]:
+        raise ReleaseCheckError("active CODEX_HOME differs from release manifest")
+
+    installed_policy = _load_policy(current / "src")
+    profiles = _codex_profiles(installed_policy)
+    policy_runtime = _require_single(
+        (p["codex_binary_sha256"] for p in profiles),
+        "installed controller policy runtime digest",
+    )
+    if policy_runtime != manifest["codex_sha256"]:
+        raise ReleaseCheckError("installed controller policy/runtime authority mismatch")
+
+    if not launcher.is_file() or not os.access(launcher, os.X_OK):
+        raise ReleaseCheckError(f"managed aa launcher is missing/not executable: {launcher}")
+    if MANAGED_LAUNCHER_MARKER not in launcher.read_text(encoding="utf-8"):
+        raise ReleaseCheckError("aa launcher is not Atlas-managed")
+
+    status = _run(
+        [str(launcher), "status", "--history", "0"],
+        cwd=root,
+        timeout=timeout,
+    ).stdout
+    for expected in ("journal: OK", "state: MATCH", "repository witness: MATCH"):
+        if expected not in status:
+            raise ReleaseCheckError(
+                f"installed-controller status missing {expected!r}\n{status}"
+            )
+
+    doctor = _run([str(launcher), "doctor"], cwd=root, timeout=timeout).stdout
+    if "doctor: OK" not in doctor:
+        raise ReleaseCheckError(f"installed-controller doctor failed\n{doctor}")
+
+    return {
+        "schema": "atlas-controller-installation-verification/1",
+        "head": head,
+        "release_dir": str(release_dir),
+        "launcher": str(launcher),
+        "runtime": manifest["codex_executable"],
+        "status": "PASS",
+        "doctor": "PASS",
+    }
+
+
 def post_cutover(*, root: Path | None = None, timeout: float = 60.0) -> dict:
     root = _repository_root(root)
     source_raw = os.environ.get("ATLAS_AGENT_SRC")
@@ -615,7 +1046,26 @@ def promote_controller(*, root: Path | None = None, reason: str,
 
 def _print_report(report: dict) -> None:
     print(f"root: {report['root']}")
-    if report.get("schema") == "atlas-release-runtime-preparation/1":
+    if report.get("schema") == "atlas-controller-installation/1":
+        print(f"head: {report['head']}")
+        print(f"controller: {report['controller_src']}")
+        print(f"snapshot sha256: {report['snapshot_sha256']}")
+        print(f"installation: {report['status']}")
+        print("ATLAS CONTROLLER INSTALLATION: PASS")
+    elif report.get("schema") == "atlas-controller-activation/1":
+        print(f"head: {report['head']}")
+        print(f"current controller: {report['current_controller']}")
+        print(f"launcher: {report['launcher']}")
+        print(f"runtime: {report['codex_executable']}")
+        print("ATLAS CONTROLLER ACTIVATION: PASS")
+    elif report.get("schema") == "atlas-controller-installation-verification/1":
+        print(f"head: {report['head']}")
+        print(f"launcher: {report['launcher']}")
+        print(f"runtime: {report['runtime']}")
+        print("status: PASS")
+        print("doctor: PASS")
+        print("ATLAS CONTROLLER INSTALLATION VERIFY: PASS")
+    elif report.get("schema") == "atlas-release-runtime-preparation/1":
         print(f"candidate: {report['candidate']}")
         print(f"release id: {report['release_id']}")
         print(f"previous runtime: {report['previous_runtime']}")
@@ -677,6 +1127,23 @@ def main(argv: list[str] | None = None) -> int:
     p_runtime.add_argument("--releases-dir", type=Path)
     p_runtime.add_argument("--json", action="store_true")
 
+    p_install = sub.add_parser("install-controller")
+    p_install.add_argument("--controllers-dir", type=Path)
+    p_install.add_argument("--json", action="store_true")
+
+    p_activate = sub.add_parser("activate-controller")
+    p_activate.add_argument("--head", required=True)
+    p_activate.add_argument("--controllers-dir", type=Path)
+    p_activate.add_argument("--state", type=Path)
+    p_activate.add_argument("--launcher", type=Path)
+    p_activate.add_argument("--json", action="store_true")
+
+    p_verify = sub.add_parser("verify-installation")
+    p_verify.add_argument("--state", type=Path)
+    p_verify.add_argument("--launcher", type=Path)
+    p_verify.add_argument("--timeout", type=float, default=60.0)
+    p_verify.add_argument("--json", action="store_true")
+
     p_post = sub.add_parser("post-cutover")
     p_post.add_argument("--timeout", type=float, default=60.0)
     p_post.add_argument("--json", action="store_true")
@@ -698,6 +1165,23 @@ def main(argv: list[str] | None = None) -> int:
                 candidate=args.candidate,
                 release_id=args.release_id,
                 releases_dir=args.releases_dir,
+            )
+        elif args.command == "install-controller":
+            report = install_controller(
+                controllers_dir=args.controllers_dir,
+            )
+        elif args.command == "activate-controller":
+            report = activate_controller(
+                head=args.head,
+                controllers_dir=args.controllers_dir,
+                state_path=args.state,
+                launcher_path=args.launcher,
+            )
+        elif args.command == "verify-installation":
+            report = verify_installation(
+                state_path=args.state,
+                launcher_path=args.launcher,
+                timeout=args.timeout,
             )
         elif args.command == "post-cutover":
             report = post_cutover(timeout=args.timeout)

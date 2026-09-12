@@ -260,3 +260,146 @@ def test_prepare_runtime_rejects_split_policy_authority(tmp_path, monkeypatch):
         )
 
     assert not (releases / "new-release").exists()
+
+
+def test_snapshot_digest_rejects_symlink(tmp_path):
+    from tools.atlas_agent.release import ReleaseCheckError, _snapshot_digest
+
+    (tmp_path / "real").write_text("x", encoding="utf-8")
+    (tmp_path / "link").symlink_to("real")
+
+    with pytest.raises(ReleaseCheckError, match="contains symlink"):
+        _snapshot_digest(tmp_path)
+
+
+def test_install_controller_archives_head_not_untracked(tmp_path, monkeypatch):
+    import subprocess
+    import tools.atlas_agent.release as release
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.check_call(["git", "init", "-q"], cwd=repo)
+    subprocess.check_call(["git", "config", "user.email", "t@e"], cwd=repo)
+    subprocess.check_call(["git", "config", "user.name", "t"], cwd=repo)
+    (repo / "tools").mkdir()
+    (repo / "tools" / "tracked.py").write_text("tracked = True\n", encoding="utf-8")
+    (repo / "atlas-agent-policy.toml").write_text("tracked = true\n", encoding="utf-8")
+    subprocess.check_call(["git", "add", "."], cwd=repo)
+    subprocess.check_call(["git", "commit", "-qm", "release"], cwd=repo)
+    (repo / "untracked.txt").write_text("must not ship", encoding="utf-8")
+
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    runtime = tmp_path / "codex"
+    runtime.write_bytes(b"runtime")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setattr(
+        release,
+        "preflight",
+        lambda **kwargs: {
+            "head": head,
+            "branch": "main",
+            "runtime": str(runtime),
+            "runtime_sha256": release._sha256(runtime),
+            "codex_home": str(codex_home),
+        },
+    )
+
+    controllers = tmp_path / "controllers"
+    controllers.mkdir()
+    result = release.install_controller(root=repo, controllers_dir=controllers)
+
+    installed = Path(result["controller_src"])
+    assert (installed / "tools" / "tracked.py").is_file()
+    assert not (installed / "untracked.txt").exists()
+
+
+def test_activate_controller_writes_state_and_managed_launcher(tmp_path, monkeypatch):
+    import json
+    import tools.atlas_agent.release as release
+
+    head = "a" * 40
+    controllers = tmp_path / "controllers"
+    release_dir = controllers / head
+    src = release_dir / "src"
+    src.mkdir(parents=True)
+    (src / "atlas-agent-policy.toml").write_text("x = 1\n", encoding="utf-8")
+    runtime = tmp_path / "codex"
+    runtime.write_bytes(b"runtime")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    manifest = {
+        "schema": "atlas-controller-release/1",
+        "head": head,
+        "tree": "b" * 40,
+        "branch": "main",
+        "snapshot_sha256": release._snapshot_digest(src),
+        "source_repository": "/source",
+        "codex_executable": str(runtime),
+        "codex_sha256": release._sha256(runtime),
+        "codex_home": str(codex_home),
+        "capabilities_file": None,
+    }
+    (release_dir / "release.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    data_root = tmp_path / "data" / "atlas-agent"
+    monkeypatch.setattr(release, "_default_data_root", lambda: data_root)
+    state = tmp_path / "active.json"
+    launcher = tmp_path / "bin" / "aa"
+
+    result = release.activate_controller(
+        head=head,
+        controllers_dir=controllers,
+        state_path=state,
+        launcher_path=launcher,
+    )
+
+    active = json.loads(state.read_text())
+    assert active["head"] == head
+    assert Path(active["current_controller"]).resolve() == release_dir.resolve()
+    assert release.MANAGED_LAUNCHER_MARKER in launcher.read_text()
+    assert result["codex_executable"] == str(runtime)
+
+
+def test_activate_controller_refuses_unmanaged_launcher(tmp_path, monkeypatch):
+    import json
+    import tools.atlas_agent.release as release
+
+    head = "c" * 40
+    controllers = tmp_path / "controllers"
+    release_dir = controllers / head
+    src = release_dir / "src"
+    src.mkdir(parents=True)
+    (src / "atlas-agent-policy.toml").write_text("x = 1\n", encoding="utf-8")
+    runtime = tmp_path / "codex"
+    runtime.write_bytes(b"runtime")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (release_dir / "release.json").write_text(
+        json.dumps({
+            "schema": "atlas-controller-release/1",
+            "head": head,
+            "tree": "d" * 40,
+            "branch": "main",
+            "snapshot_sha256": release._snapshot_digest(src),
+            "source_repository": "/source",
+            "codex_executable": str(runtime),
+            "codex_sha256": release._sha256(runtime),
+            "codex_home": str(codex_home),
+            "capabilities_file": None,
+        }),
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "aa"
+    launcher.write_text("#!/bin/sh\necho unmanaged\n", encoding="utf-8")
+    state = tmp_path / "active.json"
+    data_root = tmp_path / "data" / "atlas-agent"
+    monkeypatch.setattr(release, "_default_data_root", lambda: data_root)
+
+    with pytest.raises(ReleaseCheckError, match="unmanaged launcher"):
+        release.activate_controller(
+            head=head,
+            controllers_dir=controllers,
+            state_path=state,
+            launcher_path=launcher,
+        )
