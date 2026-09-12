@@ -287,11 +287,16 @@ consume a large amount of CPU or disk:
 env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     build-codex     --worktree /home/john/luna/codex-atlas/builds/atlas-codex-0.154     --target-dir /home/john/luna/codex-atlas/build-targets/atlas-codex-0.154
 ```
 
-`build-codex` requires the worktree to remain at the qualified clean HEAD,
-requires the configured amount of free space (30 GiB by default), runs
-`cargo build --release -p codex-cli`, then verifies executable ELF identity,
-the exact expected Codex version, and the required `exec --help` public
-contract (`--image-detail` with `original` support).
+`build-codex` requires the worktree to begin and end at the qualified clean
+HEAD and requires the configured amount of free space (30 GiB by default).
+Codex release tags intentionally carry the release version in `Cargo.toml`
+while workspace entries in `Cargo.lock` can remain at `0.0.0`; Cargo therefore
+refreshes those lockfile versions during a release build. Atlas accepts only
+that exact semantic transformation (`0.0.0` to the recipe release version),
+rejects dependency/checksum/package changes, restores the committed lockfile,
+then verifies executable ELF identity, the exact expected Codex version, and
+the required `exec --help` public contract (`--image-detail` with `original`
+support).
 
 The resulting `.../release/codex` is the input to `prepare-runtime`; build and
 promotion remain deliberately separate gates.

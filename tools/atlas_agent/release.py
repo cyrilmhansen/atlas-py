@@ -1064,6 +1064,10 @@ def _print_report(report: dict) -> None:
         print(f"binary: {report['binary']}")
         print(f"version: {report['version']}")
         print(f"sha256: {report['sha256']}")
+        print(
+            "cargo lock release-version refresh packages: "
+            f"{report['cargo_lock_release_version_refresh_packages']}"
+        )
         print("exec help contract: PASS")
         print("ATLAS CODEX BUILD: PASS")
     elif report.get("schema") == "atlas-controller-installation/1":

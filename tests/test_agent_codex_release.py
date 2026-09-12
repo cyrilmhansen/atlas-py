@@ -122,6 +122,13 @@ def test_build_runtime_invokes_cargo_on_clean_qualified_worktree(tmp_path, monke
     subprocess.check_call(["git", "config", "user.email", "t@e"], cwd=repo)
     subprocess.check_call(["git", "config", "user.name", "t"], cwd=repo)
     (repo / "codex-rs").mkdir()
+    (repo / "codex-rs" / "Cargo.lock").write_text(
+        'version = 4\n\n'
+        '[[package]]\n'
+        'name = "fixture"\n'
+        'version = "1.0.0"\n',
+        encoding="utf-8",
+    )
     (repo / "file.txt").write_text("upstream", encoding="utf-8")
     subprocess.check_call(["git", "-C", str(repo), "add", "."])
     subprocess.check_call(["git", "-C", str(repo), "commit", "-qm", "upstream"])
@@ -187,3 +194,54 @@ def test_production_recipe_encodes_qualified_0154_lineage():
     assert recipe["upstream_commit"] == "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"
     assert recipe["required_commits"] == ["513e4a57eb", "123825e5d3"]
     assert recipe["final_ref"] == "123825e5d3"
+
+
+def test_release_lock_refresh_accepts_only_workspace_version_changes():
+    from tools.atlas_agent.codex_release import _release_lock_refresh_only
+
+    before = b"""
+version = 4
+[[package]]
+name = "codex-cli"
+version = "0.0.0"
+dependencies = ["x"]
+[[package]]
+name = "x"
+version = "1.2.3"
+source = "registry+https://example.invalid"
+checksum = "abc"
+"""
+    after = b"""
+version = 4
+[[package]]
+name = "codex-cli"
+version = "0.154.0"
+dependencies = ["x"]
+[[package]]
+name = "x"
+version = "1.2.3"
+source = "registry+https://example.invalid"
+checksum = "abc"
+"""
+    assert _release_lock_refresh_only(before, after, "0.154.0") == 1
+
+
+def test_release_lock_refresh_rejects_dependency_change():
+    from tools.atlas_agent.codex_release import _release_lock_refresh_only
+
+    before = b"""
+version = 4
+[[package]]
+name = "codex-cli"
+version = "0.0.0"
+dependencies = ["x"]
+"""
+    after = b"""
+version = 4
+[[package]]
+name = "codex-cli"
+version = "0.154.0"
+dependencies = ["y"]
+"""
+    with pytest.raises(CodexBuildError, match="more than workspace release version"):
+        _release_lock_refresh_only(before, after, "0.154.0")

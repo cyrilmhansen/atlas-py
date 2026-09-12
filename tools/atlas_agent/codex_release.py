@@ -226,6 +226,69 @@ def _verify_worktree(worktree: Path, recipe_path: Path) -> tuple[Path, dict, dic
     return worktree, recipe, resolved
 
 
+def _release_lock_refresh_only(before: bytes, after: bytes, release_version: str) -> int:
+    """Accept only Cargo's release-version refresh for workspace packages."""
+    try:
+        old = tomllib.loads(before.decode("utf-8"))
+        new = tomllib.loads(after.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise CodexBuildError(f"Cargo.lock refresh is not valid TOML: {error}") from error
+
+    if set(old) != set(new):
+        raise CodexBuildError("Cargo.lock refresh changed top-level structure")
+
+    old_packages = old.get("package")
+    new_packages = new.get("package")
+    if not isinstance(old_packages, list) or not isinstance(new_packages, list):
+        raise CodexBuildError("Cargo.lock refresh has no package list")
+    if len(old_packages) != len(new_packages):
+        raise CodexBuildError("Cargo.lock refresh changed package count")
+
+    changed = 0
+    for index, (old_pkg, new_pkg) in enumerate(zip(old_packages, new_packages)):
+        if old_pkg == new_pkg:
+            continue
+        if not isinstance(old_pkg, dict) or not isinstance(new_pkg, dict):
+            raise CodexBuildError(f"Cargo.lock package {index} has invalid structure")
+
+        old_normalized = dict(old_pkg)
+        new_normalized = dict(new_pkg)
+        old_version = old_normalized.pop("version", None)
+        new_version = new_normalized.pop("version", None)
+
+        if (
+            old_normalized != new_normalized
+            or old_version != "0.0.0"
+            or new_version != release_version
+        ):
+            name = old_pkg.get("name", f"index {index}")
+            raise CodexBuildError(
+                f"Cargo.lock refresh changed more than workspace release version: {name}"
+            )
+        changed += 1
+
+    old_meta = dict(old)
+    new_meta = dict(new)
+    old_meta.pop("package", None)
+    new_meta.pop("package", None)
+    if old_meta != new_meta:
+        raise CodexBuildError("Cargo.lock refresh changed non-package metadata")
+    if changed == 0:
+        raise CodexBuildError("Cargo.lock was modified without a release-version refresh")
+    return changed
+
+
+def _workspace_release_version(recipe: dict) -> str:
+    prefix = "codex-cli "
+    expected = recipe["expected_version"]
+    if not expected.startswith(prefix):
+        raise CodexBuildError("expected_version does not encode a Codex CLI version")
+    version = expected[len(prefix):]
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", version):
+        raise CodexBuildError(f"invalid workspace release version: {version!r}")
+    return version
+
+
 def _verify_candidate(binary: Path, recipe: dict) -> dict:
     if binary.is_symlink() or not binary.is_file() or not os.access(binary, os.X_OK):
         raise CodexBuildError(f"built Codex runtime is missing/unsafe: {binary}")
@@ -282,21 +345,49 @@ def build_runtime(*, worktree: Path, recipe_path: Path, target_dir: Path,
     if cargo is None:
         raise CodexBuildError("cargo is not available in PATH")
 
-    _run([
-        cargo,
-        "build",
-        "--release",
-        "-p",
-        recipe["cargo_package"],
-        "--target-dir",
-        str(target),
-    ], cwd=cargo_root)
+    lockfile = cargo_root / "Cargo.lock"
+    if not lockfile.is_file() or lockfile.is_symlink():
+        raise CodexBuildError(f"Cargo.lock is missing/unsafe: {lockfile}")
+    lock_before = lockfile.read_bytes()
 
-    binary = target / "release" / "codex"
-    verified = _verify_candidate(binary, recipe)
+    try:
+        _run([
+            cargo,
+            "build",
+            "--release",
+            "-p",
+            recipe["cargo_package"],
+            "--target-dir",
+            str(target),
+        ], cwd=cargo_root)
+
+        status_after_build = _git(
+            worktree, "status", "--porcelain=v2", "--untracked-files=all"
+        )
+        lock_refresh_packages = 0
+        if status_after_build:
+            changed = _git(worktree, "diff", "--name-only").splitlines()
+            untracked = _git(worktree, "ls-files", "--others", "--exclude-standard").splitlines()
+            if changed != [f"{recipe['cargo_subdir']}/Cargo.lock"] or untracked:
+                raise CodexBuildError(
+                    "Codex source worktree changed unexpectedly during release build: "
+                    f"tracked={changed} untracked={untracked}"
+                )
+            lock_after = lockfile.read_bytes()
+            lock_refresh_packages = _release_lock_refresh_only(
+                lock_before,
+                lock_after,
+                _workspace_release_version(recipe),
+            )
+
+        binary = target / "release" / "codex"
+        verified = _verify_candidate(binary, recipe)
+    finally:
+        if lockfile.exists() and lockfile.read_bytes() != lock_before:
+            lockfile.write_bytes(lock_before)
 
     if _git(worktree, "status", "--porcelain=v2", "--untracked-files=all"):
-        raise CodexBuildError("Codex source worktree changed during release build")
+        raise CodexBuildError("Codex source worktree is not clean after lock restoration")
 
     return {
         "schema": "atlas-codex-build/1",
@@ -305,6 +396,7 @@ def build_runtime(*, worktree: Path, recipe_path: Path, target_dir: Path,
         "head": resolved["final_sha"],
         "target_dir": str(target),
         "free_bytes_before_build": free,
+        "cargo_lock_release_version_refresh_packages": lock_refresh_packages,
         **verified,
         "status": "PASS",
     }
