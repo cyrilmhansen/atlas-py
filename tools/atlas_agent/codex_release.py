@@ -21,6 +21,8 @@ _RECIPE_KEYS = {
     "cargo_subdir",
     "cargo_package",
     "expected_version",
+    "expected_rustc",
+    "expected_cargo",
     "required_exec_help",
 }
 
@@ -84,6 +86,7 @@ def load_recipe(path: Path) -> dict:
     for key in (
         "name", "upstream_tag", "upstream_commit", "final_ref",
         "cargo_subdir", "cargo_package", "expected_version",
+        "expected_rustc", "expected_cargo",
     ):
         if not isinstance(data.get(key), str) or not data[key]:
             raise CodexBuildError(f"invalid recipe field: {key}")
@@ -344,6 +347,20 @@ def build_runtime(*, worktree: Path, recipe_path: Path, target_dir: Path,
     cargo = shutil.which("cargo")
     if cargo is None:
         raise CodexBuildError("cargo is not available in PATH")
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        raise CodexBuildError("rustc is not available in PATH")
+
+    cargo_version = _run([cargo, "--version"]).stdout.strip()
+    rustc_version = _run([rustc, "--version"]).stdout.strip()
+    if cargo_version != recipe["expected_cargo"]:
+        raise CodexBuildError(
+            f"cargo identity mismatch: {cargo_version!r} != {recipe['expected_cargo']!r}"
+        )
+    if rustc_version != recipe["expected_rustc"]:
+        raise CodexBuildError(
+            f"rustc identity mismatch: {rustc_version!r} != {recipe['expected_rustc']!r}"
+        )
 
     lockfile = cargo_root / "Cargo.lock"
     if not lockfile.is_file() or lockfile.is_symlink():
@@ -396,6 +413,10 @@ def build_runtime(*, worktree: Path, recipe_path: Path, target_dir: Path,
         "head": resolved["final_sha"],
         "target_dir": str(target),
         "free_bytes_before_build": free,
+        "cargo_path": cargo,
+        "cargo_version": cargo_version,
+        "rustc_path": rustc,
+        "rustc_version": rustc_version,
         "cargo_lock_release_version_refresh_packages": lock_refresh_packages,
         **verified,
         "status": "PASS",

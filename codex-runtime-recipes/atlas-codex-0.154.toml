@@ -9,4 +9,6 @@ final_ref = "123825e5d3"
 cargo_subdir = "codex-rs"
 cargo_package = "codex-cli"
 expected_version = "codex-cli 0.154.0"
+expected_rustc = "rustc 1.98.0 (88d9e12ae 2026-08-18) (Arch Linux rust 1:1.98.0-1.1)"
+expected_cargo = "cargo 1.98.0 (797e8a9bc 2026-08-05) (Arch Linux rust 1:1.98.0-1.1)"
 required_exec_help = ["--image-detail", "original"]

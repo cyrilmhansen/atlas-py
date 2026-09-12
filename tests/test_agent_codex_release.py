@@ -38,6 +38,8 @@ def _recipe(path, upstream, required, final):
         'cargo_subdir = "codex-rs"\n'
         'cargo_package = "codex-cli"\n'
         'expected_version = "codex-cli test"\n'
+        'expected_rustc = "rustc fixture"\n'
+        'expected_cargo = "cargo fixture"\n'
         'required_exec_help = ["--image-detail", "original"]\n',
         encoding="utf-8",
     )
@@ -55,6 +57,8 @@ def test_recipe_rejects_extra_key(tmp_path):
         'cargo_subdir = "codex-rs"\n'
         'cargo_package = "codex-cli"\n'
         'expected_version = "x"\n'
+        'expected_rustc = "rustc x"\n'
+        'expected_cargo = "cargo x"\n'
         'required_exec_help = ["x"]\n'
         'unexpected = true\n',
         encoding="utf-8",
@@ -145,6 +149,7 @@ def test_build_runtime_invokes_cargo_on_clean_qualified_worktree(tmp_path, monke
     cargo = fake_bin / "cargo"
     cargo.write_text(
         "#!/bin/sh\n"
+        "if [ \"$1\" = '--version' ]; then echo 'cargo fixture'; exit 0; fi\n"
         "target=''\n"
         "while [ $# -gt 0 ]; do\n"
         "  if [ \"$1\" = '--target-dir' ]; then shift; target=\"$1\"; fi\n"
@@ -156,6 +161,14 @@ def test_build_runtime_invokes_cargo_on_clean_qualified_worktree(tmp_path, monke
         encoding="utf-8",
     )
     cargo.chmod(0o755)
+    rustc = fake_bin / "rustc"
+    rustc.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = '--version' ]; then echo 'rustc fixture'; exit 0; fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    rustc.chmod(0o755)
     monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.setattr(
         codex_release,
@@ -194,6 +207,8 @@ def test_production_recipe_encodes_qualified_0154_lineage():
     assert recipe["upstream_commit"] == "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"
     assert recipe["required_commits"] == ["513e4a57eb", "123825e5d3"]
     assert recipe["final_ref"] == "123825e5d3"
+    assert recipe["expected_rustc"].startswith("rustc 1.98.0 ")
+    assert recipe["expected_cargo"].startswith("cargo 1.98.0 ")
 
 
 def test_release_lock_refresh_accepts_only_workspace_version_changes():
@@ -245,3 +260,46 @@ dependencies = ["y"]
 """
     with pytest.raises(CodexBuildError, match="more than workspace release version"):
         _release_lock_refresh_only(before, after, "0.154.0")
+
+
+def test_build_runtime_rejects_wrong_rustc_identity(tmp_path, monkeypatch):
+    import tools.atlas_agent.codex_release as codex_release
+
+    cargo_root = tmp_path / "codex-rs"
+    cargo_root.mkdir()
+    (cargo_root / "Cargo.lock").write_text("version = 4\n", encoding="utf-8")
+
+    recipe = {
+        "cargo_subdir": "codex-rs",
+        "cargo_package": "codex-cli",
+        "expected_version": "codex-cli test",
+        "expected_rustc": "rustc expected",
+        "expected_cargo": "cargo expected",
+    }
+    monkeypatch.setattr(
+        codex_release,
+        "_verify_worktree",
+        lambda worktree, recipe_path: (
+            tmp_path,
+            recipe,
+            {"final_sha": "a" * 40},
+        ),
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cargo = fake_bin / "cargo"
+    cargo.write_text("#!/bin/sh\necho 'cargo expected'\n", encoding="utf-8")
+    cargo.chmod(0o755)
+    rustc = fake_bin / "rustc"
+    rustc.write_text("#!/bin/sh\necho 'rustc wrong'\n", encoding="utf-8")
+    rustc.chmod(0o755)
+    monkeypatch.setenv("PATH", str(fake_bin))
+
+    with pytest.raises(CodexBuildError, match="rustc identity mismatch"):
+        build_runtime(
+            worktree=tmp_path,
+            recipe_path=tmp_path / "unused.toml",
+            target_dir=tmp_path / "target",
+            min_free_gib=0,
+        )

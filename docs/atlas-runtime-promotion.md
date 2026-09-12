@@ -289,6 +289,12 @@ env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     build-codex   
 
 `build-codex` requires the worktree to begin and end at the qualified clean
 HEAD and requires the configured amount of free space (30 GiB by default).
+The build recipe pins the effective `cargo --version` and `rustc --version`
+identities and fails closed before compilation on a mismatch. This records
+the compiler actually used by the qualified build rather than assuming that
+`rust-toolchain.toml` is authoritative: a system Cargo/Rust installation can
+bypass rustup toolchain-file selection.
+
 Codex release tags intentionally carry the release version in `Cargo.toml`
 while workspace entries in `Cargo.lock` can remain at `0.0.0`; Cargo therefore
 refreshes those lockfile versions during a release build. Atlas accepts only

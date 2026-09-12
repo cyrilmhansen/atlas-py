@@ -1064,6 +1064,8 @@ def _print_report(report: dict) -> None:
         print(f"binary: {report['binary']}")
         print(f"version: {report['version']}")
         print(f"sha256: {report['sha256']}")
+        print(f"rustc: {report['rustc_version']} ({report['rustc_path']})")
+        print(f"cargo: {report['cargo_version']} ({report['cargo_path']})")
         print(
             "cargo lock release-version refresh packages: "
             f"{report['cargo_lock_release_version_refresh_packages']}"
