@@ -419,3 +419,60 @@ def test_print_report_controller_installation_without_root(capsys):
     output = capsys.readouterr().out
     assert "ATLAS CONTROLLER INSTALLATION: PASS" in output
     assert "ALREADY_INSTALLED" in output
+
+
+def test_managed_launcher_sets_pythonpath_from_active_controller(tmp_path):
+    import json
+    import os
+    import subprocess
+    from tools.atlas_agent.release import _managed_launcher
+
+    package_root = tmp_path / "controller" / "src"
+    package = package_root / "tools" / "atlas_agent"
+    package.mkdir(parents=True)
+    (package_root / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__main__.py").write_text(
+        "import os\n"
+        "print('BOOTSTRAP_OK')\n"
+        "print(os.environ.get('ATLAS_AGENT_SRC', ''))\n",
+        encoding="utf-8",
+    )
+
+    state = tmp_path / "active-controller.json"
+    state.write_text(
+        json.dumps({
+            "schema": "atlas-active-controller/1",
+            "environment": {
+                "ATLAS_AGENT_SRC": str(package_root),
+                "ATLAS_CODEX_EXECUTABLE": "/tmp/codex",
+                "ATLAS_CODEX_HOME": "/tmp/codex-home",
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    launcher = tmp_path / "aa"
+    launcher.write_bytes(_managed_launcher(state))
+    launcher.chmod(0o755)
+
+    env = {
+        key: value for key, value in os.environ.items()
+        if key not in {
+            "PYTHONPATH",
+            "ATLAS_AGENT_SRC",
+            "ATLAS_CODEX_EXECUTABLE",
+            "ATLAS_CODEX_HOME",
+            "ATLAS_AGENT_CAPABILITIES_FILE",
+        }
+    }
+    result = subprocess.run(
+        [str(launcher)],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert result.stdout.splitlines() == ["BOOTSTRAP_OK", str(package_root)]

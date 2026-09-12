@@ -747,6 +747,11 @@ env = dict(os.environ)
 for key, value in environment.items():
     if isinstance(key, str) and isinstance(value, str):
         env[key] = value
+
+agent_src = environment.get("ATLAS_AGENT_SRC")
+if not isinstance(agent_src, str) or not agent_src:
+    raise SystemExit("Atlas active controller has no ATLAS_AGENT_SRC")
+env["PYTHONPATH"] = agent_src
 env["PYTHONDONTWRITEBYTECODE"] = "1"
 
 os.execvpe(
