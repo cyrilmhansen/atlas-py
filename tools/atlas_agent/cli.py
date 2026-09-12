@@ -27,6 +27,47 @@ def _elapsed(seconds):
     return f"{remainder}s"
 
 
+DEFAULT_STATUS_HISTORY = 10
+
+
+def _history_value(value):
+    if value == "all":
+        return value
+    if not isinstance(value, str) or not value or any(char not in "0123456789" for char in value):
+        raise argparse.ArgumentTypeError("history must be a non-negative integer or 'all'")
+    if len(value) > 1 and value[0] == "0":
+        raise argparse.ArgumentTypeError("history must be a non-negative integer or 'all'")
+    return int(value)
+
+
+def _status_line(g, record, detail):
+    """Format one status history record without changing its persisted data."""
+    if detail == "compact":
+        return f"generation {g}  {record.get('checkpoint')}  {record.get('action')}  status {record.get('status')}"
+    line = f"generation {g}  {record['checkpoint']}  {record['action']}  status {record['status']}"
+    execution = record.get("execution") or {}
+    snapshot = execution.get("policy_snapshot") or {}
+    # A pre-execution ACCEPTED record has only its persisted request; it has
+    # no resolved session until execution creates a policy snapshot.  FULL
+    # remains the legacy snapshot-only presentation.
+    requested = snapshot.get("session_mode_requested")
+    if detail == "normal" and not snapshot and record.get("status") == "ACCEPTED":
+        requested = record.get("session_mode")
+    if requested:
+        resolved = snapshot.get("session_mode", "unavailable")
+        line += f"  session requested {requested}  session resolved {resolved}"
+    if detail == "full" and snapshot.get("reuse_fallback_reason"):
+        line += f"  reuse fallback {snapshot['reuse_fallback_reason']}"
+    return line
+
+
+def _status_attention(record, generations=None):
+    status = record.get("status")
+    # The journal has no authoritative fresh-generation replacement relation:
+    # linear parentage must not be used to resolve INTERRUPTED history.
+    return status in {"ACCEPTED", "RUNNING"}
+
+
 class DispatchPresenter:
     def event(self,event):
         if event["kind"]=="dispatch_started": self._started(event)
@@ -102,7 +143,12 @@ class DispatchPresenter:
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
     p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300); a=p.parse_args(argv)
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
+    p.add_argument("--history", type=_history_value, default=DEFAULT_STATUS_HISTORY,
+                   help="status history count (non-negative integer or all)")
+    p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
+                   help="status history detail level")
+    a=p.parse_args(argv)
     try:
         w=Workflow()
         if a.command=="init": w.init()
@@ -165,14 +211,21 @@ def main(argv=None):
             try: w._validate_historical_provenance(events)
             except WorkflowError: semantic="SEMANTIC_INVALID"
             print("Atlas agent workflow\njournal: OK\nstate: "+(semantic if semantic!="MATCH" else ("MATCH" if w._state_file().exists() and w._state()==state else "MISMATCH")))
-            for g,x in sorted(state["generations"].items(),key=lambda z:int(z[0])):
-                line=f"generation {g}  {x['checkpoint']}  {x['action']}  status {x['status']}"
-                execution=x.get("execution") or {}; snapshot=execution.get("policy_snapshot") or {}
-                if snapshot.get("session_mode_requested"):
-                    line += f"  session requested {snapshot['session_mode_requested']}  session resolved {snapshot.get('session_mode', 'unavailable')}"
-                if snapshot.get("reuse_fallback_reason"):
-                    line += f"  reuse fallback {snapshot['reuse_fallback_reason']}"
-                print(line)
+            generations=sorted(state["generations"].items(), key=lambda z:int(z[0]))
+            shown = generations if a.history == "all" else generations[-a.history:] if a.history else []
+            if a.history != "all" and len(generations) > a.history:
+                print(f"history: showing last {a.history} of {len(generations)} generations; use --history all for complete history")
+            attention=[(g,x) for g,x in generations
+                       if _status_attention(x, state["generations"])]
+            routine=[(g,x) for g,x in shown if not _status_attention(x, state["generations"])]
+            if routine:
+                print("recent history:")
+                for g,x in routine:
+                    print(_status_line(g,x,a.detail))
+            if attention:
+                print("attention:")
+                for g,x in attention:
+                    print(_status_line(g,x,a.detail))
             print("repository witness:","MATCH" if state["latest_repository_witness"]==witness(w.root,w.allowed) else "MISMATCH")
         else:
             for row in w.history():

@@ -26,6 +26,11 @@ aa () {
 aa status
 ```
 
+Status history is bounded to the last 10 generations by default. Use
+`aa status --history 3 --detail compact` for a quick scan, `--history 0` for
+health only, or `aa status --history all --detail full` for the complete
+legacy detail. `--history` and `--detail` are independent.
+
 The expected boundary lines are:
 
 ```text
