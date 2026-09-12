@@ -142,8 +142,8 @@ class DispatchPresenter:
 
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
-    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
+    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create","adopt-boundary"])
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--expected-head"); p.add_argument("--new-head"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
     p.add_argument("--history", type=_history_value, default=DEFAULT_STATUS_HISTORY,
                    help="status history count (non-negative integer or all)")
     p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
@@ -165,6 +165,15 @@ def main(argv=None):
             print(path)
         elif a.command=="ingest": w.ingest()
         elif a.command=="rebuild-state": w.rebuild()
+        elif a.command=="adopt-boundary":
+            if a.expected_head is None: raise WorkflowError("--expected-head is required")
+            if a.new_head is None: raise WorkflowError("--new-head is required")
+            if a.reason is None: raise WorkflowError("--reason is required")
+            state=w.adopt_boundary(a.expected_head,a.new_head,a.reason)
+            adopted=state["latest_repository_witness"]
+            print("repository boundary adopted")
+            print("head "+adopted["head"])
+            print("repository witness MATCH")
         elif a.command=="recover": w.recover()
         elif a.command=="start-run": w.start_run(a.generation)
         elif a.command=="interrupt-run": w.interrupt_run(a.generation,a.reason if a.reason is not None else "manual interruption")

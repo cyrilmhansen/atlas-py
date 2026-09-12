@@ -5,7 +5,7 @@ from pathlib import Path
 from .model import Prompt, PROMPT_SCHEMA_V2
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
-from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness
+from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness,is_ancestor
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import (ExecutionSpec, ExecutorError, FakeExecutor,
                        new_execution_id, utc_now, _write_json)
@@ -47,6 +47,16 @@ def replay_journal(events):
             initial=p["witness"].get("unexpected_untracked",[])
             if initial or p.get("validation_epoch",1) >= 2: state["protected_untracked"]=initial
             if p.get("validation_epoch",1) >= 2: state["patch_owned_untracked"]=[]
+        elif e["event"]=="REPOSITORY_BOUNDARY_ADOPTED":
+            if not state["initialized"] or state["outstanding_transactions"] or state.get("outstanding_checkpoints"):
+                raise WorkflowError("JOURNAL_BOUNDARY_ADOPTION_STATE")
+            if any(x.get("status") not in {"COMPLETED","INTERRUPTED","CANCELLED"} for x in state["generations"].values()):
+                raise WorkflowError("JOURNAL_BOUNDARY_ADOPTION_NONTERMINAL")
+            if p["previous_witness"] != state["latest_repository_witness"]:
+                raise WorkflowError("JOURNAL_BOUNDARY_ADOPTION_MISMATCH")
+            state["latest_repository_witness"]=p["witness"]
+            state["repository_witnesses"].append(p["witness"])
+            if "patch_owned_untracked" in state: state["patch_owned_untracked"]=[]
         elif e["event"]=="CHECKPOINT_INTENT":
             g=str(p["generation"]); rec=state["generations"].get(g)
             outstanding=state.setdefault("outstanding_checkpoints",{})
@@ -777,6 +787,38 @@ class Workflow:
             if not s["initialized"]: raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
             self._validate_historical_provenance(events)
             validate_spool(self.base,s); self._save(s); return s
+    def adopt_boundary(self,expected_head,new_head,reason):
+        """Adopt one externally qualified clean descendant as repository authority."""
+        with lock(self.base/"lock"):
+            _,state=self._preflight(require_state=True)
+            if not state["initialized"]: raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
+            if type(reason) is not str or not reason.strip() or len(reason)>1024 or "\x00" in reason:
+                raise WorkflowError("BOUNDARY_ADOPTION_REASON_REQUIRED")
+            nonterminal=[x["generation"] for x in state["generations"].values() if x.get("status") not in {"COMPLETED","INTERRUPTED","CANCELLED"}]
+            if nonterminal: raise WorkflowError("BOUNDARY_ADOPTION_NONTERMINAL")
+            previous=state["latest_repository_witness"]
+            if expected_head != previous["head"]:
+                raise WorkflowError("BOUNDARY_ADOPTION_EXPECTED_HEAD_MISMATCH")
+            ownership={"protected_untracked":state.get("protected_untracked",[]),"patch_owned_untracked":state.get("patch_owned_untracked",[])}
+            current=witness(self.root,self.allowed,ownership)
+            if new_head != current["head"]:
+                raise WorkflowError("BOUNDARY_ADOPTION_NEW_HEAD_MISMATCH")
+            empty=hashlib.sha256(b"").hexdigest()
+            if (current["index_semantic_sha256"]!=empty or current["tracked_worktree_sha256"]!=empty or current["tracked_worktree_content_sha256"]!=empty or current["unexpected_untracked"]):
+                raise WorkflowError("BOUNDARY_ADOPTION_DIRTY_REPOSITORY")
+            if current["branch"] != previous["branch"]:
+                raise WorkflowError("BOUNDARY_ADOPTION_BRANCH_MISMATCH")
+            if current == previous:
+                raise WorkflowError("BOUNDARY_ADOPTION_ALREADY_MATCHED")
+            if not is_ancestor(self.root,previous["head"],current["head"]):
+                raise WorkflowError("BOUNDARY_ADOPTION_NOT_DESCENDANT")
+            if witness(self.root,self.allowed,ownership) != current:
+                raise WorkflowError("BOUNDARY_ADOPTION_RACE")
+            self.journal.append("REPOSITORY_BOUNDARY_ADOPTED",previous_witness=previous,witness=current,reason=reason)
+            adopted=replay_journal(self.journal.read())
+            self._save(adopted)
+            validate_spool(self.base,adopted)
+            return adopted
     def _archive(self,raw,digest):
         p=self.base/"prompts"/(digest+".txt")
         if p.exists() and sha(p)!=digest: raise WorkflowError("PROMPT_ARCHIVE_CORRUPT")

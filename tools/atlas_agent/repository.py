@@ -14,6 +14,9 @@ def runtime_path(root:Path)->Path:
 def _allowed(path,allowed):
     return any(path==a[:-1] or path.startswith(a) for a in allowed if a.endswith("/")) or any(path==a for a in allowed if not a.endswith("/"))
 def _ok(root,*args): return subprocess.run(["git",*args],cwd=root,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+def is_ancestor(root:Path,ancestor:str,descendant:str)->bool:
+    """Fail-closed Git ancestry predicate for explicit boundary adoption."""
+    return _ok(root,"merge-base","--is-ancestor",ancestor,descendant)
 def _untracked_record(root,name,content=None,symlink=None):
     path=root/os.fsdecode(name)
     if content is None:

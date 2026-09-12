@@ -9,7 +9,7 @@ from .model import SCHEMA
 from .policy import validate_snapshot, PolicyError
 class JournalError(RuntimeError): pass
 ZERO="0"*64
-EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED"}
+EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED","REPOSITORY_BOUNDARY_ADOPTED"}
 HEX=re.compile(r"^[0-9a-f]{64}$")
 CONTEXT_PATH=re.compile(r"^reports/contexts/[A-Za-z0-9][A-Za-z0-9._-]*\.txt$")
 SAFE_CONTEXT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
@@ -373,7 +373,7 @@ class Journal:
         return out
     @staticmethod
     def _validate_payload(event,p,n,generations=None,validation_epoch=1):
-        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set()}[event]
+        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set(),"REPOSITORY_BOUNDARY_ADOPTED":{"previous_witness","witness","reason"}}[event]
         if not required<=set(p): raise JournalError(f"payload for {event} incomplete at line {n}")
         allowed={
             "WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness","validation_epoch"},
@@ -388,6 +388,7 @@ class Journal:
             "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
             "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
             "RECOVERY_PERFORMED":{"repaired"},
+            "REPOSITORY_BOUNDARY_ADOPTED":{"previous_witness","witness","reason"},
         }[event]
         if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement","derived_context_supplement"}
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
@@ -396,6 +397,14 @@ class Journal:
         if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}: raise JournalError(f"logical event invalid at line {n}")
         if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED"}: _witness(p["witness"],n)
         if event == "RUN_STARTED" and "witness" in p: _witness(p["witness"],n)
+        if event == "REPOSITORY_BOUNDARY_ADOPTED":
+            _witness(p["previous_witness"],n); _witness(p["witness"],n)
+            if p["previous_witness"] == p["witness"]:
+                raise JournalError(f"boundary adoption must change witness at line {n}")
+            if p["previous_witness"]["branch"] != p["witness"]["branch"]:
+                raise JournalError(f"boundary adoption branch mismatch at line {n}")
+            if type(p["reason"]) is not str or not p["reason"].strip() or len(p["reason"]) > 1024 or "\x00" in p["reason"]:
+                raise JournalError(f"boundary adoption reason invalid at line {n}")
         if event == "RUN_COMPLETED" and "acquired_untracked" in p:
             acquired=p["acquired_untracked"]
             if (type(acquired) is not list or acquired != sorted(acquired) or
