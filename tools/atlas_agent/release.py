@@ -1045,7 +1045,8 @@ def promote_controller(*, root: Path | None = None, reason: str,
     }
 
 def _print_report(report: dict) -> None:
-    print(f"root: {report['root']}")
+    if "root" in report:
+        print(f"root: {report['root']}")
     if report.get("schema") == "atlas-controller-installation/1":
         print(f"head: {report['head']}")
         print(f"controller: {report['controller_src']}")

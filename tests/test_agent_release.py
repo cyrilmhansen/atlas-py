@@ -403,3 +403,19 @@ def test_activate_controller_refuses_unmanaged_launcher(tmp_path, monkeypatch):
             state_path=state,
             launcher_path=launcher,
         )
+
+
+def test_print_report_controller_installation_without_root(capsys):
+    from tools.atlas_agent.release import _print_report
+
+    _print_report({
+        "schema": "atlas-controller-installation/1",
+        "head": "a" * 40,
+        "controller_src": "/tmp/controller/src",
+        "snapshot_sha256": "b" * 64,
+        "status": "ALREADY_INSTALLED",
+    })
+
+    output = capsys.readouterr().out
+    assert "ATLAS CONTROLLER INSTALLATION: PASS" in output
+    assert "ALREADY_INSTALLED" in output
