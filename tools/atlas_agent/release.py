@@ -5,8 +5,9 @@ This module deliberately separates qualification from promotion.  The
 Codex runtime, policy, assets, and a small model matrix agree.  The
 ``post-cutover`` command verifies the live operator binding after promotion.
 
-Neither command mutates Git, Atlas workflow state, shell startup files, or
-release directories.
+`preflight` and `post-cutover` are read-only. `prepare-runtime` installs one
+new immutable runtime and updates only the policy runtime digest.
+`promote-controller` advances only the guarded repository boundary.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -317,6 +319,174 @@ def preflight(*, root: Path | None = None, model_smoke: bool = True,
     return report
 
 
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    mode = path.stat().st_mode & 0o777
+    fd, name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    staged = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(staged, mode)
+        os.replace(staged, path)
+    finally:
+        if staged.exists():
+            staged.unlink()
+
+
+def _candidate_runtime(path: Path) -> tuple[Path, str, str]:
+    source = path.expanduser()
+    if source.is_symlink():
+        raise ReleaseCheckError(f"candidate runtime must not be a symlink: {source}")
+    try:
+        candidate = source.resolve(strict=True)
+    except OSError as error:
+        raise ReleaseCheckError(f"candidate runtime cannot be resolved: {error}") from error
+    if not candidate.is_file():
+        raise ReleaseCheckError(f"candidate runtime is not a regular file: {candidate}")
+    if not os.access(candidate, os.X_OK):
+        raise ReleaseCheckError(f"candidate runtime is not executable: {candidate}")
+    try:
+        with candidate.open("rb") as stream:
+            magic = stream.read(4)
+    except OSError as error:
+        raise ReleaseCheckError(f"candidate runtime cannot be read: {error}") from error
+    if magic != b"\x7fELF":
+        raise ReleaseCheckError("candidate runtime is not an ELF executable")
+    digest = _sha256(candidate)
+    version = _run([str(candidate), "--version"]).stdout.strip()
+    return candidate, digest, version
+
+
+def prepare_runtime(*, candidate: Path, release_id: str,
+                    root: Path | None = None,
+                    releases_dir: Path | None = None) -> dict:
+    root = _repository_root(root)
+    status = _git(root, "status", "--porcelain=v2", "--untracked-files=all")
+    if status:
+        raise ReleaseCheckError("candidate repository is not clean")
+
+    if not isinstance(release_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", release_id
+    ):
+        raise ReleaseCheckError("invalid release id")
+
+    current_runtime, _ = _runtime_from_environment()
+    candidate, new_digest, version = _candidate_runtime(candidate)
+
+    policy_path = root / "atlas-agent-policy.toml"
+    policy = _load_policy(root)
+    profiles = _codex_profiles(policy)
+    old_digest = _require_single(
+        (p["codex_binary_sha256"] for p in profiles),
+        "policy codex_binary_sha256",
+    )
+
+    if releases_dir is None:
+        if current_runtime.parent.parent.name != "releases":
+            raise ReleaseCheckError(
+                "cannot infer releases directory from ATLAS_CODEX_EXECUTABLE; "
+                "pass --releases-dir"
+            )
+        release_root = current_runtime.parent.parent
+    else:
+        try:
+            release_root = releases_dir.expanduser().resolve(strict=True)
+        except OSError as error:
+            raise ReleaseCheckError(f"releases directory cannot be resolved: {error}") from error
+
+    if not release_root.is_dir() or release_root.is_symlink():
+        raise ReleaseCheckError(f"unsafe releases directory: {release_root}")
+
+    release_dir = release_root / release_id
+    target = release_dir / "codex"
+    if release_dir.exists() or release_dir.is_symlink():
+        raise ReleaseCheckError(f"release already exists: {release_dir}")
+
+    raw = policy_path.read_text(encoding="utf-8")
+    needle = f'codex_binary_sha256 = "{old_digest}"'
+    replacement = f'codex_binary_sha256 = "{new_digest}"'
+    count = raw.count(needle)
+    if count != len(profiles):
+        raise ReleaseCheckError(
+            f"policy runtime digest occurrence mismatch: "
+            f"expected={len(profiles)} observed={count}"
+        )
+
+    updated_raw = raw.replace(needle, replacement)
+
+    try:
+        updated_policy = tomllib.loads(updated_raw)
+    except tomllib.TOMLDecodeError as error:
+        raise ReleaseCheckError(f"updated policy is invalid TOML: {error}") from error
+
+    expected_policy = json.loads(json.dumps(policy))
+    for profile in expected_policy["profiles"].values():
+        if isinstance(profile, dict) and profile.get("executor") == "codex":
+            profile["codex_binary_sha256"] = new_digest
+
+    if updated_policy != expected_policy:
+        raise ReleaseCheckError("policy update would modify fields other than runtime digest")
+
+    try:
+        release_dir.mkdir(mode=0o755)
+        staged = release_dir / ".codex.staging"
+        shutil.copyfile(candidate, staged, follow_symlinks=False)
+        os.chmod(staged, 0o755)
+
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+
+        if _sha256(staged) != new_digest:
+            raise ReleaseCheckError("installed runtime staging digest mismatch")
+
+        os.replace(staged, target)
+
+        directory_fd = os.open(release_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+        _check_native_resolver(target)
+        if _sha256(target) != new_digest:
+            raise ReleaseCheckError("installed runtime digest mismatch")
+
+        _atomic_write(policy_path, updated_raw.encode("utf-8"))
+
+        observed = _load_policy(root)
+        observed_profiles = _codex_profiles(observed)
+        observed_digest = _require_single(
+            (p["codex_binary_sha256"] for p in observed_profiles),
+            "updated policy codex_binary_sha256",
+        )
+        if observed_digest != new_digest:
+            raise ReleaseCheckError("updated policy did not retain candidate runtime digest")
+
+    except BaseException:
+        try:
+            if release_dir.exists() and not release_dir.is_symlink():
+                shutil.rmtree(release_dir)
+        except OSError:
+            pass
+        raise
+
+    return {
+        "schema": "atlas-release-runtime-preparation/1",
+        "root": str(root),
+        "candidate": str(candidate),
+        "release_id": release_id,
+        "previous_runtime": str(current_runtime),
+        "previous_runtime_sha256": old_digest,
+        "runtime": str(target),
+        "runtime_version": version,
+        "runtime_sha256": new_digest,
+        "policy_profiles_updated": len(profiles),
+    }
+
+
 def post_cutover(*, root: Path | None = None, timeout: float = 60.0) -> dict:
     root = _repository_root(root)
     source_raw = os.environ.get("ATLAS_AGENT_SRC")
@@ -445,7 +615,17 @@ def promote_controller(*, root: Path | None = None, reason: str,
 
 def _print_report(report: dict) -> None:
     print(f"root: {report['root']}")
-    if report.get("schema") == "atlas-release-controller-promotion/1":
+    if report.get("schema") == "atlas-release-runtime-preparation/1":
+        print(f"candidate: {report['candidate']}")
+        print(f"release id: {report['release_id']}")
+        print(f"previous runtime: {report['previous_runtime']}")
+        print(f"runtime: {report['runtime']}")
+        print(f"runtime version: {report['runtime_version']}")
+        print(f"runtime sha256: {report['runtime_sha256']}")
+        print(f"policy profiles updated: {report['policy_profiles_updated']}")
+        print(f'export ATLAS_CODEX_EXECUTABLE="{report["runtime"]}"')
+        print("ATLAS RELEASE RUNTIME PREPARATION: PASS")
+    elif report.get("schema") == "atlas-release-controller-promotion/1":
         print(f"previous head: {report['previous_head']}")
         print(f"current head: {report['current_head']}")
         print(f"repository boundary: {report['boundary']}")
@@ -491,6 +671,12 @@ def main(argv: list[str] | None = None) -> int:
     p_pre.add_argument("--timeout", type=float, default=180.0)
     p_pre.add_argument("--json", action="store_true")
 
+    p_runtime = sub.add_parser("prepare-runtime")
+    p_runtime.add_argument("--candidate", type=Path, required=True)
+    p_runtime.add_argument("--release-id", required=True)
+    p_runtime.add_argument("--releases-dir", type=Path)
+    p_runtime.add_argument("--json", action="store_true")
+
     p_post = sub.add_parser("post-cutover")
     p_post.add_argument("--timeout", type=float, default=60.0)
     p_post.add_argument("--json", action="store_true")
@@ -506,6 +692,12 @@ def main(argv: list[str] | None = None) -> int:
             report = preflight(
                 model_smoke=not args.skip_model_smoke,
                 timeout=args.timeout,
+            )
+        elif args.command == "prepare-runtime":
+            report = prepare_runtime(
+                candidate=args.candidate,
+                release_id=args.release_id,
+                releases_dir=args.releases_dir,
             )
         elif args.command == "post-cutover":
             report = post_cutover(timeout=args.timeout)

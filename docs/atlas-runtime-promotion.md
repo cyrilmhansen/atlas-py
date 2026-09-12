@@ -270,6 +270,24 @@ after model execution begins.
 
 ## Automated release checks
 
+A built and already qualified Codex candidate can be prepared for promotion
+with:
+
+```bash
+env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     prepare-runtime     --candidate /absolute/path/to/target/release/codex     --release-id atlas-codex-YYYYMMDD-N
+```
+
+`prepare-runtime` requires a clean repository, validates that the candidate is
+an executable ELF, installs it as `releases/<release-id>/codex`, verifies its
+SHA-256 and Atlas native-runtime resolution, and updates exactly the
+`codex_binary_sha256` fields of all Codex policy profiles. The old runtime is
+left intact. On a preparation failure, the newly created release directory is
+removed.
+
+The command prints the exact `ATLAS_CODEX_EXECUTABLE` value for the subsequent
+cutover. Commit and test the policy change before exporting that value and
+running `preflight`.
+
 The candidate controller provides read-only qualification checks:
 
 ```bash
