@@ -268,6 +268,48 @@ after model execution begins.
 
 ---
 
+## Automated release checks
+
+The candidate controller provides read-only qualification checks:
+
+```bash
+env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release preflight
+```
+
+`preflight` requires a clean repository and verifies the selected Codex
+runtime, policy digests, qualified Codex assets, Atlas native-runtime
+resolution, filesystem free space, and no-tool smoke calls for Luna High,
+Sol Medium, and Astra Medium. The smoke result is accepted only from the
+final completed Codex `agent_message`.
+
+After committing a qualified controller change and selecting it through
+`ATLAS_AGENT_SRC`, the controller boundary and live cutover can be promoted
+without manually copying OLD/NEW commit identifiers:
+
+```bash
+env PYTHONPATH="$ATLAS_AGENT_SRC" python3 -P -m tools.atlas_agent.release \
+    promote-controller --reason "<qualification reason>"
+```
+
+The command reads the previous repository boundary from Atlas journal
+authority, requires the current clean HEAD to descend from it, performs the
+existing guarded boundary adoption, then requires the post-cutover status,
+doctor, and native-runtime checks to pass. Re-running it on an already adopted
+HEAD is an idempotent verification.
+
+The post-cutover verification remains independently available:
+
+```bash
+env PYTHONPATH="$ATLAS_AGENT_SRC" python3 -P -m tools.atlas_agent.release \
+    post-cutover
+```
+
+Neither preflight nor post-cutover modifies repository or workflow state.
+`promote-controller` modifies only the Atlas repository-boundary journal/state
+through the same guarded `Workflow.adopt_boundary` primitive.
+
+---
+
 ## 8. Observe the actual launch boundary
 
 A feature being present in Codex does not prove that Atlas propagates it.

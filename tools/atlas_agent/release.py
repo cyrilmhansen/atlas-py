@@ -371,9 +371,87 @@ def post_cutover(*, root: Path | None = None, timeout: float = 60.0) -> dict:
     }
 
 
+
+def promote_controller(*, root: Path | None = None, reason: str,
+                       timeout: float = 60.0) -> dict:
+    # Adopt the current clean candidate HEAD and verify the live cutover.
+    if not isinstance(reason, str) or not reason.strip():
+        raise ReleaseCheckError("promotion reason is required")
+
+    root = _repository_root(root)
+
+    # Cheap release invariants immediately before mutating workflow authority.
+    preflight(root=root, model_smoke=False, timeout=timeout)
+
+    source_raw = os.environ.get("ATLAS_AGENT_SRC")
+    if not source_raw:
+        raise ReleaseCheckError("ATLAS_AGENT_SRC is not set")
+    try:
+        source = Path(source_raw).expanduser().resolve(strict=True)
+    except OSError as error:
+        raise ReleaseCheckError(f"ATLAS_AGENT_SRC cannot be resolved: {error}") from error
+    if source != root:
+        raise ReleaseCheckError(
+            f"controller cutover mismatch: ATLAS_AGENT_SRC={source} candidate={root}"
+        )
+
+    try:
+        from .workflow import Workflow
+    except ImportError as error:
+        raise ReleaseCheckError(f"cannot import Atlas workflow: {error}") from error
+
+    workflow = Workflow(root)
+    try:
+        _, state = workflow._preflight(require_state=True)
+    except Exception as error:
+        raise ReleaseCheckError(f"Atlas workflow preflight failed: {error}") from error
+
+    previous = state.get("latest_repository_witness")
+    if not isinstance(previous, dict) or not isinstance(previous.get("head"), str):
+        raise ReleaseCheckError("latest repository witness has no valid HEAD")
+
+    old_head = previous["head"]
+    new_head = _git(root, "rev-parse", "HEAD")
+
+    if old_head == new_head:
+        adoption = "ALREADY_MATCHED"
+    else:
+        ancestry = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", old_head, new_head],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if ancestry.returncode != 0:
+            raise ReleaseCheckError(
+                f"candidate HEAD is not a descendant of journal boundary: "
+                f"{old_head} -> {new_head}"
+            )
+        try:
+            workflow.adopt_boundary(old_head, new_head, reason.strip())
+        except Exception as error:
+            raise ReleaseCheckError(f"repository boundary adoption failed: {error}") from error
+        adoption = "ADOPTED"
+
+    post = post_cutover(root=root, timeout=timeout)
+    return {
+        "schema": "atlas-release-controller-promotion/1",
+        "root": str(root),
+        "previous_head": old_head,
+        "current_head": new_head,
+        "boundary": adoption,
+        "post_cutover": post,
+    }
+
 def _print_report(report: dict) -> None:
     print(f"root: {report['root']}")
-    if "branch" in report:
+    if report.get("schema") == "atlas-release-controller-promotion/1":
+        print(f"previous head: {report['previous_head']}")
+        print(f"current head: {report['current_head']}")
+        print(f"repository boundary: {report['boundary']}")
+        print("post-cutover: PASS")
+        print("ATLAS RELEASE CONTROLLER PROMOTION: PASS")
+    elif "branch" in report:
         print(f"branch: {report['branch']}")
         print(f"head: {report['head']}")
         print("repository: CLEAN")
@@ -417,6 +495,11 @@ def main(argv: list[str] | None = None) -> int:
     p_post.add_argument("--timeout", type=float, default=60.0)
     p_post.add_argument("--json", action="store_true")
 
+    p_promote = sub.add_parser("promote-controller")
+    p_promote.add_argument("--reason", required=True)
+    p_promote.add_argument("--timeout", type=float, default=60.0)
+    p_promote.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "preflight":
@@ -424,8 +507,13 @@ def main(argv: list[str] | None = None) -> int:
                 model_smoke=not args.skip_model_smoke,
                 timeout=args.timeout,
             )
-        else:
+        elif args.command == "post-cutover":
             report = post_cutover(timeout=args.timeout)
+        else:
+            report = promote_controller(
+                reason=args.reason,
+                timeout=args.timeout,
+            )
     except ReleaseCheckError as error:
         print(f"ATLAS RELEASE CHECK: FAIL: {error}", file=sys.stderr)
         return 1
