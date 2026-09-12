@@ -47,8 +47,9 @@ already completed:
 - durable cancellation of unstarted accepted generations;
 - truthful writable scratch semantics.
 
-Qualified development toolchains and caches, along with the P0.6x closure,
-are complete. The current milestone is **M1 — Core Hygiene**; the authoritative
+Qualified development toolchains and caches, along with the P0.6x closure and
+**M1 — Core Hygiene**, are complete. The immediate next product implementation
+priority is **A2.2 — multimodal model-context injection**; the authoritative
 current planning document is [`docs/roadmap.md`](docs/roadmap.md).
 
 The roadmap also tracks installation, reboot-safe activation,
@@ -58,6 +59,7 @@ composition, and the stopping rule for returning primary effort to Atlas Core.
 See:
 
 - [`docs/roadmap.md`](docs/roadmap.md)
+- [`docs/operator-cheatsheet.md`](docs/operator-cheatsheet.md)
 - [`docs/agent-workflow.md`](docs/agent-workflow.md)
 - [`docs/security-policy.md`](docs/security-policy.md)
 - [`docs/deploy-existing-project.md`](docs/deploy-existing-project.md)

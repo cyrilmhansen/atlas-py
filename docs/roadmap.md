@@ -1,8 +1,8 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.9**
-Planning date: **2026-09-11**
-Agent code baseline: **`6a0d300dbf0d40ea1666280109350d366c823ee2`** (`feat(agent): add qualified PVC prepare execution`)
+Document version: **0.10**
+Planning date: **2026-09-12**
+Agent code baseline: **`b3a6f4d0e416bac7b54238a737c25ec903e7fda4`** (`atlas-agent: validate and retain qualified PVC results`)
 
 Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
 PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)
@@ -11,9 +11,14 @@ Specialized-service qualification workflow: [`docs/qualified-service-workflow.md
 Release procedure: [`docs/atlas-release-process.md`](atlas-release-process.md)
 Project deployment: [`docs/deploy-existing-project.md`](deploy-existing-project.md)
 
-This roadmap supersedes version 0.8.
+This roadmap supersedes version 0.9.
 
-Version 0.9 reframes PVC around its near-term product purpose: optimizing context supplied to Luna, Sol, and Astra through dense multimodal SOURCE and TASK tablets. The prototype provides empirical evidence for a model-specific strategy, not a universal quota, latency, or cost invariant. PVC-derived context material remains optional and secondary as input to Atlas-interpreted observations.
+Version 0.10 records the validated-result tranche of A2.1b and keeps PVC's
+near-term product purpose explicit: optimizing context supplied to Luna, Sol,
+and Astra through dense multimodal SOURCE and TASK tablets. The prototype
+provides empirical evidence for a model-specific strategy, not a universal
+quota, latency, or cost invariant. PVC-derived context material remains
+optional and secondary as input to Atlas-interpreted observations.
 
 The current planning model has three related lanes:
 
@@ -538,7 +543,8 @@ A2 develops the controlled execution substrate and then uses it for context comp
 
 ### A2.0 — One-shot qualified tool-operation substrate — COMPLETE
 
-Completed at current repository HEAD (`6a0d300dbf0d40ea1666280109350d366c823ee2`):
+Completed at checkpoint `6a0d300dbf0d40ea1666280109350d366c823ee2`
+(historical; the current validated-result checkpoint is `b3a6f4d`):
 
 ```text
 qualified controller-owned one-shot non-model operation
@@ -571,18 +577,32 @@ semantic observation/admission. See
 [`pvc-observation-v0.md`](pvc-observation-v0.md) and
 [`qualified-service-workflow.md`](qualified-service-workflow.md).
 
-### A2.1b — Validated/materialized PVC result — NEXT
+### A2.1b — Validated/materialized PVC result — IN PROGRESS
 
-The next tranche remains responsible for:
+The **validated-result tranche is COMPLETE** at checkpoint
+**`b3a6f4d`** (`atlas-agent: validate and retain qualified PVC results`).
+The validated boundary includes real qualified PVC prepare, retained result
+bytes, canonical `SourceContextSnapshot` validation, artifact integrity,
+validated-state authority, deep immutability/alias isolation, and a real host
+witness. It preserves the distinction:
 
-- accepting `SourceContextSnapshot`;
-- stdout/snapshot equivalence;
-- bundle/artifact validation, including path, hash, media, and length checks;
-- provenance binding;
+```text
+process success ≠ validated result ≠ semantic interpretation
+```
+
+The overall A2.1b materialized-result milestone remains open for durable
+publication/materialization and lifecycle/recovery:
+
 - durable materialization/publication;
 - lifecycle and recovery as required.
 
-### A2.2 — Multimodal model-context injection
+### A2.2 — Multimodal model-context injection — NEXT IMPLEMENTATION PRIORITY
+
+This is the immediate next product implementation slice: consume the validated
+PVC material as multimodal model context for one bounded real generation.
+Preserve textual critical constraints where appropriate, retain normal exact
+tools, and attribute the context to the validated PVC result. PVC is optional
+and secondary context machinery, not a replacement for exact tools.
 
 Make a real model invocation consume selected context:
 
@@ -593,12 +613,14 @@ Make a real model invocation consume selected context:
 - explicit classical/PVC/hybrid context modes;
 - measurement of quality, context coverage, quota/accounting, latency, render cost, task time, and sequential tool-call trade-offs.
 
-The near-term dogfood milestone follows the A2.1b result boundary: for one
-real Agent generation, explicitly choose a bounded set of principal files and
-optionally long task material, prepare and validate it through qualified PVC,
-attach the tablets to the model invocation, and retain normal tools. Compare
-all three modes on the same representative task. Do not build an automatic
-context-selection optimizer yet.
+The near-term dogfood must keep validation separate from interpretation:
+preparing context does not make it an Atlas semantic observation. Explicitly
+choose a bounded set of principal files and optionally long task material,
+prepare and validate it through qualified PVC, attach the tablets to the model
+invocation, and retain normal tools. Compare classical, PVC, and hybrid modes
+on the same representative task. Do not build an automatic context-selection
+optimizer yet. The open A2.1b durability work is not a prerequisite for A2.2
+unless a concrete blocking defect appears.
 
 ### A2.3 — Persistent semantic service runtime
 
@@ -624,6 +646,43 @@ hygiene
 
 Proof/evidence must distinguish sandbox, host, live, skip/host-required, failure, timeout, cancellation, and infrastructure failure truthfully.
 
+### Operator-facing identity explanation — planned support, behind A2.2
+
+The existing `doctor` and `status` commands provide workflow/state,
+provenance, and repository-witness checks; they do not yet provide a
+toolchain-diff command. Extend the existing doctor/qualification-evidence
+concepts rather than creating a duplicate diagnostic architecture. Eventually
+support should, when evidence permits, localize the mismatch to the smallest
+concrete identity component rather than reporting only a whole-toolchain
+mismatch. For the selected authority, diagnostics should explain:
+
+```text
+authority/component → identity expected → identity observed
+                    → status/mismatch reason
+                    → smallest safe corrective action when determinable
+```
+
+Useful components include an individual identity file, executable,
+qualification probe, source revision/Git identity, source-root authority, or
+selected capability manifest/qualification binding. Evidence may include the
+selected capability manifest, qualification string, source-root authority,
+source revision where applicable, executable and identity-file fingerprints,
+and qualification probe. A generic
+`ATLAS_TOOLCHAIN_QUALIFICATION_MISMATCH` alone is not sufficient when Atlas
+Agent already possesses evidence that can localize the mismatch. Diagnostics
+explain rejection; they do not weaken fail-closed qualification or authorize
+an unqualified execution.
+
+If Atlas Agent retains capability manifests, cryptographic hashes, probes,
+source authority, identity-file sets, and repository witnesses, rapid
+mismatch localization is part of the required operational return on that
+complexity. Security that says only “no” is incomplete operationally when the
+available evidence can explain precisely why. Simplification remains an
+explicit option where retained complexity does not produce enough identifiable
+value. This planned support is not a prerequisite for **A2.2 — multimodal
+model-context injection** unless a concrete defect blocks that slice. Do not
+prescribe a new storage model or fingerprint-manager subsystem.
+
 Git commits remain neutral material snapshots.
 
 ---
@@ -647,6 +706,52 @@ Design request/observation structures so requested / resolved / observed concurr
 
 Qualified observation/semantic reads are the preferred first real parallel workload after the relevant A2/S1 paths work serially.
 
+### Provider-neutral quota/capacity telemetry — FUTURE SUPPORT
+
+Later Agent/orchestration support should be able to observe available model
+capacity before an execution fails or unnecessarily consumes scarce premium
+capacity. This is planning only and is advisory operational input, not
+authorization. It remains distinct from model capability, monetary price, task
+importance, security policy, and semantic correctness.
+
+The provider-neutral concept should cover an observed provider and
+account/credential scope with an observation time, one or more allowances, and
+possible recovery options. An allowance may describe a rolling window, weekly
+allowance, reserve, credits, or reset entitlement, scoped provider-wide, to a
+product, model family, or specific model, with remaining/capacity, unit,
+reset/expiry times, and availability where known. Recovery options may include
+reset, banked reset, credits, waiting for reset, or another provider-supported
+option. Allowances must preserve availability as `available`, `exhausted`,
+`unavailable`, or `unknown` rather than fabricating precision. `exhausted`
+means the allowance is known to exist but its currently usable capacity is
+depleted; it remains distinct from `unavailable` and `unknown`. Provenance
+should record source, freshness, and confidence/authority
+using Atlas's existing provenance and epistemic principles; this is a
+conceptual contract, not a frozen type or implementation.
+
+OpenAI is the first planned adapter. Where actually exposed, desired
+observations include rolling five-hour remaining/reset, weekly
+remaining/reset, Luna Reserve presence/remaining/reset, credits, and banked
+reset presence/count/expiry/resulting reset semantics. The implementation must
+first determine which values are available through supported, stable,
+authorized interfaces; it must not require scraping or brittle UI automation,
+and today's OpenAI taxonomy is not a universal model.
+
+Data quality must remain explicit:
+
+```text
+AUTHORITATIVE       provider-supported structured authority, where available
+OBSERVED            current value from a supported client/status surface
+INFERRED            estimate from historical consumption or behavior
+UNKNOWN/UNAVAILABLE provider exposes insufficient information
+```
+
+Atlas must never present inferred quota as authoritative or fabricate
+precision. Likely consumers include model selection, scheduling, avoiding
+avoidable exhaustion, choosing Luna/Sol/Astra or deferring work, and explaining
+a lower-cost/lower-capacity route. This later support item does not block
+**A2.2 — multimodal model-context injection** by default.
+
 ---
 
 ## A5 — Distribution / Install / Doctor
@@ -654,6 +759,21 @@ Qualified observation/semantic reads are the preferred first real parallel workl
 Provide a supported installation and activation path for qualified Agent runtimes and machine prerequisites.
 
 Important productization work, but not a blocker for early R/S work on a machine where the qualified environment already functions.
+
+### A5.1 — Graphical operator golden path — FUTURE
+
+Derive a compact one-page flow/state reference from
+[`operator-cheatsheet.md`](operator-cheatsheet.md): show the complete normal
+lifecycle at a glance, beginning with fresh shell/bootstrap into a ready
+operator environment, plus interruption and checkpoint-recovery branches.
+Optimize it for human scanning and deliberate use as multimodal prompt context;
+use stable, machine-readable labels where practical. Keep the textual
+cheat sheet canonical so a future SVG/PDF/PNG or equivalent can be regenerated
+and checked for drift; do not choose tooling until a documentation pipeline is
+justified. Retained operational complexity must provide identifiable value
+(authority/security, deterministic operation, recovery, provenance, lower
+operator cognitive load, or removal of manual failure modes); otherwise
+simplification remains an explicit option.
 
 ---
 
@@ -727,7 +847,11 @@ A5/A6 are also largely independent until a product slice requires them.
 
 # 9. Immediate development direction
 
-Three early streams are now valid and complementary.
+Three early streams are valid and complementary. The explicit next
+implementation priority is **A2.2 — multimodal model-context injection**.
+Explainable qualification identity diagnostics and provider-neutral
+quota/capacity telemetry are later supporting work, not new prerequisite
+milestones.
 
 ## 9.1 R0 — Rust Core foundation
 
@@ -739,7 +863,7 @@ Next R action:
 
 Do not pick the semantic behavior by convenience alone; inspect the existing Core implementation/tests and prefer a stable local invariant with little persistence coupling.
 
-## 9.2 S1a / A2.1 / A2.2 — PVC context dogfood
+## 9.2 S1a / A2.1 / A2.2 — PVC context dogfood (next)
 
 A2.0's one-shot substrate is complete. The next product slice is qualified PVC context preparation followed by multimodal model-context injection:
 
