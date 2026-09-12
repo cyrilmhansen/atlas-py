@@ -268,6 +268,34 @@ after model execution begins.
 
 ---
 
+## Reconstruct and build the custom Codex runtime
+
+The qualified source recipe is versioned in
+`codex-runtime-recipes/atlas-codex-0.154.toml`. Reconstruction does not
+re-cherry-pick patches. It resolves the exact qualified final commit already
+present in the Codex source repository, verifies the upstream tag/commit and
+the ordered required-commit ancestry, then creates a detached clean worktree:
+
+```bash
+env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     reconstruct-codex     --source-repo /home/john/luna/codex-atlas     --worktree /home/john/luna/codex-atlas/builds/atlas-codex-0.154
+```
+
+Build is a separate explicit operation so reconstruction cannot unexpectedly
+consume a large amount of CPU or disk:
+
+```bash
+env PYTHONPATH="$PWD" python3 -P -m tools.atlas_agent.release     build-codex     --worktree /home/john/luna/codex-atlas/builds/atlas-codex-0.154     --target-dir /home/john/luna/codex-atlas/build-targets/atlas-codex-0.154
+```
+
+`build-codex` requires the worktree to remain at the qualified clean HEAD,
+requires the configured amount of free space (30 GiB by default), runs
+`cargo build --release -p codex-cli`, then verifies executable ELF identity,
+the exact expected Codex version, and the required `exec --help` public
+contract (`--image-detail` with `original` support).
+
+The resulting `.../release/codex` is the input to `prepare-runtime`; build and
+promotion remain deliberately separate gates.
+
 ## Immutable controller installation
 
 After controller qualification and repository-boundary promotion, install the

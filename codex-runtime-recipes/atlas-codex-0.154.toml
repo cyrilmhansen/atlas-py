@@ -1,0 +1,12 @@
+schema = "atlas-codex-build-recipe/1"
+name = "atlas-codex-0.154"
+
+upstream_tag = "rust-v0.154.0"
+upstream_commit = "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"
+required_commits = ["123825e5d3", "513e4a57eb"]
+final_ref = "513e4a57eb"
+
+cargo_subdir = "codex-rs"
+cargo_package = "codex-cli"
+expected_version = "codex-cli 0.154.0"
+required_exec_help = ["--image-detail", "original"]

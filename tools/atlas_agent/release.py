@@ -1052,7 +1052,21 @@ def promote_controller(*, root: Path | None = None, reason: str,
 def _print_report(report: dict) -> None:
     if "root" in report:
         print(f"root: {report['root']}")
-    if report.get("schema") == "atlas-controller-installation/1":
+    if report.get("schema") == "atlas-codex-reconstruction/1":
+        print(f"recipe: {report['recipe']}")
+        print(f"upstream: {report['upstream_tag']} {report['upstream_commit']}")
+        print(f"head: {report['final_sha']}")
+        print(f"worktree: {report['worktree']}")
+        print("ATLAS CODEX RECONSTRUCTION: PASS")
+    elif report.get("schema") == "atlas-codex-build/1":
+        print(f"recipe: {report['recipe']}")
+        print(f"head: {report['head']}")
+        print(f"binary: {report['binary']}")
+        print(f"version: {report['version']}")
+        print(f"sha256: {report['sha256']}")
+        print("exec help contract: PASS")
+        print("ATLAS CODEX BUILD: PASS")
+    elif report.get("schema") == "atlas-controller-installation/1":
         print(f"head: {report['head']}")
         print(f"controller: {report['controller_src']}")
         print(f"snapshot sha256: {report['snapshot_sha256']}")
@@ -1133,6 +1147,19 @@ def main(argv: list[str] | None = None) -> int:
     p_runtime.add_argument("--releases-dir", type=Path)
     p_runtime.add_argument("--json", action="store_true")
 
+    p_reconstruct = sub.add_parser("reconstruct-codex")
+    p_reconstruct.add_argument("--source-repo", type=Path, required=True)
+    p_reconstruct.add_argument("--worktree", type=Path, required=True)
+    p_reconstruct.add_argument("--recipe", type=Path)
+    p_reconstruct.add_argument("--json", action="store_true")
+
+    p_build = sub.add_parser("build-codex")
+    p_build.add_argument("--worktree", type=Path, required=True)
+    p_build.add_argument("--target-dir", type=Path, required=True)
+    p_build.add_argument("--recipe", type=Path)
+    p_build.add_argument("--min-free-gib", type=float, default=30.0)
+    p_build.add_argument("--json", action="store_true")
+
     p_install = sub.add_parser("install-controller")
     p_install.add_argument("--controllers-dir", type=Path)
     p_install.add_argument("--json", action="store_true")
@@ -1171,6 +1198,25 @@ def main(argv: list[str] | None = None) -> int:
                 candidate=args.candidate,
                 release_id=args.release_id,
                 releases_dir=args.releases_dir,
+            )
+        elif args.command == "reconstruct-codex":
+            from .codex_release import reconstruct_source
+            root = _repository_root()
+            recipe = args.recipe or root / "codex-runtime-recipes" / "atlas-codex-0.154.toml"
+            report = reconstruct_source(
+                source_repo=args.source_repo,
+                worktree=args.worktree,
+                recipe_path=recipe,
+            )
+        elif args.command == "build-codex":
+            from .codex_release import build_runtime
+            root = _repository_root()
+            recipe = args.recipe or root / "codex-runtime-recipes" / "atlas-codex-0.154.toml"
+            report = build_runtime(
+                worktree=args.worktree,
+                recipe_path=recipe,
+                target_dir=args.target_dir,
+                min_free_gib=args.min_free_gib,
             )
         elif args.command == "install-controller":
             report = install_controller(
