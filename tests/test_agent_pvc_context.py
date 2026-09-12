@@ -64,8 +64,11 @@ def test_codex_argv_uses_only_descriptor_authority(tmp_path):
         spec = type("Spec", (), {"repository_root": tmp_path})()
         command = executor._build_command(
             spec, base, staged.image_authorities)
-        assert command[command.index("--image")] == "--image"
-        assert command[command.index("--image") + 1] == staged.image_authorities[0].codex_path
+        detail = command.index("--image-detail")
+        image = command.index("--image")
+        assert command[detail + 1] == "original"
+        assert detail < image
+        assert command[image + 1] == staged.image_authorities[0].codex_path
     finally:
         staged.cleanup()
 
@@ -84,9 +87,11 @@ def test_codex_command_has_repeated_images_and_legacy_has_none(tmp_path):
                              "image_paths": (image1, image2)})()
     command = executor._build_command(spec, base)
     assert "--image" not in command
+    assert "--image-detail" not in command
     legacy = executor._build_command(
         type("Spec", (), {"repository_root": tmp_path, "image_paths": ()})(), base)
     assert "--image" not in legacy
+    assert "--image-detail" not in legacy
 
 
 def test_image_authority_is_executor_issued_not_prepared_object_state(tmp_path, monkeypatch):

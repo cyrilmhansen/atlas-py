@@ -712,6 +712,9 @@ class CodexExecutor:
         if self.model:
             argv += ["--model",self.model]
 
+        if image_authorities:
+            argv += ["--image-detail", "original"]
+
         for image in image_authorities:
             # Importing the private type here makes this boundary nominal:
             # a Path, or an object merely carrying a ``fd`` attribute, is not
