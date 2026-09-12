@@ -346,6 +346,7 @@ class ScratchStore:
             raise AtlasSandboxError("ATLAS_SANDBOX_RUNTIME_REMOVE_FAILED") from error
 
 class AtlasBubblewrapExecutor(CodexExecutor):
+    supports_authoritative_pvc_context = True
     native_isolation_guaranteed = True
     """Codex executor whose remote execution environment is Atlas/bwrap."""
 

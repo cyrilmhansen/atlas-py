@@ -7,12 +7,14 @@ from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
 from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
-from .executor import ExecutionSpec,ExecutorError,FakeExecutor,new_execution_id,utc_now,_write_json
+from .executor import (ExecutionSpec, ExecutorError, FakeExecutor,
+                       new_execution_id, utc_now, _write_json)
 from .codex_executor import CodexExecutor
 from .bubblewrap import AtlasBubblewrapExecutor
 from .telemetry import USAGE_SCHEMA,collect_usage,load_presentation_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 from .toolchains import CapabilityResolver, load_machine_capabilities, CapabilityError
+from .pvc_context import PvcContextSelection, PvcContextError, _stage_pvc_context
 class WorkflowError(RuntimeError): pass
 class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
@@ -342,8 +344,12 @@ class Workflow:
             accepted=self.base/transaction["source"]
             if not accepted.is_file(): accepted=self.base/transaction["destination"]
             prompt_bytes=accepted.read_bytes()
-            self._publish_context(context_path,context)
-            self._publish_context(effective_path,prompt_bytes+context)
+            derived=transaction.get("derived_context_supplement","")
+            if type(derived) is not str:
+                raise WorkflowError("EXECUTION_CONTEXT_INVALID")
+            context_bytes=derived.encode("utf-8")+context
+            self._publish_context(context_path,context_bytes)
+            self._publish_context(effective_path,prompt_bytes+context_bytes)
 
     def _validate_authoritative_provenance(self, transaction, state, prompt_bytes=None):
         """Validate journaled context before trusting or committing RUN_STARTED."""
@@ -363,7 +369,12 @@ class Workflow:
         if supplement is None or not isinstance(execution,dict): return
         if state.get("validation_epoch", 1) >= 2 and "execution_input_sha256" in execution and execution.get("execution_input_sha256") != execution.get("effective_prompt_sha256"):
             raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
-        context=supplement.encode("utf-8")
+        # The accepted parent context is authoritative lifecycle data. PVC
+        # framing is a separate, derived execution-context attestation.
+        derived=transaction.get("derived_context_supplement","")
+        if type(derived) is not str:
+            raise WorkflowError("EXECUTION_CONTEXT_INVALID")
+        context=derived.encode("utf-8")+supplement.encode("utf-8")
         if prompt_bytes is None:
             source=self.base/transaction["source"]
             destination=self.base/transaction["destination"]
@@ -380,7 +391,7 @@ class Workflow:
         if hashlib.sha256(prompt_bytes+context).hexdigest()!=execution.get("effective_prompt_sha256"):
             raise WorkflowError("EXECUTION_CONTEXT_HASH_MISMATCH")
         expected,_=self._parent_context(state,transaction["generation"])
-        if expected != context:
+        if expected != supplement.encode("utf-8"):
             raise WorkflowError("EXECUTION_CONTEXT_SEMANTICS_MISMATCH")
     def _replayed(self):
         try:
@@ -1451,9 +1462,11 @@ class Workflow:
                 raise WorkflowError(f"CHECKPOINT_RECOVERY_REQUIRED: {error}") from error
             self._finish_checkpoint(generation,x,intent,now)
             s=replay_journal(self.journal.read()); self._save(s); return s
-    def execute(self,generation,executor=None,observer=None):
+    def execute(self,generation,executor=None,observer=None,pvc_context=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
         preparation_owned = False
+        staged_pvc = None
+        execution_input = None
         try:
             with lock(self.base/"lock"):
                 s,x=self._record(generation)
@@ -1508,15 +1521,45 @@ class Workflow:
                 if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
                 execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
                 capability_archive_path = None
-                context, context_info = self._parent_context(s, generation)
+                parent_context, context_info = self._parent_context(s, generation)
+                derived_context = b""
+                if pvc_context is not None:
+                    if not isinstance(pvc_context, PvcContextSelection):
+                        raise WorkflowError("PVC_CONTEXT_SELECTION_REQUIRED")
+                    # PVC transport is an explicit executor capability, not
+                    # an implication of inheriting from CodexExecutor.
+                    if (not isinstance(executor, CodexExecutor) or
+                            getattr(type(executor),
+                                    "supports_authoritative_pvc_context",
+                                    False) is not True):
+                        raise WorkflowError("PVC_CONTEXT_IMAGE_CAPABILITY_REQUIRED")
+                    try:
+                        staged_pvc = _stage_pvc_context(pvc_context)
+                    except PvcContextError as error:
+                        raise WorkflowError(str(error)) from error
+                    derived_context = staged_pvc.framing.encode("utf-8")
+                context = derived_context + parent_context
                 context_sha256=hashlib.sha256(context).hexdigest()
                 effective_input=x["prompt_sha256"]
                 effective_input=hashlib.sha256(prompt_bytes+context).hexdigest()
                 context_path=self.base/"reports"/"contexts"/(execution_id+".txt")
                 effective_path=self.base/"reports"/"contexts"/(execution_id+"-effective.txt")
                 spec=ExecutionSpec(generation,x["prompt_sha256"],x["action"],accepted,self.root,execution_id,report_dir,self.base,x.get("checkpoint"),snapshot,prompt_bytes+context,"bytes-v1",effective_input,capability_plan)
+                # The effective prompt is part of the final spec.  In the PVC
+                # path it must be prepared before issuing the executor handle
+                # so that handle identity remains stable through the durable
+                # start boundary.  Keep the historical text-only staging
+                # boundary below: its failure semantics are part of the
+                # existing workflow contract and it has no private executor
+                # state to preserve.
+                if staged_pvc is not None:
+                    execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
+                    spec=replace(spec, prompt_path=execution_input)
                 preparation_owned = True
-                prepared=executor.prepare_execution(spec)
+                if staged_pvc is not None:
+                    prepared = executor.prepare_execution_with_pvc(spec, staged_pvc)
+                else:
+                    prepared=executor.prepare_execution(spec)
                 if snapshot:
                     try: current_policy_hash=policy_config_sha256(load_policy(self.root/"atlas-agent-policy.toml"))
                     except PolicyError as error: raise WorkflowError(str(error)) from error
@@ -1578,10 +1621,12 @@ class Workflow:
                 metadata.update({"prompt_input":"accepted_prompt_plus_atlas_context","context_path":str(context_path.relative_to(self.base)),"effective_prompt_path":str(effective_path.relative_to(self.base)),"context_sha256":context_sha256,"effective_prompt_sha256":effective_input,"execution_input_sha256":effective_input})
                 if snapshot:
                     metadata.update({"owner_schema":"atlas-agent-execution-owner/3","policy_snapshot":snapshot})
-                context_supplement=context.decode("utf-8")
+                context_supplement=parent_context.decode("utf-8")
                 execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
                 src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
                 start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
+                if derived_context:
+                    start_payload["derived_context_supplement"] = derived_context.decode("utf-8")
                 if snapshot is not None:
                     start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
                 self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
@@ -1645,7 +1690,6 @@ class Workflow:
                 raise post_start_error
             running= self.base/"running"/x["action"]/accepted.name
             started=True; telemetry_failed=False
-            execution_input=None
             try:
                 try:
                     self._publish_context(context_path,context)
@@ -1655,8 +1699,9 @@ class Workflow:
                     pass
                 prepared=getattr(executor,"post_start_prepare",lambda value: value)(prepared)
                 self._publish_execution_artifact(report_dir/"execution.json",{**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope})
-                execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
-                prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
+                if execution_input is None:
+                    execution_input=self._stage_execution_input(prompt_bytes+context, effective_input)
+                    prepared=replace(prepared,spec=replace(prepared.spec,prompt_path=execution_input))
                 launch={"kind":"dispatch_started","generation":generation,"action":x["action"],
                         "session_mode":snapshot.get("session_mode") if snapshot else x.get("session_mode"),
                         "session_mode_requested":snapshot.get("session_mode_requested") if snapshot else x.get("session_mode"),
@@ -1760,6 +1805,16 @@ class Workflow:
                     try: execution_input.unlink(missing_ok=True)
                     except OSError: pass
         finally:
+            if execution_input is not None:
+                try:
+                    execution_input.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            if staged_pvc is not None:
+                try:
+                    staged_pvc.cleanup()
+                except OSError:
+                    pass
             if preparation_owned and "prepared" in locals():
                 abandon = getattr(executor, "abandon_prepared_execution", None)
                 if abandon is not None:

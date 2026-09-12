@@ -2,7 +2,9 @@ from __future__ import annotations
 import fcntl, hashlib, json, os, re, select, shutil, signal, stat, subprocess, tempfile, threading, time
 from dataclasses import replace
 from pathlib import Path
-from .executor import ExecutorError, ExecutionResult, ExecutionSpec, PreparedExecution, utc_now, validate_permission_envelope
+from .executor import (ExecutorError, ExecutionResult,
+                       ExecutionSpec, PreparedExecution, utc_now,
+                       validate_permission_envelope)
 from .jsonl import DEFAULT_MAX_JSONL_LINE_BYTES, iter_bounded_jsonl
 from .policy import POLICY_SCHEMA, SNAPSHOT_SCHEMA, PolicyError, validate_snapshot
 
@@ -24,6 +26,10 @@ def _toml_basic_string(value: str) -> str:
     return '"' + "".join(escaped) + '"'
 
 class CodexExecutor:
+    # This is an explicit opt-in, rather than a property of the Codex
+    # inheritance tree.  Only executors which preserve the authoritative
+    # outer-client image transport may enable it.
+    supports_authoritative_pvc_context = False
     # Native Codex does not provide Atlas cross-execution isolation: its
     # sandbox runs under the same UID and can reach sibling /tmp homes.
     native_isolation_guaranteed = False
@@ -52,6 +58,10 @@ class CodexExecutor:
         self._runtime_home = None
         self._persistent_state = None
         self._active_snapshot = None
+        # PVC staging is deliberately not carried by PreparedExecution.
+        # This registry is private state of this executor instance, and its
+        # entries are consumed (and removed) by run_execution.
+        self._prepared_pvc = {}
     def _envelope(self):
         return {"sandbox_mode":self.sandbox,"approval_policy":self.approval_policy,"approvals_reviewer":self.approvals_reviewer,"strict_config":self.strict_config,"ignore_rules":self.ignore_rules,"network_access":self.network_access}
     def _validate_policy(self):
@@ -640,7 +650,7 @@ class CodexExecutor:
         except OSError as error:
             raise ExecutorError("CODEX_PINNED_RUNTIME_INVALID") from error
 
-    def _build_command(self,spec,snapshot):
+    def _build_command(self,spec,snapshot,image_authorities=()):
         codex_profile=snapshot.get("codex_profile") if snapshot else None
         reuse=bool(snapshot and snapshot.get("session_mode")=="reuse")
         requested_thread_id=snapshot.get("requested_thread_id") if reuse else None
@@ -702,10 +712,27 @@ class CodexExecutor:
         if self.model:
             argv += ["--model",self.model]
 
+        for image in image_authorities:
+            # Importing the private type here makes this boundary nominal:
+            # a Path, or an object merely carrying a ``fd`` attribute, is not
+            # an image authority.
+            from .pvc_context import _ImageAuthority
+            if type(image) is not _ImageAuthority:
+                raise ExecutorError("PVC_CONTEXT_IMAGE_UNAUTHORIZED")
+            try:
+                seals = fcntl.fcntl(image.fd, fcntl.F_GET_SEALS)
+                required = (fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW |
+                            fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+                if seals & required != required:
+                    raise ExecutorError("PVC_CONTEXT_IMAGE_UNSEALED")
+                argv += ["--image", image.codex_path]
+            except Exception as error:
+                raise ExecutorError("PVC_CONTEXT_IMAGE_UNAVAILABLE") from error
         argv += [requested_thread_id,"-"] if reuse else ["-"]
         return tuple(argv)
 
-    def _validated_runtime_command(self,prepared,runtime_fd=None):
+    def _validated_runtime_command(self,prepared,runtime_fd=None,
+                                   image_authorities=()):
         if prepared.policy_snapshot != prepared.spec.policy_snapshot:
             raise ExecutorError("POLICY_SNAPSHOT_BINDING_MISMATCH")
         snapshot=self._require_executable_snapshot(prepared.policy_snapshot)
@@ -713,7 +740,8 @@ class CodexExecutor:
         self._active_snapshot = snapshot
         try:
             self._prepare_runtime_home(prepared.spec.execution_id)
-            expected=self._build_command(prepared.spec,snapshot)
+            expected=self._build_command(prepared.spec,snapshot,
+                                         image_authorities)
             if prepared.command!=expected:
                 raise ExecutorError("PREPARED_COMMAND_MISMATCH")
         except BaseException:
@@ -776,7 +804,7 @@ class CodexExecutor:
             "version":None,
             "capabilities":["exec","jsonl","stdin-prompt","model","sandbox","ephemeral","resume"],
         }
-    def prepare_execution(self,spec):
+    def _prepare_execution(self,spec,image_authorities=()):
         self._validate_policy()
         if not self.executable: raise ExecutorError("CODEX_NOT_FOUND")
         if spec.input_mode not in {"legacy", "bytes-v1"}: raise ExecutorError("INVALID_EXECUTION_INPUT_MODE")
@@ -808,11 +836,66 @@ class CodexExecutor:
         finally:
             os.close(runtime_fd)
 
-        command=self._build_command(spec,snapshot)
+        command=self._build_command(spec,snapshot,image_authorities)
         return PreparedExecution(
             spec,"codex",command,info["version"],
-            self._envelope(),snapshot,
+            # Image state is intentionally absent from this public value.
+            # The executor registry below is the only PVC authority.
+            self._envelope(),snapshot,None,
         )
+
+    def prepare_execution(self, spec):
+        """Prepare a text-only execution; images are not in ExecutionSpec."""
+        return self._prepare_execution(spec, ())
+
+    def prepare_execution_with_pvc(self, spec, staged):
+        """Compose PVC authority with this executor's normal preparation.
+
+        The virtual call is intentional: Bubblewrap gets to acquire its lock,
+        create scratch, prepare the exec-server, and issue its descriptor
+        before image transport is bound to that exact preparation.
+        """
+        from .pvc_context import _StagedPvcContext
+        if type(staged) is not _StagedPvcContext:
+            raise ExecutorError("PVC_CONTEXT_STAGE_REQUIRED")
+        prepared = None
+        try:
+            prepared = self.prepare_execution(spec)
+            # PreparedExecution is the executor-issued identity.  Only its
+            # command is augmented; authorities remain in this instance's
+            # private registry and never enter the public preparation value.
+            command = self._build_command(
+                spec, prepared.policy_snapshot, staged.image_authorities)
+            object.__setattr__(prepared, "command", command)
+            self._prepared_pvc[id(prepared)] = (prepared, staged)
+            return prepared
+        except BaseException:
+            if prepared is not None:
+                # PVC binding is after normal preparation; if binding itself
+                # fails, return that preparation to the concrete executor's
+                # ordinary abandonment path (not just the PVC cleanup path).
+                abandon = getattr(self, "abandon_prepared_execution", None)
+                if abandon is not None:
+                    abandon(prepared)
+            staged.cleanup()
+            raise
+
+    # Kept as a narrow compatibility alias for the in-tree transition; new
+    # callers must use the explicit capability method above.
+    _prepare_execution_with_pvc = prepare_execution_with_pvc
+
+    def _take_prepared_pvc(self, prepared):
+        """Consume only state issued by this executor for this exact object."""
+        entry = self._prepared_pvc.pop(id(prepared), None)
+        if entry is None or entry[0] is not prepared:
+            return None
+        return entry[1]
+
+    def abandon_prepared_execution(self, prepared):
+        """Release a preparation that never reached ``run_execution``."""
+        staged = self._take_prepared_pvc(prepared)
+        if staged is not None:
+            staged.cleanup()
 
     def post_start_prepare(self, prepared):
         # No subprocess or fallible runtime probing is permitted after the
@@ -914,19 +997,35 @@ class CodexExecutor:
         try: prompt.close()
         except Exception as error: state["close_error"] = error
     def run_execution(self,prepared,_runtime_binary_fd=None):
-        if (prepared.spec.input_mode == "bytes-v1" and
-                hashlib.sha256(prepared.spec.prompt_bytes).hexdigest() !=
-                prepared.spec.expected_input_sha256):
-            raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
-        command,pass_fds,owned_fd=self._validated_runtime_command(
-            prepared,_runtime_binary_fd
-        )
+        staged = self._take_prepared_pvc(prepared)
+        authorities = staged.image_authorities if staged is not None else ()
+        try:
+            if (prepared.spec.input_mode == "bytes-v1" and
+                    hashlib.sha256(prepared.spec.prompt_bytes).hexdigest() !=
+                    prepared.spec.expected_input_sha256):
+                raise ExecutorError("EXECUTION_INPUT_HASH_MISMATCH")
+            if authorities:
+                command,pass_fds,owned_fd=self._validated_runtime_command(
+                    prepared, _runtime_binary_fd, authorities)
+            else:
+                # Keep the established text-only executor hook compatible
+                # with embedders that instrument this method.
+                command,pass_fds,owned_fd=self._validated_runtime_command(
+                    prepared, _runtime_binary_fd)
+        except BaseException:
+            if staged is not None:
+                staged.cleanup()
+            raise
+        image_fds = tuple(image.fd for image in authorities)
+        pass_fds = tuple(dict.fromkeys((*pass_fds, *image_fds)))
         if (not self.native_isolation_guaranteed and
                 self.executable and
                 Path(self.executable).read_bytes()[:4] == b"\x7fELF"):
             try:
                 self._cleanup_runtime_home()
             finally:
+                if staged is not None:
+                    staged.cleanup()
                 if owned_fd is not None:
                     os.close(owned_fd)
             raise ExecutorError("CODEX_NATIVE_CROSS_EXECUTION_ISOLATION_UNAVAILABLE")
@@ -936,14 +1035,18 @@ class CodexExecutor:
             )
         finally:
             try:
-                self._persist_runtime_state()
+                if staged is not None:
+                    staged.cleanup()
             finally:
                 try:
-                    self._cleanup_runtime_home()
+                    self._persist_runtime_state()
                 finally:
-                    if owned_fd is not None:
-                        try: os.close(owned_fd)
-                        except OSError: pass
+                    try:
+                        self._cleanup_runtime_home()
+                    finally:
+                        if owned_fd is not None:
+                            try: os.close(owned_fd)
+                            except OSError: pass
 
     def _run_execution_inner(self,prepared,launch_command,pass_fds):
         spec=prepared.spec; spec.report_dir.mkdir(parents=True,exist_ok=True)

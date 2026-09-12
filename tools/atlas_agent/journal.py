@@ -389,7 +389,7 @@ class Journal:
             "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
             "RECOVERY_PERFORMED":{"repaired"},
         }[event]
-        if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement"}
+        if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement","derived_context_supplement"}
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
         if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
@@ -636,8 +636,12 @@ class Journal:
             if form["kind"] == "execution" and form["action"] == "checkpoint": raise JournalError(f"context supplement invalid at line {n}")
             if generations is not None:
                 _validate_parent_context(form,p.get("generation",0),generations,n)
+            derived=p.get("derived_context_supplement", "")
+            if type(derived) is not str or len(derived.encode("utf-8")) > 4096:
+                raise JournalError(f"derived context supplement invalid at line {n}")
             execution=p.get("execution")
-            if not isinstance(execution,dict) or "context_sha256" not in execution or hashlib.sha256(supplement.encode("utf-8")).hexdigest()!=execution["context_sha256"]:
+            combined=derived.encode("utf-8")+supplement.encode("utf-8")
+            if not isinstance(execution,dict) or "context_sha256" not in execution or hashlib.sha256(combined).hexdigest()!=execution["context_sha256"]:
                 raise JournalError(f"context supplement provenance invalid at line {n}")
     def append(self,event,**fields):
         events=self.read(); seq=len(events)+1
