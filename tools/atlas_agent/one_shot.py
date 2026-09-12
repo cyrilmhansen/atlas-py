@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
 import os
+import select
 from pathlib import Path
 import signal
 import shutil
@@ -37,10 +38,12 @@ class ProcessResult:
     stderr_path: Path
     timed_out: bool = False
     scratch_path: Path | None = None
+    output_limit_exceeded: str | None = None
 
     @property
     def succeeded(self) -> bool:
-        return self.exit_code == 0 and not self.timed_out
+        return (self.exit_code == 0 and not self.timed_out
+                and self.output_limit_exceeded is None)
 
 
 class OneShotExecutor:
@@ -53,6 +56,10 @@ class OneShotExecutor:
 
     SHUTDOWN_GRACE_SECONDS = 1.0
     SHUTDOWN_KILL_SECONDS = 1.0
+    # PVC's retained JSON document is bounded at this same trust boundary.
+    # Collection, rather than post-hoc validation, enforces the disk bound.
+    MAX_STDOUT_BYTES = 16 * 1024 * 1024
+    MAX_STDERR_BYTES = 16 * 1024 * 1024
 
     def __init__(self, *, timeout_seconds: float = 300):
         if isinstance(timeout_seconds, bool):
@@ -128,42 +135,81 @@ class OneShotExecutor:
             started = _now()
             began = time.monotonic()
             timed_out = False
+            output_limit_exceeded = None
             with stdout, stderr:
                 try:
                     process = subprocess.Popen(
-                        launch, env={}, stdout=stdout, stderr=stderr,
+                        launch, env={}, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         start_new_session=True,
                         pass_fds=tuple(m.authority_fd for m in capability_plan.mounts),
                     )
                 except OSError as error:
                     raise ExecutorError(f"ONE_SHOT_LAUNCH_FAILED: {error}") from error
                 try:
-                    while True:
+                    stdout_fd = process.stdout.fileno()
+                    stderr_fd = process.stderr.fileno()
+                    os.set_blocking(stdout_fd, False)
+                    os.set_blocking(stderr_fd, False)
+                    output_sizes = {stdout_fd: 0, stderr_fd: 0}
+                    output_files = {stdout_fd: stdout, stderr_fd: stderr}
+                    output_limits = {stdout_fd: self.MAX_STDOUT_BYTES,
+                                     stderr_fd: self.MAX_STDERR_BYTES}
+                    eof = set()
+                    while process.poll() is None or len(eof) < 2:
                         remaining = self.timeout_seconds - (time.monotonic() - began)
                         if remaining <= 0:
                             timed_out = True
-                            exit_code = self._terminate_and_reap(process)
+                            self._terminate_and_reap(process)
                             break
-                        try:
-                            exit_code = process.wait(timeout=min(remaining, 0.2))
-                            break
-                        except subprocess.TimeoutExpired:
-                            continue
+                        readable, _, _ = select.select(
+                            [fd for fd in (stdout_fd, stderr_fd) if fd not in eof],
+                            [], [], min(remaining, .2))
+                        if readable:
+                            for fd in readable:
+                                try:
+                                    value = os.read(fd, 1024 * 1024)
+                                except BlockingIOError:
+                                    continue
+                                if not value:
+                                    eof.add(fd)
+                                    continue
+                                limit = output_limits[fd]
+                                if output_sizes[fd] + len(value) > limit:
+                                    allowed = limit - output_sizes[fd]
+                                    if allowed:
+                                        output_files[fd].write(value[:allowed])
+                                        output_files[fd].flush()
+                                    self._terminate_and_reap(process)
+                                    stream = "STDOUT" if fd == stdout_fd else "STDERR"
+                                    output_limit_exceeded = stream
+                                    eof.update((stdout_fd, stderr_fd))
+                                    break
+                                output_sizes[fd] += len(value)
+                                output_files[fd].write(value)
+                                output_files[fd].flush()
+                    # poll() is non-blocking; only use wait after the child
+                    # has actually terminated.  In particular, EOF on both
+                    # pipes is not evidence that the process is dead.
+                    exit_code = process.wait(timeout=0) if process.poll() is not None else process.returncode
                 except BaseException:
-                    self._terminate_and_reap(process)
+                    if "process" in locals() and process.poll() is None:
+                        self._terminate_and_reap(process)
                     raise
         except OSError as error:
             failure = ExecutorError(f"ONE_SHOT_OUTPUT_FAILED: {error}")
             self._cleanup_failed_scratch(scratch, failure)
             raise failure from error
         except BaseException as error:
-            # No result exists yet, so this scratch cannot be useful to a
-            # later validation layer.
-            self._cleanup_failed_scratch(scratch, error)
-            raise
+            # A limit breach is a terminal execution result, not a launch
+            # exception.  Its bounded controller evidence and operation
+            # scratch are intentionally retained.
+            if "output_limit_exceeded" not in locals() or output_limit_exceeded is None:
+                self._cleanup_failed_scratch(scratch, error)
+            else:
+                raise
         return ProcessResult(
             argv, started, _now(), exit_code, stdout_path, stderr_path, timed_out,
-            scratch,
+            scratch, output_limit_exceeded,
         )
 
     @staticmethod
@@ -198,7 +244,13 @@ class OneShotExecutor:
             "--symlink", "usr/sbin", "/sbin", "--ro-bind", "/etc", "/etc",
             "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
             "--tmpfs", "/dev/shm", "--dir", "/var", "--dir", "/var/tmp",
-            "--bind", str(scratch), "/var/tmp", "--dir", "/opt", "--clearenv",
+            "--bind", str(scratch), "/var/tmp",
+            # These names are controller-owned retained streams.  Masking
+            # them after the writable bind prevents writes, truncation,
+            # unlink, and replacement by the guest.
+            "--ro-bind", "/dev/null", "/var/tmp/stdout",
+            "--ro-bind", "/dev/null", "/var/tmp/stderr",
+            "--dir", "/opt", "--clearenv",
             "--ro-bind", str(root), str(root),
         ]
         for mount in plan.mounts:
