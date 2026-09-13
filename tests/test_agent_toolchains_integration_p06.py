@@ -761,7 +761,7 @@ def test_current_capability_free_execution_uses_current_schema_pairing(
     workflow.execute(1, DescriptorFake(observed_thread_id="schema-pairing"))
     execution = workflow._state()["generations"]["1"]["execution"]
     snapshot = execution["policy_snapshot"]
-    assert snapshot["schema"] == "atlas-agent-policy-snapshot/3"
+    assert snapshot["schema"] == "atlas-agent-policy-snapshot/4"
     assert execution["owner_schema"] == "atlas-agent-execution-owner/3"
     assert execution["provenance_version"] == 3
     assert execution["execution_backend_schema"] == "atlas-bwrap-execution/2"
@@ -802,6 +802,7 @@ def test_start_run_rejects_replay_only_schema_as_new_execution(
         load_policy(workflow.root / "atlas-agent-policy.toml")
     ))
     historical["schema"] = "atlas-agent-policy/1"
+    historical.pop("compute_profiles", None)
     for profile in historical["profiles"].values():
         if profile.get("executor") == "codex":
             profile.pop("required_toolchains", None)
@@ -957,6 +958,7 @@ def test_new_execution_rejects_replay_only_policy_and_snapshot_schemas(tmp_path)
     policy = load_policy(workflow.root / "atlas-agent-policy.toml")
     legacy_policy = json.loads(json.dumps(policy))
     legacy_policy["schema"] = "atlas-agent-policy/1"
+    legacy_policy.pop("compute_profiles", None)
     for profile in legacy_policy["profiles"].values():
         if profile.get("executor") == "codex":
             for key in ("required_toolchains", "writable_caches"):
@@ -964,7 +966,7 @@ def test_new_execution_rejects_replay_only_policy_and_snapshot_schemas(tmp_path)
     validate_policy(legacy_policy)  # historical parsing remains supported
     (workflow.root / "atlas-agent-policy.toml").write_text(
         (workflow.root / "atlas-agent-policy.toml").read_text().replace(
-            'schema = "atlas-agent-policy/2"',
+            'schema = "atlas-agent-policy/3"',
             'schema = "atlas-agent-policy/1"', 1
         ).replace(
             'required_toolchains = []\n', '', 1
@@ -1051,6 +1053,7 @@ def test_journal_rejects_each_mixed_schema_tuple_even_when_versions_are_valid(
             load_policy(workflow.root / "atlas-agent-policy.toml")
         ))
         historical["schema"] = "atlas-agent-policy/1"
+        historical.pop("compute_profiles", None)
         for profile in historical["profiles"].values():
             if profile.get("executor") == "codex":
                 profile.pop("required_toolchains", None)

@@ -29,8 +29,8 @@ def pinned_codex(tmp_path, executable, **executor_kwargs):
     )
 
     snapshot = {
-        "schema": "atlas-agent-policy-snapshot/3",
-        "policy_schema": "atlas-agent-policy/2",
+        "schema": "atlas-agent-policy-snapshot/4",
+        "policy_schema": "atlas-agent-policy/3",
         "policy_config_sha256": "a" * 64,
         "action": "implementation",
         "checkpoint": "test",
@@ -38,6 +38,8 @@ def pinned_codex(tmp_path, executable, **executor_kwargs):
         "executor": "codex",
         "requested_model": "gpt-5.6-luna",
         "requested_reasoning_effort": "medium",
+        "requested_compute_profile": "action-default",
+        "resolved_compute_profile": "action-default",
         "session_mode": "fresh",
         "sandbox_mode": "workspace-write",
         "network_access_requested": False,

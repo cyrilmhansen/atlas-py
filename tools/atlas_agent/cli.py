@@ -143,7 +143,7 @@ class DispatchPresenter:
 def main(argv=None):
     p=argparse.ArgumentParser(prog="atlas-agent")
     p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create","adopt-boundary"])
-    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--expected-head"); p.add_argument("--new-head"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
+    p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--expected-head"); p.add_argument("--new-head"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--compute-profile"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
     p.add_argument("--history", type=_history_value, default=DEFAULT_STATUS_HISTORY,
                    help="status history count (non-negative integer or all)")
     p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
@@ -160,7 +160,7 @@ def main(argv=None):
             if isinstance(body, str): body = body.encode("utf-8")
             path, prompt = w.prompt_create(a.checkpoint, a.action, body,
                                            a.session_mode, a.reuse_execution_id,
-                                           a.network_access)
+                                           a.network_access, a.compute_profile)
             print(f"g{prompt.generation} · prompt created")
             print(path)
         elif a.command=="ingest": w.ingest()

@@ -1,7 +1,7 @@
 import hashlib
 import re
 import tomllib
-from .model import Prompt, PROMPT_SCHEMA, PROMPT_SCHEMA_V2, ACTIONS, SESSIONS
+from .model import Prompt, PROMPT_SCHEMA, PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3, ACTIONS, SESSIONS
 
 class PromptError(ValueError):
     def __init__(self, code: str, message: str):
@@ -33,13 +33,15 @@ def parse_prompt(raw: bytes) -> Prompt:
         allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode"}
     elif schema == PROMPT_SCHEMA_V2:
         allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode", "network_access", "reuse_execution_id"}
+    elif schema == PROMPT_SCHEMA_V3:
+        allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode", "network_access", "reuse_execution_id", "compute_profile"}
     else:
         raise PromptError("UNSUPPORTED_SCHEMA", str(schema))
     unknown = set(data) - allowed
     if unknown:
         raise PromptError("UNKNOWN_FIELD", ", ".join(sorted(unknown)))
     required = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode"}
-    if schema == PROMPT_SCHEMA_V2: required.add("network_access")
+    if schema in {PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3}: required.add("network_access")
     missing = required - set(data)
     if missing:
         raise PromptError("MISSING_FIELD", ", ".join(sorted(missing)))
@@ -61,7 +63,8 @@ def parse_prompt(raw: bytes) -> Prompt:
         raise PromptError("BAD_SESSION_MODE", str(data["session_mode"]))
     network_access = None
     reuse_execution_id = None
-    if schema == PROMPT_SCHEMA_V2:
+    compute_profile = None
+    if schema in {PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3}:
         if type(data["network_access"]) is not bool:
             raise PromptError("BAD_NETWORK_ACCESS", "network_access must be bool")
         network_access = data["network_access"]
@@ -70,6 +73,13 @@ def parse_prompt(raw: bytes) -> Prompt:
             raise PromptError("REUSE_TARGET_FORBIDDEN", "fresh prompts cannot name a reuse target")
         if data["session_mode"] == "reuse" and (type(reuse_execution_id) is not str or not reuse_execution_id):
             raise PromptError("REUSE_TARGET_MISSING", "reuse prompts require reuse_execution_id")
+        if schema == PROMPT_SCHEMA_V3:
+            compute_profile = data.get("compute_profile")
+            if type(compute_profile) is not str or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", compute_profile):
+                raise PromptError("BAD_COMPUTE_PROFILE", "compute_profile must be a valid profile name")
+            if data["action"] == "checkpoint":
+                raise PromptError("COMPUTE_PROFILE_FORBIDDEN",
+                                  "checkpoints cannot select a compute profile")
     head = data["expected_head"]
     if not isinstance(head, str) or not re.fullmatch(r"[0-9a-fA-F]{40,64}", head):
         raise PromptError("BAD_EXPECTED_HEAD", "expected_head must be a Git object id")
@@ -77,4 +87,4 @@ def parse_prompt(raw: bytes) -> Prompt:
     body_start=end+close_len
     if text[body_start:body_start+2]=="\r\n": body_start+=2
     elif text[body_start:body_start+1]=="\n": body_start+=1
-    return Prompt(raw, digest, generation, parent, data["checkpoint"], data["action"], head.lower(), data["session_mode"], text[body_start:], network_access, reuse_execution_id, schema)
+    return Prompt(raw, digest, generation, parent, data["checkpoint"], data["action"], head.lower(), data["session_mode"], text[body_start:], network_access, reuse_execution_id, compute_profile, schema)

@@ -508,8 +508,8 @@ class CodexExecutor:
         except (PolicyError, TypeError, AttributeError) as error:
             raise ExecutorError("POLICY_SNAPSHOT_NOT_EXECUTABLE") from error
         if (
-            validated.get("schema") != SNAPSHOT_SCHEMA
-            or validated.get("policy_schema") != POLICY_SCHEMA
+            (validated.get("schema"), validated.get("policy_schema")) !=
+                (SNAPSHOT_SCHEMA, POLICY_SCHEMA)
             or validated.get("executor") != "codex"
             or not isinstance(validated.get("codex_profile"),str)
         ):
@@ -709,8 +709,10 @@ class CodexExecutor:
             not snapshot or snapshot.get("session_storage")=="ephemeral"
         ):
             argv.append("--ephemeral")
-        if self.model:
-            argv += ["--model",self.model]
+        if snapshot and "requested_model" in snapshot:
+            argv += ["--model", snapshot["requested_model"]]
+        elif self.model:
+            argv += ["--model", self.model]
 
         if image_authorities:
             argv += ["--image-detail", "original"]
@@ -819,7 +821,7 @@ class CodexExecutor:
         snapshot=self._require_executable_snapshot(spec.policy_snapshot)
         codex_profile=snapshot["codex_profile"]
         if (
-            self.model != snapshot.get("requested_model")
+            (self.model is not None and self.model != snapshot.get("requested_model"))
             or self.approval_policy != "never"
             or self.approvals_reviewer != "user"
             or self.sandbox != snapshot.get("sandbox_mode")

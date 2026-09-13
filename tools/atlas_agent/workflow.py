@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib, json, os, re, tempfile, uuid, tomllib
 from dataclasses import replace
 from pathlib import Path
-from .model import Prompt, PROMPT_SCHEMA_V2
+from .model import Prompt, PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
 from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness,is_ancestor
@@ -99,7 +99,7 @@ def replay_journal(events):
             if e["event"]=="RUN_STARTED":
                 g=str(p["generation"]); rec=state["generations"].get(g)
                 if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"] or rec["action"]!=p["action"]: raise WorkflowError("JOURNAL_LIFECYCLE")
-                if (rec.get("prompt_schema") == "atlas-agent-prompt/2" and rec["action"] != "checkpoint"
+                if (rec.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and rec["action"] != "checkpoint"
                         and "witness" not in p and "witness" in prepared):
                     raise WorkflowError("RUN_STARTED witness required")
                 if "witness" in p and p["witness"] != rec["witness"]:
@@ -129,7 +129,7 @@ def replay_journal(events):
                         start={x["path"] for x in rec.get("start_witness",rec["witness"]).get("unexpected_untracked",[])}
                         terminal={x["path"] for x in p["witness"].get("unexpected_untracked",[])}
                         derived=terminal-start-protected-existing
-                        if rec.get("prompt_schema") == "atlas-agent-prompt/2" and "acquired_untracked" not in p:
+                        if rec.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and "acquired_untracked" not in p:
                             raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
                         acquired=set(p.get("acquired_untracked", sorted(derived)))
                         if acquired != derived or acquired & protected or acquired & existing:
@@ -550,7 +550,7 @@ class Workflow:
         record=state.get("generations", {}).get(str(payload.get("generation")))
         if not isinstance(record, dict) or not isinstance(snapshot, dict):
             raise WorkflowError("SESSION_PLAN_PROVENANCE_INVALID")
-        if record.get("prompt_schema") != "atlas-agent-prompt/2":
+        if record.get("prompt_schema") not in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
             return
         try:
             validate_snapshot(snapshot)
@@ -676,7 +676,7 @@ class Workflow:
             for d in DIRS: (self.base/d).mkdir(parents=True,exist_ok=True)
             w=witness(self.root,self.allowed); self.journal.append("WORKFLOW_INITIALIZED",repository_root=str(self.root),head=w["head"],branch=w["branch"],witness=w,validation_epoch=2); self._save(replay_journal(self.journal.read()))
     def prompt_create(self, checkpoint, action, body, session_mode="fresh",
-                      reuse_execution_id=None, network_access=False):
+                      reuse_execution_id=None, network_access=False, compute_profile=None):
         """Create, but do not admit, one validated candidate in the inbox."""
         if not isinstance(body, bytes):
             raise WorkflowError("PROMPT_BODY_MUST_BE_BYTES")
@@ -694,7 +694,7 @@ class Workflow:
             quote = lambda value: json.dumps(value, ensure_ascii=False)
             header = (
                 "+++\n"
-                f"schema = {quote(PROMPT_SCHEMA_V2)}\n"
+                f"schema = {quote(PROMPT_SCHEMA_V3 if compute_profile is not None else PROMPT_SCHEMA_V2)}\n"
                 f"generation = {generation}\n"
                 f"parent = {quote(parent) if isinstance(parent, str) else parent}\n"
                 f"checkpoint = {quote(checkpoint)}\n"
@@ -703,6 +703,8 @@ class Workflow:
                 f"session_mode = {quote(session_mode)}\n"
                 f"network_access = {'true' if network_access else 'false'}\n"
             )
+            if compute_profile is not None:
+                header += f"compute_profile = {quote(compute_profile)}\n"
             if reuse_execution_id is not None:
                 header += f"reuse_execution_id = {quote(reuse_execution_id)}\n"
             raw = header.encode("utf-8") + b"+++\n" + body
@@ -898,7 +900,7 @@ class Workflow:
     def _policy_for(self, record):
         path=self.root/"atlas-agent-policy.toml"
         if not path.exists():
-            if record.get("prompt_schema")=="atlas-agent-prompt/2": raise WorkflowError("POLICY_CONFIG_REQUIRED")
+            if record.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}: raise WorkflowError("POLICY_CONFIG_REQUIRED")
             return None
         try: return load_policy(path)
         except PolicyError as error: raise WorkflowError(str(error)) from error
@@ -1000,7 +1002,7 @@ class Workflow:
             accepted_prompt=parse_prompt(prompt_path.read_bytes())
         except (OSError, PromptError) as error:
             raise WorkflowError("PROMPT_ARCHIVE_CORRUPT") from error
-        if accepted_prompt.prompt_schema == "atlas-agent-prompt/2" and (
+        if accepted_prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and (
                 accepted_prompt.session_mode != "reuse" or
                 accepted_prompt.reuse_execution_id != target_id):
             raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID")
@@ -1019,7 +1021,7 @@ class Workflow:
             # A damaged owner is not equivalent to a policy rollover.  Keep
             # this fail-closed so reuse fallback cannot conceal tampering.
             raise WorkflowError("REUSE_TARGET_PROVENANCE_INVALID") from error
-        if target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}:
+        if target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3", "atlas-agent-policy-snapshot/4"}:
             raise WorkflowError("REUSE_TARGET_INCOMPATIBLE")
         target_prompt_path=self.base/"prompts"/(target["prompt_sha256"]+".txt")
         try:
@@ -1074,10 +1076,12 @@ class Workflow:
         if owner.get("capability_plan_sha256") != snapshot.get("capability_plan_sha256"):
             raise WorkflowError("REUSE_CAPABILITIES_INCOMPATIBLE")
         incompatible = (
-            target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
-            or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
+            target_snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3", "atlas-agent-policy-snapshot/4"}
+            or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3", "atlas-agent-policy-snapshot/4"}
         )
-        for key in ("action","profile","executor","requested_model","requested_reasoning_effort","sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
+        for key in ("action","profile","executor","requested_model","requested_reasoning_effort",
+                    "requested_compute_profile","resolved_compute_profile",
+                    "sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
             incompatible = incompatible or target_snapshot.get(key)!=snapshot.get(key)
         # Integrity of the later thread lineage is authoritative over every
         # ordinary stale/policy fallback decision.
@@ -1176,7 +1180,7 @@ class Workflow:
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
             self._admit_run_start(s, generation)
-            if (execution is None and x.get("prompt_schema") == "atlas-agent-prompt/2"
+            if (execution is None and x.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
                     and x["action"] != "checkpoint"):
                 raise WorkflowError("EXECUTION_METADATA_REQUIRED")
             ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
@@ -1185,7 +1189,7 @@ class Workflow:
                 execution_id=execution.get("execution_id")
                 report_dir=Path(execution.get("report_dir",""))
                 if (type(execution_id) is not str or not execution_id
-                        or (x.get("prompt_schema") == "atlas-agent-prompt/2"
+                        or (x.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
                             and x["action"] != "checkpoint"
                             and not _EXECUTION_ID.fullmatch(execution_id))
                         or report_dir.is_absolute() or "\\" in str(report_dir)
@@ -1256,7 +1260,7 @@ class Workflow:
                 execution.update({"historical_policy_path":historical_policy_path,
                                   "historical_policy_sha256":historical_policy_sha256})
             src=self._find(self.base/"accepted",generation,x["prompt_sha256"]); payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
-            if x.get("prompt_schema") == "atlas-agent-prompt/2":
+            if x.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
                 network_access=x.get("network_access")
                 if type(network_access) is not bool:
                     raise WorkflowError("PROMPT_NETWORK_PROVENANCE_MISSING")
@@ -1277,7 +1281,7 @@ class Workflow:
                     payload["context_supplement"]=context
                 payload["execution"]=execution
             try:
-                if execution is not None and x.get("prompt_schema") == "atlas-agent-prompt/2" and x["action"] != "checkpoint":
+                if execution is not None and x.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and x["action"] != "checkpoint":
                     self._validate_historical_session_plan(s, payload)
             except BaseException:
                 if historical_policy_path:
@@ -1469,7 +1473,7 @@ class Workflow:
         if x["status"]=="ACCEPTED":
             running=self.base/"running"/x["action"]/src.name
             start_payload={"generation":generation,"action":x["action"],"witness":x["witness"]}
-            if x.get("prompt_schema") == "atlas-agent-prompt/2":
+            if x.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
                 start_payload["network_access"] = x["network_access"]
             move_transaction(self.base,self.journal,src,running,x["prompt_sha256"],"RUN_STARTED",start_payload)
             src=running
@@ -1482,6 +1486,15 @@ class Workflow:
             s,x=self._record(generation)
             if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
             if x["action"]!="checkpoint": raise WorkflowError("GENERATION_IS_NOT_CHECKPOINT")
+            # Check the durable prompt again at the manual boundary.  The
+            # checkpoint path does not resolve Codex policy, so prompt
+            # validation is the authority that prevents a persisted /3
+            # compute selection from being silently ignored.
+            accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
+            try:
+                parse_prompt(accepted.read_bytes())
+            except (OSError, PromptError) as error:
+                raise WorkflowError("PROMPT_ARCHIVE_CORRUPT") from error
             self._admit_run_start(s, generation)
             if type(message) is not str or not message.strip(): raise WorkflowError("CHECKPOINT_COMMIT_MESSAGE_REQUIRED")
             ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
@@ -1558,7 +1571,12 @@ class Workflow:
                 if (self.root/".codex"/"config.toml").is_file(): raise WorkflowError("CODEX_PROJECT_CONFIG_UNSUPPORTED")
                 executor=executor or AtlasBubblewrapExecutor()
                 if snapshot and isinstance(executor,CodexExecutor):
-                    executor.model=snapshot["requested_model"]; executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
+                    # A supplied model is an assertion, not a routing
+                    # override.  Leave it intact so the executor can fail
+                    # closed on an explicit mismatch; None adopts authority.
+                    if executor.model is None:
+                        executor.model=snapshot["requested_model"]
+                    executor.sandbox=snapshot["sandbox_mode"]; executor.sandbox_mode=executor.sandbox; executor.network_access=snapshot["network_access"]; executor.ephemeral=snapshot["session_storage"]=="ephemeral"
                 ownership={"protected_untracked":s.get("protected_untracked",[]),"patch_owned_untracked":s.get("patch_owned_untracked",[])}
                 if witness(self.root,self.allowed,ownership)!=x["witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
                 execution_id=new_execution_id(); report_dir=self.base/"reports"/"executions"/execution_id
@@ -1670,7 +1688,7 @@ class Workflow:
                 if derived_context:
                     start_payload["derived_context_supplement"] = derived_context.decode("utf-8")
                 if snapshot is not None:
-                    start_payload["network_access"] = prompt.network_access if prompt.prompt_schema=="atlas-agent-prompt/2" else False
+                    start_payload["network_access"] = prompt.network_access if prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} else False
                 self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
                 if snapshot and policy is not None:
                     # This is the historical policy authority used by replay.

@@ -148,6 +148,8 @@ def _execution(value,line):
             ("atlas-agent-execution-owner/2", "atlas-agent-policy-snapshot/2", 2, "atlas-bwrap-execution/1"),
             ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/3", 3, "atlas-bwrap-execution/1"),
             ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/3", 3, "atlas-bwrap-execution/2"),
+            ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/4", 3, "atlas-bwrap-execution/1"),
+            ("atlas-agent-execution-owner/3", "atlas-agent-policy-snapshot/4", 3, "atlas-bwrap-execution/2"),
         }
         if (owner, snapshot_schema, provenance_version, backend) not in permitted:
             raise JournalError(f"execution schema tuple invalid at line {line}")
@@ -303,7 +305,7 @@ class Journal:
                         raise JournalError(f"prompt action archive mismatch at line {n}")
                     if journal_schema is not None and journal_schema != archived_schema:
                         raise JournalError(f"prompt schema archive mismatch at line {n}")
-                    if archived_schema == "atlas-agent-prompt/2":
+                    if archived_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
                         if journal_schema != archived_schema:
                             raise JournalError(f"prompt schema archive mismatch at line {n}")
                         if (
@@ -349,7 +351,7 @@ class Journal:
                             "network_access": (
                                 archived_prompt.network_access
                                 if archived_prompt is not None
-                                and archived_prompt.prompt_schema == "atlas-agent-prompt/2"
+                                and archived_prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
                                 else False
                             ),
                         }
@@ -415,7 +417,7 @@ class Journal:
         if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
         if event=="PROMPT_ACCEPTED":
-            if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2"}: raise JournalError(f"prompt schema invalid at line {n}")
+            if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2", "atlas-agent-prompt/3"}: raise JournalError(f"prompt schema invalid at line {n}")
             if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
             if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
@@ -425,7 +427,7 @@ class Journal:
 
         if (
             isinstance(started,dict)
-            and started.get("prompt_schema") == "atlas-agent-prompt/2"
+            and started.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
             and (
                 event == "RUN_STARTED"
                 or (
@@ -448,7 +450,7 @@ class Journal:
         # mutable root epoch may preserve legacy compatibility, but cannot
         # weaken the semantics proven by that prompt archive.
         explicit_legacy = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/1"
-        archived_v2 = isinstance(started, dict) and started.get("prompt_schema") == "atlas-agent-prompt/2"
+        archived_v2 = isinstance(started, dict) and started.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
         v2=archived_v2 or (validation_epoch >= 2 and not explicit_legacy)
 
         # A hash-bound v2 prompt is positive modern evidence.  Modern execution
@@ -483,7 +485,7 @@ class Journal:
                 raise JournalError(f"session mode provenance mismatch at line {n}")
             if (
                 not isinstance(snapshot,dict)
-                or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
+                or snapshot.get("schema") not in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3", "atlas-agent-policy-snapshot/4"}
             ):
                 raise JournalError(f"modern policy snapshot invalid at line {n}")
             if (
@@ -583,7 +585,7 @@ class Journal:
                         raise JournalError(f"sandbox network mismatch at line {n}")
                     if (
                         event=="RUN_STARTED"
-                        and snapshot.get("schema") in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3"}
+                        and snapshot.get("schema") in {"atlas-agent-policy-snapshot/2", "atlas-agent-policy-snapshot/3", "atlas-agent-policy-snapshot/4"}
                     ):
                         if (
                             "network_access" not in p

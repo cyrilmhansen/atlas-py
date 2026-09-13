@@ -4,6 +4,7 @@ from typing import Any
 SCHEMA = "atlas-agent-workflow/1"
 PROMPT_SCHEMA = "atlas-agent-prompt/1"
 PROMPT_SCHEMA_V2 = "atlas-agent-prompt/2"
+PROMPT_SCHEMA_V3 = "atlas-agent-prompt/3"
 ACTIONS = {"implementation", "patch_review", "state_audit", "checkpoint"}
 SESSIONS = {"fresh", "reuse"}
 
@@ -20,6 +21,7 @@ class Prompt:
     body: str
     network_access: bool | None = None
     reuse_execution_id: str | None = None
+    compute_profile: str | None = None
     prompt_schema: str = PROMPT_SCHEMA
 
     @property

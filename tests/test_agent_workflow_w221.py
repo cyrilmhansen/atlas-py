@@ -221,8 +221,8 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/3",
-        "policy_schema":"atlas-agent-policy/2",
+        "schema":"atlas-agent-policy-snapshot/4",
+        "policy_schema":"atlas-agent-policy/3",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -230,6 +230,8 @@ def test_codex_w221_argv_is_explicit_and_reuse_never_becomes_fresh(tmp_path):
         "executor":"codex",
         "requested_model":"gpt-5.6-luna",
         "requested_reasoning_effort":"medium",
+        "requested_compute_profile":"action-default",
+        "resolved_compute_profile":"action-default",
         "session_mode":"fresh",
         "sandbox_mode":"workspace-write",
         "network_access_requested":False,
@@ -345,8 +347,8 @@ def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeyp
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/3",
-        "policy_schema":"atlas-agent-policy/2",
+        "schema":"atlas-agent-policy-snapshot/4",
+        "policy_schema":"atlas-agent-policy/3",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -354,6 +356,8 @@ def test_codex_atlas_profile_and_home_are_pinned_and_rechecked(tmp_path, monkeyp
         "executor":"codex",
         "requested_model":"gpt-5.6-luna",
         "requested_reasoning_effort":"medium",
+        "requested_compute_profile":"action-default",
+        "resolved_compute_profile":"action-default",
         "session_mode":"fresh",
         "sandbox_mode":"workspace-write",
         "network_access_requested":False,
@@ -492,7 +496,7 @@ network_access = false
 '''.encode()
 
     snapshot=resolve_policy(policy,parse_prompt(raw))
-    assert snapshot["schema"] == "atlas-agent-policy-snapshot/3"
+    assert snapshot["schema"] == "atlas-agent-policy-snapshot/4"
 
     downgraded=dict(snapshot)
     downgraded["schema"]="atlas-agent-policy-snapshot/1"
@@ -507,8 +511,9 @@ network_access = false
     ):
         downgraded.pop(key)
 
-    # Explicit historical /1 remains readable as provenance.
-    validate_snapshot(downgraded)
+    # A current snapshot cannot be relabelled as historical /1.
+    with pytest.raises(Exception):
+        validate_snapshot(downgraded)
 
     # It is never executable.
     prompt_path=ROOT/"README.md"
@@ -576,7 +581,7 @@ def test_legacy_snapshot_is_never_reuse_compatible(tmp_path):
         parse_prompt(raw2),
     )
 
-    with pytest.raises(WorkflowError, match="REUSE_TARGET_INCOMPATIBLE"):
+    with pytest.raises(WorkflowError, match="REUSE_TARGET_PROVENANCE_INVALID"):
         w._reuse_snapshot(state,state["generations"]["2"],current)
 
 
@@ -611,8 +616,8 @@ def test_pinned_runtime_rejects_prepared_command_binary_substitution(tmp_path):
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/3",
-        "policy_schema":"atlas-agent-policy/2",
+        "schema":"atlas-agent-policy-snapshot/4",
+        "policy_schema":"atlas-agent-policy/3",
         "policy_config_sha256":"a"*64,
         "action":"implementation",
         "checkpoint":"x",
@@ -620,6 +625,8 @@ def test_pinned_runtime_rejects_prepared_command_binary_substitution(tmp_path):
         "executor":"codex",
         "requested_model":"gpt-5.6-luna",
         "requested_reasoning_effort":"medium",
+            "requested_compute_profile":"action-default",
+            "resolved_compute_profile":"action-default",
         "session_mode":"fresh",
         "sandbox_mode":"workspace-write",
         "network_access_requested":False,
@@ -678,7 +685,7 @@ def test_pinned_runtime_fd_is_sealed_and_digest_bound(tmp_path):
     executable.chmod(0o500)
 
     snapshot={
-        "schema":"atlas-agent-policy-snapshot/3",
+        "schema":"atlas-agent-policy-snapshot/4",
         "codex_binary_sha256":
             hashlib.sha256(executable.read_bytes()).hexdigest(),
     }

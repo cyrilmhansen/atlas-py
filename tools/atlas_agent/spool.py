@@ -62,7 +62,7 @@ def validate_spool(root,canonical_state):
                 # Owner schema/2 existed before policy archives.  Require the
                 # archive only for the prompt epoch which introduced it.
                 modern=(execution.get("owner_schema")=="atlas-agent-execution-owner/3"
-                        and rec.get("prompt_schema")=="atlas-agent-prompt/2")
+                        and rec.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"})
                 if modern and not isinstance(policy_path,str):
                     errors.append(f"missing historical policy archive g{g}")
                 if policy_path is not None:

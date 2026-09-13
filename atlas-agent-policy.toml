@@ -1,4 +1,4 @@
-schema = "atlas-agent-policy/2"
+schema = "atlas-agent-policy/3"
 
 [session_limits]
 max_hot_reuse_hops = 3
@@ -64,3 +64,18 @@ codex_profile_web_sha256 = "43035a5f3ecb77673fabc3e472c37bd8aa8610ef78174f329ef5
 [profiles.checkpoint]
 executor = "manual"
 allowed_session_modes = ["fresh"]
+
+[compute_profiles.luna-high]
+model = "gpt-5.6-luna"
+reasoning_effort = "high"
+actions = ["implementation"]
+
+[compute_profiles.sol-medium]
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+actions = ["implementation", "patch_review", "state_audit"]
+
+[compute_profiles.astra-medium]
+model = "gpt-6-astra"
+reasoning_effort = "medium"
+actions = ["implementation", "patch_review", "state_audit"]
