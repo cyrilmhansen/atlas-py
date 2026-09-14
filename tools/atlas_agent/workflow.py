@@ -14,7 +14,9 @@ from .bubblewrap import AtlasBubblewrapExecutor
 from .telemetry import USAGE_SCHEMA,collect_usage,load_presentation_usage
 from .policy import PolicyError, load_policy, policy_config_sha256, resolve_policy, validate_snapshot
 from .toolchains import CapabilityResolver, load_machine_capabilities, CapabilityError
-from .pvc_context import PvcContextSelection, PvcContextError, _stage_pvc_context
+from .pvc_context import (PvcContextSelection, PvcContextComposition,
+                          PvcContextError, _stage_pvc_context,
+                          _stage_pvc_composition)
 class WorkflowError(RuntimeError): pass
 class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
@@ -1584,7 +1586,8 @@ class Workflow:
                 parent_context, context_info = self._parent_context(s, generation)
                 derived_context = b""
                 if pvc_context is not None:
-                    if not isinstance(pvc_context, PvcContextSelection):
+                    if not isinstance(pvc_context, (PvcContextSelection,
+                                                    PvcContextComposition)):
                         raise WorkflowError("PVC_CONTEXT_SELECTION_REQUIRED")
                     # PVC transport is an explicit executor capability, not
                     # an implication of inheriting from CodexExecutor.
@@ -1594,7 +1597,11 @@ class Workflow:
                                     False) is not True):
                         raise WorkflowError("PVC_CONTEXT_IMAGE_CAPABILITY_REQUIRED")
                     try:
-                        staged_pvc = _stage_pvc_context(pvc_context)
+                        staged_pvc = (
+                            _stage_pvc_context(pvc_context)
+                            if isinstance(pvc_context, PvcContextSelection)
+                            else _stage_pvc_composition(pvc_context)
+                        )
                     except PvcContextError as error:
                         raise WorkflowError(str(error)) from error
                     derived_context = staged_pvc.framing.encode("utf-8")

@@ -121,11 +121,31 @@ class PvcContextSelection:
 
 
 @dataclass(frozen=True)
+class PvcContextComposition:
+    """An explicit, ordered composition of already-qualified selections."""
+
+    selections: tuple[PvcContextSelection, ...]
+    purpose: str = "composed PVC context"
+
+    def __post_init__(self):
+        selections = tuple(self.selections)
+        if not selections:
+            raise PvcContextError("PVC_CONTEXT_COMPOSITION_EMPTY")
+        if any(type(selection) is not PvcContextSelection
+               for selection in selections):
+            raise PvcContextError("PVC_CONTEXT_COMPOSITION_MEMBER_REQUIRED")
+        if not isinstance(self.purpose, str) or not self.purpose.strip():
+            raise PvcContextError("PVC_CONTEXT_COMPOSITION_PURPOSE_INVALID")
+        object.__setattr__(self, "selections", selections)
+
+
+@dataclass(frozen=True)
 class _StagedPvcContext:
     image_authorities: tuple[_ImageAuthority, ...]
     text_authorities: tuple[_TextAuthority, ...]
     framing: str
     root: Path | None = None
+    roots: tuple[Path, ...] = ()
 
     def cleanup(self) -> None:
         """Release the staged descriptors and backing directory, once."""
@@ -134,8 +154,10 @@ class _StagedPvcContext:
         # Descriptor close is idempotent, and the directory may also be
         # visited by the workflow's preparation fallback.  In particular,
         # cleanup must be safe at both sides of the executor handoff.
-        if self.root is not None and self.root.exists():
-            shutil.rmtree(self.root, ignore_errors=False)
+        roots = self.roots or ((self.root,) if self.root is not None else ())
+        for root in roots:
+            if root.exists():
+                shutil.rmtree(root, ignore_errors=False)
 
 
 def _confined_open(root_fd: int, relative: str) -> int:
@@ -163,7 +185,8 @@ def _confined_open(root_fd: int, relative: str) -> int:
             pass
 
 
-def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
+def _stage_pvc_context(selection: PvcContextSelection,
+                       _ordinal_offset: int = 0) -> _StagedPvcContext:
     """Pin selected validated artifacts for the outer client.
 
     Hashing and length checking occur on the same descriptor stream copied to
@@ -252,7 +275,7 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                             _AUTHORITY_TOKEN, image_fd, document["snapshotId"],
                             tablet["id"], artifact["artifactId"],
                             artifact["sha256"], artifact["byteLength"],
-                            index - 1))
+                            _ordinal_offset + index - 1))
                     elif artifact["mediaType"] in {
                             "text/vnd.atlas.review-task",
                             "text/vnd.atlas.review-diff",
@@ -268,7 +291,7 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                             _AUTHORITY_TOKEN, image_fd, document["snapshotId"],
                             tablet["id"], artifact["artifactId"],
                             artifact["sha256"], artifact["byteLength"],
-                            index - 1, text)
+                            _ordinal_offset + index - 1, text)
                         # The name is historical; the descriptor is an
                         # artifact authority, never a Codex image unless the
                         # media type selected the image branch above.
@@ -326,9 +349,51 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
             os.close(root_fd)
         return _StagedPvcContext(
             tuple(authorities), tuple(authorities_text),
-            "\n".join(framing) + "\n", root)
+            "\n".join(framing) + "\n", root, (root,))
     except BaseException:
         for authority in (*authorities, *authorities_text):
             authority.close()
         shutil.rmtree(root, ignore_errors=True)
         raise
+
+
+def _stage_pvc_composition(
+        composition: PvcContextComposition) -> _StagedPvcContext:
+    """Stage members in caller order without merging their PVC authority."""
+    if type(composition) is not PvcContextComposition:
+        raise PvcContextError("PVC_CONTEXT_COMPOSITION_REQUIRED")
+    staged_members = []
+    ordinal_offset = 0
+    try:
+        for number, selection in enumerate(composition.selections, 1):
+            staged = _stage_pvc_context(selection, ordinal_offset)
+            staged_members.append(staged)
+            ordinal_offset += len(selection.tablet_ids)
+    except BaseException:
+        for staged in staged_members:
+            try:
+                staged.cleanup()
+            except BaseException:
+                # Preserve the staging failure; workflow-level cleanup gets
+                # another idempotent opportunity.
+                pass
+        raise
+
+    images = tuple(image for staged in staged_members
+                   for image in staged.image_authorities)
+    texts = tuple(text for staged in staged_members
+                  for text in staged.text_authorities)
+    framing = [
+        "PVC context composition is explicit controller ordering.",
+        f"PVC composition purpose: {composition.purpose}",
+    ]
+    for number, staged in enumerate(staged_members, 1):
+        # The member's historical standalone framing is kept byte-for-byte;
+        # these are the only controller-authored composition delimiters.
+        framing.append(f"PVC composition selection {number} begin")
+        framing.append(staged.framing.rstrip("\n"))
+        framing.append(f"PVC composition selection {number} end")
+    roots = tuple(staged.root for staged in staged_members
+                  if staged.root is not None)
+    return _StagedPvcContext(images, texts, "\n".join(framing) + "\n",
+                             roots[0] if roots else None, roots)
