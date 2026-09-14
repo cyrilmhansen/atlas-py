@@ -435,7 +435,8 @@ def test_managed_launcher_sets_pythonpath_from_active_controller(tmp_path):
     (package / "__main__.py").write_text(
         "import os\n"
         "print('BOOTSTRAP_OK')\n"
-        "print(os.environ.get('ATLAS_AGENT_SRC', ''))\n",
+        "print(os.environ.get('ATLAS_AGENT_SRC', ''))\n"
+        "print(os.environ.get('PYTHONPATH', ''))\n",
         encoding="utf-8",
     )
 
@@ -456,16 +457,15 @@ def test_managed_launcher_sets_pythonpath_from_active_controller(tmp_path):
     launcher.write_bytes(_managed_launcher(state))
     launcher.chmod(0o755)
 
-    env = {
-        key: value for key, value in os.environ.items()
-        if key not in {
-            "PYTHONPATH",
-            "ATLAS_AGENT_SRC",
-            "ATLAS_CODEX_EXECUTABLE",
-            "ATLAS_CODEX_HOME",
-            "ATLAS_AGENT_CAPABILITIES_FILE",
-        }
-    }
+    ambient = tmp_path / "ambient-pythonpath"
+    ambient.mkdir()
+    env = dict(os.environ)
+    env.update({
+        "PYTHONPATH": str(ambient),
+        "ATLAS_AGENT_SRC": "ambient-must-not-win",
+        "ATLAS_CODEX_EXECUTABLE": "/tmp/codex",
+        "ATLAS_CODEX_HOME": "/tmp/codex-home",
+    })
     result = subprocess.run(
         [str(launcher)],
         env=env,
@@ -475,4 +475,180 @@ def test_managed_launcher_sets_pythonpath_from_active_controller(tmp_path):
         check=True,
     )
 
-    assert result.stdout.splitlines() == ["BOOTSTRAP_OK", str(package_root)]
+    assert result.stdout.splitlines() == [
+        "BOOTSTRAP_OK",
+        str(package_root),
+        os.pathsep.join((str(package_root), str(package_root / "src"))),
+    ]
+
+
+def test_controller_import_probe_replaces_ambient_pythonpath(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import tools.atlas_agent.release as release
+
+    controller = tmp_path / "controller"
+    ambient = tmp_path / "ambient-pythonpath"
+    ambient.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(ambient))
+    calls = []
+
+    def capture(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(release, "_run", capture)
+    release._probe_controller_imports(controller, timeout=10)
+
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert argv[:3] == [release.sys.executable, "-P", "-c"]
+    assert kwargs["env"]["PYTHONPATH"] == os.pathsep.join(
+        (str(controller), str(controller / "src"))
+    )
+    assert str(ambient) not in kwargs["env"]["PYTHONPATH"]
+
+
+def test_controller_import_probe_really_imports_two_root_layout(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+    from tools.atlas_agent.release import _probe_controller_imports
+
+    controller = tmp_path / "controller"
+    (controller / "tools" / "atlas_agent").mkdir(parents=True)
+    (controller / "src" / "atlas").mkdir(parents=True)
+    for path in (
+        controller / "tools" / "__init__.py",
+        controller / "tools" / "atlas_agent" / "__init__.py",
+        controller / "src" / "atlas" / "__init__.py",
+    ):
+        path.write_text("", encoding="utf-8")
+    (controller / "tools" / "atlas_agent" / "context_plan.py").write_text(
+        "import atlas.semantic_query\n", encoding="utf-8"
+    )
+    (controller / "src" / "atlas" / "semantic_query.py").write_text(
+        "import atlas.python_semantic_query\n", encoding="utf-8"
+    )
+    (controller / "src" / "atlas" / "python_semantic_query.py").write_text(
+        "PROBE_WAS_REAL = True\n", encoding="utf-8"
+    )
+    ambient = tmp_path / "ambient-pythonpath"
+    (ambient / "atlas").mkdir(parents=True)
+    (ambient / "atlas" / "__init__.py").write_text(
+        "raise AssertionError('ambient authority used')\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(ambient))
+
+    _probe_controller_imports(controller, timeout=10)
+
+    # With the historical root-only authority, the src/atlas package is absent.
+    omitted = subprocess.run(
+        [sys.executable, "-P", "-c", "import atlas.semantic_query"],
+        cwd=controller,
+        env=dict(os.environ, PYTHONPATH=str(controller)),
+        capture_output=True,
+        text=True,
+    )
+    assert omitted.returncode != 0
+
+
+def test_verify_installation_returns_import_pass_evidence(tmp_path, monkeypatch):
+    import subprocess
+    import tools.atlas_agent.release as release
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(release, "_repository_root", lambda start=None: repo)
+    release_dir = tmp_path / "release"
+    (release_dir / "src").mkdir(parents=True)
+    current = tmp_path / "current-controller"
+    current.symlink_to(release_dir, target_is_directory=True)
+    runtime = tmp_path / "codex"
+    runtime.write_bytes(b"runtime")
+    state = tmp_path / "active.json"
+    state.write_text(json.dumps({
+        "schema": "atlas-active-controller/1",
+        "head": "a" * 40,
+        "release_dir": str(release_dir),
+        "current_controller": str(current),
+        "environment": {
+            "ATLAS_AGENT_SRC": str(current / "src"),
+            "ATLAS_CODEX_EXECUTABLE": str(runtime),
+            "ATLAS_CODEX_HOME": str(tmp_path),
+        },
+    }), encoding="utf-8")
+    launcher = tmp_path / "aa"
+    launcher.write_text("# atlas-agent-managed-launcher-v1\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    monkeypatch.setattr(release, "_verify_controller_release", lambda path: {
+        "head": "a" * 40, "codex_executable": str(runtime),
+        "codex_home": str(tmp_path), "codex_sha256": "digest",
+    })
+    monkeypatch.setattr(release, "_load_policy", lambda path: {})
+    monkeypatch.setattr(release, "_codex_profiles", lambda policy: [{"codex_binary_sha256": "digest"}])
+    monkeypatch.setattr(release, "_probe_controller_imports", lambda *args, **kwargs: None)
+
+    def command(argv, **kwargs):
+        output = "doctor: OK" if argv[-1] == "doctor" else (
+            "journal: OK\nstate: MATCH\nrepository witness: MATCH"
+        )
+        return subprocess.CompletedProcess(argv, 0, output, "")
+
+    monkeypatch.setattr(release, "_run", command)
+    result = release.verify_installation(
+        start=repo, state_path=state, launcher_path=launcher
+    )
+
+    assert result["status"] == "PASS"
+    assert result["controller_imports"] == "PASS"
+
+
+def test_verify_installation_propagates_import_probe_failure(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    import tools.atlas_agent.release as release
+
+    # Keep the entry-point setup bounded by reusing the success test's shape.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    release_dir = tmp_path / "release"
+    (release_dir / "src").mkdir(parents=True)
+    current = tmp_path / "current-controller"
+    current.symlink_to(release_dir, target_is_directory=True)
+    runtime = tmp_path / "codex"
+    runtime.write_bytes(b"runtime")
+    state = tmp_path / "active.json"
+    state.write_text(json.dumps({
+        "schema": "atlas-active-controller/1", "head": "a" * 40,
+        "release_dir": str(release_dir), "current_controller": str(current),
+        "environment": {
+            "ATLAS_AGENT_SRC": str(current / "src"),
+            "ATLAS_CODEX_EXECUTABLE": str(runtime),
+            "ATLAS_CODEX_HOME": str(tmp_path),
+        },
+    }), encoding="utf-8")
+    launcher = tmp_path / "aa"
+    launcher.write_text("# atlas-agent-managed-launcher-v1\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    monkeypatch.setattr(release, "_repository_root", lambda start=None: repo)
+    monkeypatch.setattr(release, "_verify_controller_release", lambda path: {
+        "head": "a" * 40, "codex_executable": str(runtime),
+        "codex_home": str(tmp_path), "codex_sha256": "digest",
+    })
+    monkeypatch.setattr(release, "_load_policy", lambda path: {})
+    monkeypatch.setattr(release, "_codex_profiles", lambda policy: [{"codex_binary_sha256": "digest"}])
+    def command(argv, **kwargs):
+        if argv[0] == sys.executable:
+            raise ReleaseCheckError("command failed (1): import probe")
+        output = "doctor: OK" if argv[-1] == "doctor" else (
+            "journal: OK\nstate: MATCH\nrepository witness: MATCH"
+        )
+        return subprocess.CompletedProcess(argv, 0, output, "")
+
+    monkeypatch.setattr(release, "_run", command)
+
+    with pytest.raises(ReleaseCheckError, match="import probe"):
+        release.verify_installation(
+            start=repo, state_path=state, launcher_path=launcher
+        )

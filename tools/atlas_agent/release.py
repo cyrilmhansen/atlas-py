@@ -68,6 +68,28 @@ def _run(argv: list[str], *, cwd: Path | None = None,
     return result
 
 
+def _probe_controller_imports(controller_root: Path, *, timeout: float) -> None:
+    """Prove the installed source layout, without importing the candidate."""
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(controller_root), str(controller_root / "src"))
+    )
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    _run(
+        [
+            sys.executable, "-P", "-c",
+            (
+                "import tools.atlas_agent.context_plan\n"
+                "import atlas.semantic_query\n"
+                "import atlas.python_semantic_query\n"
+            ),
+        ],
+        cwd=controller_root,
+        env=environment,
+        timeout=timeout,
+    )
+
+
 def _git(root: Path, *args: str) -> str:
     return _run(["git", *args], cwd=root).stdout.strip()
 
@@ -751,7 +773,7 @@ for key, value in environment.items():
 agent_src = environment.get("ATLAS_AGENT_SRC")
 if not isinstance(agent_src, str) or not agent_src:
     raise SystemExit("Atlas active controller has no ATLAS_AGENT_SRC")
-env["PYTHONPATH"] = agent_src
+env["PYTHONPATH"] = os.pathsep.join((agent_src, str(Path(agent_src) / "src")))
 env["PYTHONDONTWRITEBYTECODE"] = "1"
 
 os.execvpe(
@@ -912,6 +934,8 @@ def verify_installation(*, start: Path | None = None,
     if "doctor: OK" not in doctor:
         raise ReleaseCheckError(f"installed-controller doctor failed\n{doctor}")
 
+    _probe_controller_imports(Path(environment["ATLAS_AGENT_SRC"]), timeout=timeout)
+
     return {
         "schema": "atlas-controller-installation-verification/1",
         "head": head,
@@ -920,6 +944,7 @@ def verify_installation(*, start: Path | None = None,
         "runtime": manifest["codex_executable"],
         "status": "PASS",
         "doctor": "PASS",
+        "controller_imports": "PASS",
     }
 
 
@@ -938,7 +963,7 @@ def post_cutover(*, root: Path | None = None, timeout: float = 60.0) -> dict:
         )
 
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(root)
+    env["PYTHONPATH"] = os.pathsep.join((str(root), str(root / "src")))
 
     status = _run(
         [
@@ -1090,6 +1115,7 @@ def _print_report(report: dict) -> None:
         print(f"runtime: {report['runtime']}")
         print("status: PASS")
         print("doctor: PASS")
+        print("controller imports: PASS")
         print("ATLAS CONTROLLER INSTALLATION VERIFY: PASS")
     elif report.get("schema") == "atlas-release-runtime-preparation/1":
         print(f"candidate: {report['candidate']}")
