@@ -26,6 +26,8 @@ _CANONICAL_GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
+    # System attributes are another ambient input to Git's diff machinery.
+    "GIT_ATTR_NOSYSTEM": "1",
 }
 
 # This is the one representation contract for both tracked and no-index
@@ -63,6 +65,15 @@ _CANONICAL_DIFF_CONFIG = (
 
 def _canonical_git_env() -> dict[str, str]:
     env = dict(os.environ)
+    # Git reads GIT_DIFF_OPTS in addition to command-line options.  In
+    # particular, it can silently replace the hunk context requested below.
+    # These other variables can inject an alternate diff/config mechanism;
+    # unrelated application environment is intentionally retained.
+    for key in (
+        "GIT_DIFF_OPTS", "GIT_EXTERNAL_DIFF", "GIT_PAGER",
+        "GIT_CONFIG", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+    ):
+        env.pop(key, None)
     # Do not inherit Git's environment-based config injection either.  The
     # invocation below is the complete representation authority.
     for key in ("GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"):
@@ -332,11 +343,25 @@ def build_review_package(
     # Authorize the final path set as Git sees it.  Checking only untracked
     # names would permit a tracked edit outside the caller's authority to
     # enter the package.
-    changed_names = _git(
+    # --name-only is insufficient here: with rename detection Git reports
+    # only the destination.  Name-status -z exposes both endpoints for
+    # renames (and keeps names byte-oriented until authority validation).
+    changed_metadata = _git(
         root, *_CANONICAL_DIFF_CONFIG, "--no-pager", "diff",
-        *_CANONICAL_DIFF_OPTIONS, "--name-only", "-z", "--format=",
+        *_CANONICAL_DIFF_OPTIONS, "--name-status", "-z", "--format=",
         expected_head, "--",
     ).split(b"\0")
+    changed_names = []
+    cursor = 0
+    while cursor < len(changed_metadata):
+        status = changed_metadata[cursor]
+        cursor += 1
+        if not status:
+            continue
+        # With -z, rename/copy records are status, old name, new name.
+        endpoints = 2 if status[:1] in (b"R", b"C") else 1
+        changed_names.extend(changed_metadata[cursor:cursor + endpoints])
+        cursor += endpoints
     for name in (item for item in changed_names if item):
         if not _allowed(_path_bytes(name), list(allowed)):
             raise ReviewPackageError("REVIEW_UNAUTHORIZED_PATH")

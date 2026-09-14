@@ -22,6 +22,9 @@ def repo(tmp_path):
     git(tmp_path, "config", "user.email", "test@example.invalid")
     git(tmp_path, "config", "user.name", "test")
     (tmp_path / "tracked.txt").write_text("one\n")
+    (tmp_path / "context.txt").write_text(
+        "line1\nline2\nline3\nOLD\nline5\nline6\nline7\n"
+    )
     (tmp_path / "removed.txt").write_text("gone\n")
     (tmp_path / "rename.txt").write_text("rename\n")
     (tmp_path / "binary.bin").write_bytes(b"\x00old\xff\n")
@@ -34,8 +37,8 @@ def package(repo, task="inspect"):
     root, head = repo
     return build_review_package(root, head, task,
                                 ["tracked.txt", "removed.txt", "rename.txt",
-                                 "binary.bin", "added.txt", "new.txt",
-                                 "renamed.txt"])
+                                 "binary.bin", "context.txt", "added.txt",
+                                 "new.txt", "renamed.txt"])
 
 
 def test_real_git_clean_matrix_case(repo):
@@ -52,6 +55,14 @@ def test_real_git_unstaged_and_staged_matrix_cases(repo):
     subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True)
     (root / "tracked.txt").write_text("three\n")
     assert b"-one\n+three" in package(repo).diff.content
+
+
+def test_real_git_isolated_staged_change_is_head_to_index(repo):
+    root, _ = repo
+    (root / "tracked.txt").write_text("two\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True)
+    diff = package(repo).diff.content
+    assert b"-one\n+two" in diff
 
 
 def test_real_git_staged_and_unstaged_same_file_is_head_to_worktree(repo):
@@ -160,6 +171,43 @@ def test_ambient_git_configuration_cannot_change_package(repo, tmp_path,
     assert second.witness == first.witness
 
 
+def test_git_diff_opts_cannot_change_package(repo, monkeypatch):
+    root, _ = repo
+    # The unchanged lines make -U3 and ambient --unified=0 emit different
+    # patch bytes.  Thus this public-boundary comparison would fail if
+    # production stopped removing GIT_DIFF_OPTS before invoking Git.
+    (root / "context.txt").write_text(
+        "line1\nline2\nline3\nNEW\nline5\nline6\nline7\n"
+    )
+    first = package(repo, "task")
+    monkeypatch.setenv("GIT_DIFF_OPTS", "--unified=0")
+    second = package(repo, "task")
+    assert second.diff.content == first.diff.content
+    assert second.diff_digest == first.diff_digest
+    assert b" line1\n line2\n line3\n-OLD\n+NEW\n line5" in first.diff.content
+
+
+@pytest.mark.parametrize(
+    ("allowed", "authorized"),
+    [
+        (["rename.txt", "renamed.txt"], True),
+        (["renamed.txt"], False),
+        (["rename.txt"], False),
+    ],
+)
+def test_rename_authorization_covers_both_endpoints(repo, allowed, authorized):
+    root, head = repo
+    subprocess.run(["git", "mv", "rename.txt", "renamed.txt"],
+                   cwd=root, check=True)
+    if authorized:
+        result = build_review_package(root, head, "rename", allowed)
+        assert b"rename from rename.txt" in result.diff.content
+        assert b"rename to renamed.txt" in result.diff.content
+    else:
+        with pytest.raises(ReviewPackageError, match="UNAUTHORIZED"):
+            build_review_package(root, head, "rename", allowed)
+
+
 def test_repository_witness_change_fails_closed(repo, monkeypatch):
     root, _ = repo
     import tools.atlas_agent.review as review
@@ -208,6 +256,7 @@ def test_workflow_pvc_boundary_delivers_review_text_as_effective_context(
     subprocess.run(["git", "add", "."], cwd=root, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
     head = git(root, "rev-parse", "HEAD")
+    (root / "tracked.txt").write_text("two\n")
     workflow = Workflow(root)
     workflow.init()
     prompt = (
@@ -220,7 +269,8 @@ def test_workflow_pvc_boundary_delivers_review_text_as_effective_context(
     ).encode()
     (workflow.base / "inbox" / "prompt.txt").write_bytes(prompt)
     workflow.ingest()
-    package_result = build_review_package(root, head, "caller task", ())
+    package_result = build_review_package(root, head, "caller task",
+                                          ["tracked.txt"])
     selection = package_result.pvc_context()
 
     class Capture(CodexExecutor):
@@ -259,6 +309,7 @@ def test_workflow_pvc_boundary_delivers_review_text_as_effective_context(
     capture = Capture()
     workflow.execute(1, capture, pvc_context=selection)
     assert package_result.task.content in capture.supplied
+    assert package_result.diff.content
     assert package_result.diff.content in capture.supplied
     assert "--image" not in capture.argv
     assert "--image-detail" not in capture.argv
