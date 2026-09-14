@@ -1968,7 +1968,7 @@ class Workflow:
             usage=load_presentation_usage(usage_path,record)
             if usage is not None: summary["tokens"]=usage
         return summary
-    def dispatch(self, executor=None, observer=None):
+    def dispatch(self, executor=None, observer=None, pvc_context=None):
         """Execute exactly one already accepted generation.
 
         Selection is deliberately limited to the first accepted generation.
@@ -1990,7 +1990,8 @@ class Workflow:
             generation = record["generation"]
             self._admit_run_start(state, generation)
         try:
-            state = self.execute(generation, executor, observer=observer)
+            state = self.execute(generation, executor, observer=observer,
+                                 pvc_context=pvc_context)
         except Exception as error:
             try:
                 failed=self._state()

@@ -126,6 +126,11 @@ class PvcContextComposition:
 
     selections: tuple[PvcContextSelection, ...]
     purpose: str = "composed PVC context"
+    # Paths in this list are owned by the adapter which constructed the
+    # composition.  In particular, a selection may also point at a retained
+    # result directory, which is borrowed input and must not be inferred to be
+    # disposable from its ``scratch_path``.
+    owned_resources: tuple[Path, ...] = ()
 
     def __post_init__(self):
         selections = tuple(self.selections)
@@ -137,6 +142,8 @@ class PvcContextComposition:
         if not isinstance(self.purpose, str) or not self.purpose.strip():
             raise PvcContextError("PVC_CONTEXT_COMPOSITION_PURPOSE_INVALID")
         object.__setattr__(self, "selections", selections)
+        object.__setattr__(self, "owned_resources",
+                           tuple(Path(path) for path in self.owned_resources))
 
 
 @dataclass(frozen=True)

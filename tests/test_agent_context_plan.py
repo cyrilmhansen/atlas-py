@@ -1,0 +1,303 @@
+"""Qualification tests for the operator context-plan adapter (S1b.3b)."""
+import hashlib
+import json
+import stat
+
+import pytest
+
+from tools.atlas_agent import cli
+from tools.atlas_agent.context_plan import (
+    build_context_composition, cleanup_context_composition, parse_context_plan,
+)
+from tools.atlas_agent.pvc_context import PvcContextComposition
+from tools.atlas_agent.pvc_context import _stage_pvc_composition
+from tools.atlas_agent.review import ReviewPackage
+from test_agent_pvc_validation import _result
+from test_semantic_query import FAKE
+from test_agent_workflow_w221 import accepted, make_repo
+
+
+def write_plan(path, members, **extra):
+    value = {"schema": "atlas-agent-context-plan/1", "members": members}
+    value.update(extra)
+    path.write_text(json.dumps(value))
+    return path
+
+
+def semantic_member(executable, kind="hover", path="a.rs", line=0, character=0):
+    return {"kind": "SEMANTIC", "query": {"kind": kind, "path": path,
+            "line": line, "character": character}, "executable": str(executable),
+            "version": "fake"}
+
+
+def test_context_plan_valid_schema_and_ordered_member_shapes(tmp_path):
+    exe = tmp_path / "ra"
+    members = [{"kind": "REVIEW"},
+               {"kind": "SOURCE", "result_path": "retained",
+                "tablet_ids": ["t"], "purpose": "source"},
+               semantic_member(exe)]
+    path = write_plan(tmp_path / "plan.json", members)
+    assert parse_context_plan(path)["members"] == members
+
+
+@pytest.mark.parametrize("raw, code", [
+    (b"\xff", "CONTEXT_PLAN_INVALID"),
+    (b"{", "CONTEXT_PLAN_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","schema":"atlas-agent-context-plan/1","members":[{"kind":"REVIEW"}]}',
+     "CONTEXT_PLAN_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[{"kind":"REVIEW"}],"x":NaN}',
+     "CONTEXT_PLAN_INVALID"),
+    (b'{"schema":"other","members":[{"kind":"REVIEW"}]}',
+     "CONTEXT_PLAN_SCHEMA_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1"}', "CONTEXT_PLAN_SCHEMA_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[]}',
+     "CONTEXT_PLAN_SCHEMA_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[{"kind":"NOPE"}]}',
+     "CONTEXT_PLAN_MEMBER_KIND_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[{"kind":"REVIEW","x":1}]}',
+     "CONTEXT_PLAN_UNKNOWN_FIELD"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[{"kind":"SEMANTIC","query":{},"executable":"/x"}]}',
+     "CONTEXT_PLAN_SEMANTIC_INVALID"),
+    (b'{"schema":"atlas-agent-context-plan/1","members":[{"kind":"SEMANTIC","query":{"kind":"hover","path":"a.rs","line":0,"character":[]},"executable":"/x"}]}',
+     "CONTEXT_PLAN_SEMANTIC_INVALID"),
+])
+def test_context_plan_rejects_malformed_documents(tmp_path, raw, code):
+    path = tmp_path / "bad.json"
+    path.write_bytes(raw)
+    with pytest.raises(ValueError, match=code):
+        parse_context_plan(path)
+
+
+def test_context_plan_rejects_authority_and_query_boundaries(tmp_path):
+    exe = tmp_path / "ra"
+    cases = [
+        semantic_member(exe, "completion"),
+        semantic_member(exe, path="/absolute.rs"),
+        semantic_member(exe, path="../a.rs"),
+        semantic_member(exe, line=-1),
+        semantic_member(exe, character=-1),
+        semantic_member(tmp_path / "missing-ra"),
+    ]
+    # Parsing enforces the query-kind and position contract.  Path safety and
+    # executable availability belong to the reused semantic boundary.
+    for member in cases[:1]:
+        path = write_plan(tmp_path / "p.json", [member])
+        with pytest.raises(ValueError):
+            parse_context_plan(path)
+    assert parse_context_plan(write_plan(tmp_path / "valid.json", [cases[1]]))
+    for member in cases[3:5]:
+        with pytest.raises(ValueError):
+            parse_context_plan(write_plan(tmp_path / "position.json", [member]))
+
+
+def test_semantic_path_and_authority_fail_at_reused_boundary(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    authority = tmp_path / "fake-ra"
+    authority.write_text(FAKE)
+    authority.chmod(authority.stat().st_mode | stat.S_IXUSR)
+    accepted(workflow)
+    for member in (
+            semantic_member(authority, path="/a"),
+            semantic_member(authority, path="../a"),
+            semantic_member(tmp_path / "unavailable-ra")):
+        plan = write_plan(tmp_path / "plan.json", [member])
+        with pytest.raises(ValueError, match="CONTEXT_PLAN_SEMANTIC_INVALID"):
+            build_context_composition(workflow, parse_context_plan(plan))
+
+
+def test_semantic_adapter_uses_authority_and_query_and_builds_pvc(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    authority = tmp_path / "fake-ra"
+    authority.write_text(FAKE)
+    authority.chmod(authority.stat().st_mode | stat.S_IXUSR)
+    accepted(workflow)
+    plan = write_plan(tmp_path / "plan.json",
+                      [semantic_member(authority, "references", path="a")])
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    try:
+        payload = (composition.selections[0].result.bundle_path /
+                   composition.selections[0].result.validated_snapshot.document[
+                       "artifacts"][0]["relativePath"]).read_bytes()
+        document = json.loads(payload)
+        assert document["query"]["kind"] == "references"
+        assert document["query"]["path"] == "a"
+        assert document["authority"]["executable"] == str(authority)
+    finally:
+        from tools.atlas_agent.context_plan import cleanup_context_composition
+        cleanup_context_composition(composition)
+
+
+def test_review_source_and_plan_order_cross_adapter_boundary(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    authority = tmp_path / "fake-ra"
+    authority.write_text(FAKE)
+    authority.chmod(authority.stat().st_mode | stat.S_IXUSR)
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    retained = _result(repo / "corpus_miner")
+    plan = write_plan(tmp_path / "plan.json", [
+        {"kind": "REVIEW"},
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "explicit source"},
+        semantic_member(authority, path="a"),
+    ])
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    assert isinstance(composition, PvcContextComposition)
+    assert [x.purpose for x in composition.selections] == [
+        "patch review package", "explicit source", "rust semantic context"]
+    assert composition.selections[1].tablet_ids == ("APO-VC-000001",)
+    staged = _stage_pvc_composition(composition)
+    try:
+        review_bytes = [
+            (composition.selections[0].result.bundle_path /
+             a["relativePath"]).read_bytes()
+            for a in composition.selections[0].result.validated_snapshot.document[
+                "artifacts"]
+        ]
+        assert b"W2.2.1\n" in review_bytes
+        assert any(payload.startswith(b"diff --git ") for payload in review_bytes)
+        assert [x.ordinal for x in staged.image_authorities] == [2]
+        assert [x.ordinal for x in staged.text_authorities] == [0, 1, 3]
+    finally:
+        staged.cleanup()
+
+
+def test_source_is_borrowed_and_owned_members_are_cleaned(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    retained = _result(repo / "corpus_miner")
+    retained_bytes = (retained.scratch_path / "stdout").read_bytes()
+    plan = write_plan(tmp_path / "plan.json", [
+        {"kind": "REVIEW"},
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
+    ])
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    owned = composition.owned_resources[0]
+    cleanup_context_composition(composition)
+    assert retained.scratch_path.is_dir()
+    assert (retained.scratch_path / "stdout").read_bytes() == retained_bytes
+    assert not owned.exists()
+
+
+def test_source_survives_later_member_failure_and_prior_owned_data_does_not(
+        tmp_path, monkeypatch):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    retained = _result(repo / "corpus_miner")
+    retained_bytes = (retained.scratch_path / "stdout").read_bytes()
+    created_review_roots = []
+    real_pvc_context = ReviewPackage.pvc_context
+
+    def record_real_review_resource(package, purpose="patch review package"):
+        selection = real_pvc_context(package, purpose)
+        created_review_roots.append(selection.result.scratch_path)
+        assert created_review_roots[-1].exists()
+        return selection
+
+    monkeypatch.setattr(ReviewPackage, "pvc_context",
+                        record_real_review_resource)
+    plan = write_plan(tmp_path / "plan.json", [
+        {"kind": "REVIEW"},
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
+        {"kind": "SOURCE", "result_path": str(tmp_path / "missing"),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "fails"},
+    ])
+    with pytest.raises(ValueError):
+        build_context_composition(workflow, parse_context_plan(plan))
+    assert retained.scratch_path.is_dir()
+    assert (retained.scratch_path / "stdout").read_bytes() == retained_bytes
+    assert len(created_review_roots) == 1
+    assert not created_review_roots[0].exists()
+
+
+def test_review_uses_authoritative_accepted_spool_digest(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    accepted_path = next((workflow.base / "accepted").glob("g*.txt"))
+    original = accepted_path.read_bytes()
+    # Keep the prompt parseable while invalidating the durable spool digest.
+    accepted_path.write_bytes(original.replace(b"W2.2.1", b"changed!"))
+    with pytest.raises(Exception, match="SPOOL_CORRUPT"):
+        build_context_composition(
+            workflow, parse_context_plan(write_plan(
+                tmp_path / "plan.json", [{"kind": "REVIEW"}])))
+
+
+def test_source_rejects_unvalidated_and_unknown_tablets(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    retained = _result(repo)
+    for tablet in ("unknown",):
+        plan = write_plan(tmp_path / "plan.json", [{
+            "kind": "SOURCE", "result_path": str(retained.scratch_path),
+            "tablet_ids": [tablet], "purpose": "x"}])
+        with pytest.raises((ValueError, RuntimeError)):
+            build_context_composition(workflow, parse_context_plan(plan))
+    bad = tmp_path / "not-a-result"
+    bad.mkdir()
+    plan = write_plan(tmp_path / "bad.json", [{
+        "kind": "SOURCE", "result_path": str(bad),
+        "tablet_ids": ["APO-VC-000001"], "purpose": "x"}])
+    with pytest.raises(Exception, match="PVC_BUNDLE_STDOUT_MISSING"):
+        build_context_composition(workflow, parse_context_plan(plan))
+
+
+def test_public_cli_loads_plan_and_passes_composition(tmp_path, monkeypatch):
+    _, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    plan = write_plan(tmp_path / "plan.json", [{"kind": "REVIEW"}])
+    calls = []
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(workflow, "dispatch",
+                        lambda executor, observer=None, pvc_context=None:
+                        calls.append(pvc_context))
+    assert cli.main(["dispatch", "--context-plan", str(plan)]) == 0
+    assert isinstance(calls[0], PvcContextComposition)
+
+
+def test_cli_dispatch_finally_cleanup_preserves_retained_source(tmp_path,
+                                                                 monkeypatch):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    retained = _result(repo / "corpus_miner")
+    before = (retained.scratch_path / "stdout").read_bytes()
+    plan = write_plan(tmp_path / "plan.json", [{
+        "kind": "SOURCE", "result_path": str(retained.scratch_path),
+        "tablet_ids": ["APO-VC-000001"], "purpose": "retained"}])
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(workflow, "dispatch",
+                        lambda *args, **kwargs: None)
+    assert cli.main(["dispatch", "--context-plan", str(plan)]) == 0
+    assert retained.scratch_path.is_dir()
+    assert (retained.scratch_path / "stdout").read_bytes() == before
+
+
+def test_malformed_cli_plan_precedes_run_started_and_no_plan_is_unchanged(
+        tmp_path, monkeypatch):
+    _, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    bad = tmp_path / "bad.json"
+    bad.write_text("{}")
+    invoked = []
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(workflow, "dispatch", lambda *a, **k: invoked.append(k))
+    assert cli.main(["dispatch", "--context-plan", str(bad)]) == 1
+    assert not invoked
+    assert workflow._state()["generations"]["1"]["status"] == "ACCEPTED"
+    assert not any(x["event"] == "RUN_STARTED" for x in workflow.journal.read())
+    assert cli.main(["dispatch"]) == 0
+    assert "pvc_context" not in invoked[-1]
+
+
+def test_context_plan_cannot_smuggle_execution_authority(tmp_path):
+    for key in ("model", "reasoning", "sandbox", "network", "session_mode",
+                "compute_profile", "fast"):
+        path = write_plan(tmp_path / (key + ".json"), [{"kind": "REVIEW"}],
+                          **{key: "forbidden"})
+        with pytest.raises(ValueError):
+            parse_context_plan(path)

@@ -8,7 +8,7 @@ import pytest
 from tools.atlas_agent.codex_executor import CodexExecutor
 from tools.atlas_agent.executor import ExecutionResult, PreparedExecution, utc_now
 from tools.atlas_agent.semantic import (
-    SemanticResultError, build_semantic_tablet,
+    SemanticResultError, build_semantic_tablet, validate_semantic_result,
 )
 from tools.atlas_agent.pvc_context import _stage_pvc_context
 from tools.atlas_agent.pvc_context import PvcContextSelection
@@ -167,6 +167,27 @@ def test_semantic_cleanup_closes_authority_and_is_idempotent():
 def test_semantic_result_rejects_invalid_canonical_bytes(payload):
     with pytest.raises(SemanticResultError, match="INVALID"):
         build_semantic_tablet(payload)
+
+
+@pytest.mark.parametrize("witness", [
+    "",
+    "not-a-digest",
+    "a" * 63,
+    "a" * 65,
+    "g" * 64,
+    "A" * 64,
+])
+def test_semantic_string_witness_is_exactly_lowercase_sha256(witness):
+    payload = semantic_bytes(repositoryWitness=witness)
+    with pytest.raises(SemanticResultError):
+        validate_semantic_result(payload)
+
+
+def test_semantic_canonical_lowercase_string_witness_crosses_tablet_builder():
+    witness = "0123456789abcdef" * 4
+    payload = semantic_bytes(repositoryWitness=witness)
+    assert validate_semantic_result(payload)["repositoryWitness"] == witness
+    assert build_semantic_tablet(payload).payload == payload
 
 
 def test_semantic_change_changes_snapshot_identity():

@@ -148,6 +148,7 @@ def main(argv=None):
                    help="status history count (non-negative integer or all)")
     p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
                    help="status history detail level")
+    p.add_argument("--context-plan")
     a=p.parse_args(argv)
     try:
         w=Workflow()
@@ -198,7 +199,22 @@ def main(argv=None):
         elif a.command=="dispatch":
             presenter=DispatchPresenter()
             executor=AtlasBubblewrapExecutor(model=a.model,sandbox=a.sandbox,network_access=a.network_access,timeout_seconds=a.timeout_seconds,service_tier="fast" if a.fast else None,progress_callback=presenter.progress)
-            w.dispatch(executor,observer=presenter.event)
+            composition = None
+            if a.context_plan:
+                from .context_plan import (parse_context_plan,
+                                           build_context_composition,
+                                           cleanup_context_composition)
+                plan = parse_context_plan(a.context_plan)
+                composition = build_context_composition(w, plan)
+            try:
+                if composition is None:
+                    w.dispatch(executor, observer=presenter.event)
+                else:
+                    w.dispatch(executor, observer=presenter.event,
+                               pvc_context=composition)
+            finally:
+                if composition is not None:
+                    cleanup_context_composition(composition)
         elif a.command=="complete-run":
             if not a.result: raise WorkflowError("--result JSON is required")
             w.complete_run(a.generation,json.loads(a.result))

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import tempfile
 
 from .one_shot import ProcessResult
@@ -55,7 +56,10 @@ def validate_semantic_result(data: bytes) -> dict:
                 raise ValueError("required field")
         if (type(document["query"]) is not dict
                 or type(document["authority"]) is not dict
-                or type(document["repositoryWitness"]) is not dict
+                or (type(document["repositoryWitness"]) is not dict
+                    and (type(document["repositoryWitness"]) is not str
+                         or re.fullmatch(r"[0-9a-f]{64}",
+                                         document["repositoryWitness"]) is None))
                 or type(document["result"]) is not dict
                 or document["positionEncoding"] != "utf-8"):
             raise ValueError("identity shape")
