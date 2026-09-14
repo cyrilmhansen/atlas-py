@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import codecs
 import hashlib
 import json
 import math
@@ -37,6 +38,9 @@ class PvcValidatedSnapshot:
 
 _MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 _SOURCE_MEDIA_TYPES = frozenset({"image/png"})
+_REVIEW_MEDIA_TYPES = frozenset({
+    "text/vnd.atlas.review-task", "text/vnd.atlas.review-diff",
+})
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _SNAPSHOT_ID = re.compile(r"^scs1-[a-f0-9]{64}$")
 
@@ -119,8 +123,16 @@ def _read_bounded(fd: int, limit: int, *, label: str) -> bytes:
         chunks.append(chunk)
 
 
-def _hash_bounded(fd: int, expected: int, digest: str, *, label: str) -> None:
+def _hash_bounded(fd: int, expected: int, digest: str, *, label: str,
+                  utf8: bool = False) -> None:
     hasher = hashlib.sha256()
+    decoder = None
+    if utf8:
+        # Validate text at the retained-artifact boundary.  Incremental
+        # decoding is important here: a multibyte scalar may straddle two
+        # reads, and accepting a prefix would make the transport type
+        # advisory rather than authoritative.
+        decoder = codecs.getincrementaldecoder("utf-8")()
     total = 0
     while True:
         chunk = os.read(fd, 1024 * 1024)
@@ -128,6 +140,16 @@ def _hash_bounded(fd: int, expected: int, digest: str, *, label: str) -> None:
             break
         total += len(chunk)
         hasher.update(chunk)
+        if decoder is not None:
+            try:
+                decoder.decode(chunk, final=False)
+            except UnicodeDecodeError:
+                _fail(f"PVC_BUNDLE_{label}_UTF8")
+    if decoder is not None:
+        try:
+            decoder.decode(b"", final=True)
+        except UnicodeDecodeError:
+            _fail(f"PVC_BUNDLE_{label}_UTF8")
     if total != expected:
         _fail(f"PVC_BUNDLE_{label}_BYTE_LENGTH")
     if hasher.hexdigest() != digest:
@@ -248,9 +270,14 @@ def _snapshot_identity_id(document: dict[str, Any]) -> str:
             if "bannerOnly" in span:
                 span_item["bannerOnly"] = span["bannerOnly"]
             spans.append(span_item)
-        identity["tablets"].append({key: tablet[key] for key in
-                                    ("id", "pageIndex", "profile", "width",
-                                     "height")} |
+        tablet_identity = {key: tablet[key] for key in
+                           ("id", "pageIndex", "profile", "width", "height")}
+        # Typed review tablets add their content identity without changing
+        # the historical SOURCE projection.
+        for key in ("digest", "byteLength", "provenance"):
+            if key in tablet:
+                tablet_identity[key] = tablet[key]
+        identity["tablets"].append(tablet_identity |
                                    {"spans": spans,
                                     "artifactId": tablet["artifactId"]})
     identity["symbols"] = [
@@ -424,6 +451,16 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
     if sorted(sources) != list(range(len(sources))):
         _fail("PVC_BUNDLE_SOURCE_INDEX_INVALID")
 
+    # Review tablets use the same validated artifact boundary as SOURCE
+    # tablets, but are text artifacts rather than images.  Keep the normal
+    # SOURCE media contract exact; these two additional types are accepted
+    # only when the corresponding tablet explicitly declares the review
+    # profile.
+    review_artifact_ids = {
+        tablet.get("artifactId") for tablet in document["tablets"]
+        if isinstance(tablet, dict) and tablet.get("profile") == "review"
+        and isinstance(tablet.get("artifactId"), str)
+    }
     artifacts = {}
     paths = set()
     for item in document["artifacts"]:
@@ -436,9 +473,12 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
         artifact_id = artifact["artifactId"]
         if artifact_id in artifacts:
             _fail("PVC_BUNDLE_ARTIFACT_ID_INVALID")
-        if (type(artifact["mediaType"]) is not str
-                or artifact["mediaType"] not in _SOURCE_MEDIA_TYPES):
+        if type(artifact["mediaType"]) is not str:
             _fail("PVC_BUNDLE_ARTIFACT_MEDIA_TYPE_UNSUPPORTED")
+        if artifact["mediaType"] not in _SOURCE_MEDIA_TYPES:
+            if (artifact_id not in review_artifact_ids
+                    or artifact["mediaType"] not in _REVIEW_MEDIA_TYPES):
+                _fail("PVC_BUNDLE_ARTIFACT_MEDIA_TYPE_UNSUPPORTED")
         if type(artifact["sha256"]) is not str or not _SHA256.fullmatch(
                 artifact["sha256"]):
             _fail("PVC_BUNDLE_ARTIFACT_INTEGRITY_METADATA_INVALID")
@@ -452,8 +492,11 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
         artifact_fd = -1
         try:
             artifact_fd = _open_confined(bundle_fd, relative, label="ARTIFACT")
-            _hash_bounded(artifact_fd, artifact["byteLength"],
-                          artifact["sha256"], label="ARTIFACT")
+            _hash_bounded(
+                artifact_fd, artifact["byteLength"], artifact["sha256"],
+                label="ARTIFACT",
+                utf8=artifact["mediaType"] in _REVIEW_MEDIA_TYPES,
+            )
         except OSError:
             _fail("PVC_BUNDLE_ARTIFACT_UNREADABLE")
         finally:
@@ -492,6 +535,21 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
             _fail("PVC_BUNDLE_TABLET_ARTIFACT_INVALID")
         if artifact_id not in artifacts:
             _fail("PVC_BUNDLE_TABLET_ARTIFACT_MISSING")
+        if "digest" in tablet and (
+                type(tablet["digest"]) is not str
+                or not _SHA256.fullmatch(tablet["digest"])):
+            _fail("PVC_BUNDLE_TABLET_DIGEST_INVALID")
+        if "byteLength" in tablet and (
+                type(tablet["byteLength"]) is not int
+                or tablet["byteLength"] < 0
+                or tablet["byteLength"] != artifacts[artifact_id]["byteLength"]):
+            _fail("PVC_BUNDLE_TABLET_LENGTH_INVALID")
+        if artifacts[artifact_id]["mediaType"] in _REVIEW_MEDIA_TYPES and (
+                tablet["profile"] != "review"
+                or "digest" not in tablet or "byteLength" not in tablet
+                or type(tablet.get("provenance")) is not str
+                or not tablet["provenance"]):
+            _fail("PVC_BUNDLE_REVIEW_TABLET_METADATA_INVALID")
         for span in tablet["spans"]:
             span = _object(span, "PVC_BUNDLE_SPAN_SHAPE")
             if "sourceIndex" not in span:

@@ -61,6 +61,45 @@ class _ImageAuthority:
                 self._closed = True
 
 
+class _TextAuthority:
+    """Controller-owned, descriptor-backed UTF-8 text authority.
+
+    Text is deliberately not represented by a pathname.  ``payload`` is the
+    bytes copied from and authenticated against the sealed descriptor; it is
+    retained only so the already-staged bytes can be put into the effective
+    prompt without reopening the bundle.
+    """
+    __slots__ = ("fd", "snapshot_id", "tablet_id", "artifact_id", "sha256",
+                 "byte_length", "ordinal", "payload", "_closed")
+
+    def __init__(self, token, fd, snapshot_id, tablet_id, artifact_id,
+                 sha256, byte_length, ordinal, payload):
+        if token is not _AUTHORITY_TOKEN:
+            raise TypeError("text authority is controller-owned")
+        if type(payload) is not bytes:
+            raise TypeError("text authority payload must be bytes")
+        # This is a second, local assertion at the model handoff.  The PVC
+        # validator performs the same check while authenticating the bundle,
+        # but the transport must never accidentally downgrade it later.
+        payload.decode("utf-8")
+        self.fd = fd
+        self.snapshot_id = snapshot_id
+        self.tablet_id = tablet_id
+        self.artifact_id = artifact_id
+        self.sha256 = sha256
+        self.byte_length = byte_length
+        self.ordinal = ordinal
+        self.payload = payload
+        self._closed = False
+
+    def close(self):
+        if not self._closed:
+            try:
+                os.close(self.fd)
+            finally:
+                self._closed = True
+
+
 @dataclass(frozen=True)
 class PvcContextSelection:
     """An explicit tablet selection, in validated snapshot order."""
@@ -84,12 +123,13 @@ class PvcContextSelection:
 @dataclass(frozen=True)
 class _StagedPvcContext:
     image_authorities: tuple[_ImageAuthority, ...]
+    text_authorities: tuple[_TextAuthority, ...]
     framing: str
     root: Path | None = None
 
     def cleanup(self) -> None:
         """Release the staged descriptors and backing directory, once."""
-        for authority in self.image_authorities:
+        for authority in (*self.image_authorities, *self.text_authorities):
             authority.close()
         # Descriptor close is idempotent, and the directory may also be
         # visited by the workflow's preparation fallback.  In particular,
@@ -154,6 +194,7 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                        for source in document["sources"]}
     root = Path(tempfile.mkdtemp(prefix="atlas-pvc-context-", dir="/tmp"))
     authorities = []
+    authorities_text = []
     try:
         bundle = selection.result.bundle_path
         root_fd = os.open(bundle, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -170,10 +211,13 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                 try:
                     digest = hashlib.sha256()
                     length = 0
+                    payload = bytearray()
                     if not hasattr(os, "memfd_create"):
                         raise PvcContextError("PVC_CONTEXT_MEMFD_UNAVAILABLE")
+                    text_authority = None
                     image_fd = os.memfd_create(
-                        f"atlas-pvc-image-{index}",
+                        ("atlas-pvc-image-" if artifact["mediaType"] == "image/png"
+                         else "atlas-pvc-text-") + str(index),
                         os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
                     try:
                         with os.fdopen(image_fd, "wb", closefd=False) as output:
@@ -184,6 +228,7 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                                 digest.update(chunk)
                                 length += len(chunk)
                                 output.write(chunk)
+                                payload.extend(chunk)
                             output.flush()
                             os.fsync(output.fileno())
                     except BaseException:
@@ -202,10 +247,35 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                     except BaseException:
                         os.close(image_fd)
                         raise PvcContextError("PVC_CONTEXT_IMAGE_SEAL_FAILED")
-                    authorities.append(_ImageAuthority(
-                        _AUTHORITY_TOKEN, image_fd, document["snapshotId"],
-                        tablet["id"], artifact["artifactId"], artifact["sha256"],
-                        artifact["byteLength"], index - 1))
+                    if artifact["mediaType"] == "image/png":
+                        authorities.append(_ImageAuthority(
+                            _AUTHORITY_TOKEN, image_fd, document["snapshotId"],
+                            tablet["id"], artifact["artifactId"],
+                            artifact["sha256"], artifact["byteLength"],
+                            index - 1))
+                    elif artifact["mediaType"] in {
+                            "text/vnd.atlas.review-task",
+                            "text/vnd.atlas.review-diff"}:
+                        try:
+                            text = bytes(payload)
+                            text.decode("utf-8")
+                        except UnicodeDecodeError as error:
+                            os.close(image_fd)
+                            raise PvcContextError(
+                                "PVC_CONTEXT_TEXT_UTF8_INVALID") from error
+                        text_authority = _TextAuthority(
+                            _AUTHORITY_TOKEN, image_fd, document["snapshotId"],
+                            tablet["id"], artifact["artifactId"],
+                            artifact["sha256"], artifact["byteLength"],
+                            index - 1, text)
+                        # The name is historical; the descriptor is an
+                        # artifact authority, never a Codex image unless the
+                        # media type selected the image branch above.
+                        authorities_text.append(text_authority)
+                    else:
+                        os.close(image_fd)
+                        raise PvcContextError(
+                            "PVC_CONTEXT_MEDIA_TYPE_UNSUPPORTED")
                 finally:
                     os.close(source_fd)
                 addresses = []
@@ -218,14 +288,45 @@ def _stage_pvc_context(selection: PvcContextSelection) -> _StagedPvcContext:
                     line = f"{source}:{span.get('startLine')}-{span.get('endLine')}"
                     addresses.append(line)
                 suffix = f" ({', '.join(addresses)})" if addresses else ""
+                media = artifact["mediaType"]
+                # From this point on, text is taken from the typed authority,
+                # not from the source pathname (or an untrusted re-read).
+                framed_payload = (
+                    text_authority.payload if text_authority is not None
+                    else None
+                )
+                payload_for_metadata = (
+                    framed_payload if framed_payload is not None
+                    else bytes(payload)
+                )
+                content_digest = hashlib.sha256(payload_for_metadata).hexdigest()
                 framing.append(
-                    f"{index}. {tablet['id']} artifact={artifact['artifactId']}"
-                    f"{suffix}")
+                    f"{index}. {tablet['id']} media={media} "
+                    f"artifact={artifact['artifactId']} "
+                    f"tablet-sha256={tablet.get('digest', '')} "
+                    f"payload-sha256={content_digest} "
+                    f"payload-bytes={len(payload_for_metadata)}{suffix}")
+                provenance = tablet.get("provenance")
+                if provenance:
+                    framing.append(f"   provenance: {provenance}")
+                if media in {"text/vnd.atlas.review-task",
+                             "text/vnd.atlas.review-diff"}:
+                    # The payload is inserted byte-for-byte between
+                    # controller-authored delimiters.  No parsing,
+                    # summarization, normalization, or semantic rewrite is
+                    # performed.  The added newlines belong to the framing,
+                    # not to the staged payload.
+                    framing.append("   payload-begin")
+                    framing.append(framed_payload.decode("utf-8"))
+                    framing.append(
+                        f"   payload-end tablet={tablet['id']}")
         finally:
             os.close(root_fd)
-        return _StagedPvcContext(tuple(authorities), "\n".join(framing) + "\n", root)
+        return _StagedPvcContext(
+            tuple(authorities), tuple(authorities_text),
+            "\n".join(framing) + "\n", root)
     except BaseException:
-        for authority in authorities:
+        for authority in (*authorities, *authorities_text):
             authority.close()
         shutil.rmtree(root, ignore_errors=True)
         raise

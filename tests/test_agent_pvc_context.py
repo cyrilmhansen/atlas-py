@@ -1,9 +1,14 @@
+import hashlib
+import json
+
 import pytest
 from dataclasses import replace
 
 from tools.atlas_agent.codex_executor import CodexExecutor
 from tools.atlas_agent.executor import ExecutionSpec, PreparedExecution
-from tools.atlas_agent.pvc import validate_prepare_result
+from tools.atlas_agent.pvc import (
+    PvcBundleValidationError, _snapshot_identity_id, validate_prepare_result,
+)
 from tools.atlas_agent.pvc_context import (
     PvcContextError, PvcContextSelection, _stage_pvc_context,
 )
@@ -13,6 +18,30 @@ from test_agent_pvc_validation import _result
 
 def validated(tmp_path):
     return validate_prepare_result(_result(tmp_path))
+
+
+def mixed_validated(tmp_path):
+    result = _result(tmp_path)
+    text = "exact review text \N{SNOWMAN}\n".encode()
+    (result.bundle_path / "artifacts/review.txt").write_bytes(text)
+    document = json.loads(result.stdout_path.read_text())
+    document["tablets"].append({
+        "id": "review-text", "pageIndex": 2, "profile": "review",
+        "width": 1, "height": 1, "spans": [], "artifactId": "review-a",
+        "digest": hashlib.sha256(b"tablet framing").hexdigest(),
+        "byteLength": len(text), "provenance": "controller-review",
+    })
+    document["artifacts"].append({
+        "artifactId": "review-a", "relativePath": "artifacts/review.txt",
+        "mediaType": "text/vnd.atlas.review-diff", "byteLength": len(text),
+        "sha256": hashlib.sha256(text).hexdigest(),
+    })
+    document["snapshotId"] = _snapshot_identity_id(document)
+    encoded = json.dumps(document, ensure_ascii=False,
+                          separators=(",", ":")).encode() + b"\n"
+    result.stdout_path.write_bytes(encoded)
+    result.bundle_path.joinpath("snapshot.json").write_bytes(encoded)
+    return validate_prepare_result(result), text
 
 
 def test_selection_is_validated_ordered_and_cleaned(tmp_path):
@@ -41,6 +70,48 @@ def test_unvalidated_or_tampered_artifact_fails_closed(tmp_path):
     (result.bundle_path / "artifacts/one.png").write_bytes(b"tampered")
     with pytest.raises(PvcContextError, match="MISMATCH"):
         _stage_pvc_context(PvcContextSelection(result, ("APO-VC-000001",)))
+
+
+def test_typed_mixed_context_keeps_text_out_of_image_transport(tmp_path):
+    result, text = mixed_validated(tmp_path)
+    staged = _stage_pvc_context(PvcContextSelection(
+        result, ("APO-VC-000001", "review-text")))
+    try:
+        assert len(staged.image_authorities) == 1
+        assert len(staged.text_authorities) == 1
+        assert staged.text_authorities[0].payload == text
+        assert text in staged.framing.encode("utf-8")
+        executor = CodexExecutor(executable=str(tmp_path / "codex"))
+        base = dict(codex_profile=None, session_mode="fresh",
+                    web_search="disabled", requested_reasoning_effort="low",
+                    action="implementation")
+        spec = type("Spec", (), {"repository_root": tmp_path})()
+        command = executor._build_command(
+            spec, base, staged.image_authorities)
+        assert command.count("--image") == 1
+        assert staged.text_authorities[0].artifact_id not in command
+    finally:
+        staged.cleanup()
+
+
+def test_review_text_artifact_must_be_validated_utf8(tmp_path):
+    result = _result(tmp_path)
+    document = json.loads(result.stdout_path.read_text())
+    document["tablets"][0].update(
+        profile="review", digest=hashlib.sha256(b"tablet").hexdigest(),
+        byteLength=1,
+    )
+    document["artifacts"][0].update(
+        mediaType="text/vnd.atlas.review-task", byteLength=1,
+        sha256=hashlib.sha256(b"\xff").hexdigest(),
+    )
+    result.bundle_path.joinpath("artifacts/one.png").write_bytes(b"\xff")
+    document["snapshotId"] = _snapshot_identity_id(document)
+    encoded = json.dumps(document, separators=(",", ":")).encode() + b"\n"
+    result.stdout_path.write_bytes(encoded)
+    result.bundle_path.joinpath("snapshot.json").write_bytes(encoded)
+    with pytest.raises(PvcBundleValidationError, match="UTF8"):
+        validate_prepare_result(result)
 
 
 def test_selection_and_authority_are_nominal_not_duck_typed(tmp_path):
