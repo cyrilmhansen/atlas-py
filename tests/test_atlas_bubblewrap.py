@@ -11,6 +11,9 @@ import pytest
 from tools.atlas_agent.bubblewrap import AtlasBubblewrapExecutor, AtlasSandboxError, ScratchStore, _native_codex
 from tools.atlas_agent.codex_executor import CodexExecutor
 from tools.atlas_agent.executor import ExecutionSpec, ExecutorError, PreparedExecution
+from tools.atlas_agent.toolchains import (
+    CacheScope, CapabilityPlan, Mount, ResolvedCache, Toolchain,
+)
 
 
 def _spec(tmp_path):
@@ -818,3 +821,262 @@ def test_stop_server_unconfirmed_or_interrupted_reap_retains_retry_state(tmp_pat
         with pytest.raises(AtlasSandboxError, match="UNREAPED"): executor._stop_server()
         assert runtime.exists() and run.exists()
         assert executor._server is process and executor._scratch == run
+
+
+def _capability_binding_fixture(tmp_path, *, toolchains=(), caches=()):
+    plan_toolchains = tuple(
+        Toolchain(name, "qualified", tmp_path / name, ()) for name in toolchains
+    )
+    plan_caches = tuple(
+        ResolvedCache(name, Path("/cache") / name, tmp_path / name,
+                      CacheScope("project", "toolchain"))
+        for name in caches
+    )
+    plan = CapabilityPlan(plan_toolchains, plan_caches, (), {}, {})
+    snapshot = {
+        "schema": "atlas-agent-policy-snapshot/4",
+        "executor": "codex",
+        "required_toolchains": list(toolchains),
+        "writable_caches": list(caches),
+        "capability_plan_sha256": plan.sha256,
+    }
+    return snapshot, plan
+
+
+def test_current_codex_capability_binding_accepts_authorized_cases(tmp_path):
+    empty, _ = _capability_binding_fixture(tmp_path)
+    empty["capability_plan_sha256"] = None
+    AtlasBubblewrapExecutor._validate_capability_binding(
+        type("Spec", (), {"policy_snapshot": empty, "capability_plan": None})()
+    )
+
+    snapshot, plan = _capability_binding_fixture(
+        tmp_path, toolchains=("rust",), caches=("cargo",)
+    )
+    AtlasBubblewrapExecutor._validate_capability_binding(
+        type("Spec", (), {"policy_snapshot": snapshot, "capability_plan": plan})()
+    )
+
+
+def test_public_preparation_rejection_closes_submitted_plan_authority(
+    tmp_path, monkeypatch
+):
+    """Binding rejection owns and tears down a genuine submitted plan."""
+    _stub_codex_prepare(monkeypatch)
+    snapshot, base = _capability_binding_fixture(tmp_path, toolchains=("rust",))
+    AtlasBubblewrapExecutor._validate_capability_binding(
+        type("Spec", (), {"policy_snapshot": snapshot, "capability_plan": base})()
+    )
+    authority = tmp_path / "authority"
+    authority.write_bytes(b"authority")
+    fd = os.open(authority, os.O_RDONLY)
+    plan = CapabilityPlan(
+        base.toolchains, base.caches,
+        (Mount(authority, Path("/opt/atlas/toolchains/rust"),
+               authority_fd=fd),),
+        {}, {},
+    )
+    # The only mutation is the snapshot's binding digest.
+    mutated = dict(snapshot)
+    mutated["capability_plan_sha256"] = "0" * 64
+    spec = __import__("dataclasses").replace(
+        _spec(tmp_path), policy_snapshot=mutated, capability_plan=plan
+    )
+    executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    with pytest.raises(AtlasSandboxError, match="CAPABILITY_PLAN_BINDING"):
+        executor.prepare_execution(spec)
+    with pytest.raises(OSError):
+        os.fstat(fd)
+    assert not executor._run_lock.locked()
+    assert executor._capability_plan is None
+    assert executor._capability_locks == []
+
+
+def test_public_abandonment_closes_only_prepared_capability_authority(
+    tmp_path, monkeypatch
+):
+    """An abandoned preparation is fully terminal and the executor is reusable."""
+    _stub_codex_prepare(monkeypatch)
+    monkeypatch.setattr(
+        "tools.atlas_agent.bubblewrap._native_codex", lambda _: Path("/bin/true")
+    )
+    authority = tmp_path / "authority"
+    authority.mkdir()
+    fd = os.open(authority, os.O_RDONLY | os.O_DIRECTORY)
+    mount = Mount(
+        authority, Path("/opt/atlas/toolchains/rust"), True,
+        authority.stat().st_dev, authority.stat().st_ino, fd,
+    )
+    plan = CapabilityPlan(
+        (Toolchain("rust", "qualified", authority, ()),), (), (mount,), {}, {}
+    )
+    snapshot = {
+        "schema": "atlas-agent-policy-snapshot/4", "executor": "codex",
+        "required_toolchains": ["rust"], "writable_caches": [],
+        "capability_plan_sha256": plan.sha256,
+    }
+    spec = __import__("dataclasses").replace(
+        _spec(tmp_path), policy_snapshot=snapshot, capability_plan=plan
+    )
+    executor = AtlasBubblewrapExecutor(
+        executable="/bin/true", bwrap="/bin/true",
+        scratch_root=tmp_path / "scratch",
+    )
+    monkeypatch.setattr(executor, "_validate_namespace", lambda: None)
+    monkeypatch.setattr(executor, "_filesystem_class", lambda _: "disk")
+    monkeypatch.setattr(executor, "_scratch_probe", lambda _: None)
+    monkeypatch.setattr(executor, "_capability_probe", lambda: None)
+    monkeypatch.setattr(executor, "_bwrap_version", lambda: "test")
+
+    prepared = executor.prepare_execution(spec)
+    assert executor._capability_plan is plan
+    os.fstat(fd)
+    executor.abandon_prepared_execution(prepared)
+    with pytest.raises(OSError):
+        os.fstat(fd)
+    assert executor._capability_plan is None
+    assert not executor._run_lock.locked()
+    assert executor._capability_locks == []
+
+    reused_fd = os.open("/dev/null", os.O_RDONLY)
+    try:
+        missing = __import__("dataclasses").replace(spec, capability_plan=None)
+        with pytest.raises(AtlasSandboxError, match="CAPABILITY_PLAN_BINDING"):
+            executor.prepare_execution(missing)
+        os.fstat(reused_fd)
+    finally:
+        os.close(reused_fd)
+
+    fd2 = os.open(authority, os.O_RDONLY | os.O_DIRECTORY)
+    plan2 = CapabilityPlan(
+        plan.toolchains, plan.caches,
+        (Mount(authority, mount.guest_root, True, mount.st_dev,
+               mount.st_ino, fd2),), {}, {},
+    )
+    spec2 = __import__("dataclasses").replace(
+        spec, capability_plan=plan2,
+        policy_snapshot={**snapshot, "capability_plan_sha256": plan2.sha256},
+    )
+    prepared2 = executor.prepare_execution(spec2)
+    executor.abandon_prepared_execution(prepared2)
+    with pytest.raises(OSError):
+        os.fstat(fd2)
+
+
+def test_terminal_run_drops_plan_before_later_rejected_preparation(
+    tmp_path, monkeypatch
+):
+    """A later public rejection cannot clean up a completed run's plan."""
+    authority = tmp_path / "authority"
+    authority.write_bytes(b"authority")
+    fd = os.open(authority, os.O_RDONLY)
+    snapshot, base = _capability_binding_fixture(
+        tmp_path, toolchains=("rust",)
+    )
+    plan = CapabilityPlan(
+        base.toolchains, base.caches,
+        (Mount(authority, Path("/opt/atlas/toolchains/rust"),
+               authority_fd=fd),),
+        {}, {},
+    )
+    spec = __import__("dataclasses").replace(
+        _spec(tmp_path), policy_snapshot=snapshot, capability_plan=plan
+    )
+    executor = AtlasBubblewrapExecutor(scratch_root=tmp_path / "scratch")
+    descriptor = object()
+    executor._descriptor = descriptor
+    executor._capability_plan = plan
+    prepared = PreparedExecution(
+        spec, "codex", (), "test", {}, snapshot, descriptor
+    )
+    monkeypatch.setattr(executor, "_validate_runtime_identity", lambda _: None)
+    monkeypatch.setattr(executor, "_sealed_runtime_fd",
+                        lambda _: os.open("/dev/null", os.O_RDONLY))
+    monkeypatch.setattr(executor, "_validate_sealed_runtime_fd",
+                        lambda *_: None)
+    monkeypatch.setattr(executor, "_start_server", lambda *_: None)
+    monkeypatch.setattr(executor, "_stop_server", lambda: None)
+    monkeypatch.setattr(executor, "_publication_success", lambda _: True)
+    monkeypatch.setattr(
+        CodexExecutor, "run_execution",
+        lambda self, prepared, _runtime_binary_fd=None:
+        type("Result", (), {
+            "timed_out": False, "exit_code": 0, "outcome": "success"
+        })(),
+    )
+    assert executor._run_lock.acquire()
+    executor.run_execution(prepared)
+    assert executor._capability_plan is None
+    with pytest.raises(OSError):
+        os.fstat(fd)
+
+    reused_fd = os.open("/dev/null", os.O_RDONLY)
+    try:
+        invalid = __import__("dataclasses").replace(
+            spec,
+            policy_snapshot={
+                "schema": "atlas-agent-policy-snapshot/4",
+                "executor": "codex",
+                "required_toolchains": ["rust"],
+                "writable_caches": [],
+                "capability_plan_sha256": snapshot["capability_plan_sha256"],
+            },
+            capability_plan=None,
+        )
+        with pytest.raises(AtlasSandboxError, match="CAPABILITY_PLAN_BINDING"):
+            executor.prepare_execution(invalid)
+        os.fstat(reused_fd)
+    finally:
+        os.close(reused_fd)
+    assert not executor._run_lock.locked()
+    assert executor._capability_plan is None
+
+
+@pytest.mark.parametrize("mutation", [
+    "missing_plan", "unexpected_plan", "missing_toolchain", "extra_toolchain",
+    "missing_cache", "extra_cache", "bad_digest",
+])
+def test_current_codex_capability_binding_rejects_mutations_after_authorized_case(
+    tmp_path, mutation
+):
+    snapshot, plan = _capability_binding_fixture(
+        tmp_path, toolchains=("rust",), caches=("cargo",)
+    )
+    # Establish the unmodified authorized case before each mutation.
+    AtlasBubblewrapExecutor._validate_capability_binding(
+        type("Spec", (), {"policy_snapshot": snapshot, "capability_plan": plan})()
+    )
+    mutated_snapshot = dict(snapshot)
+    mutated_plan = plan
+    if mutation == "missing_plan":
+        mutated_plan = None
+    elif mutation == "unexpected_plan":
+        mutated_snapshot["required_toolchains"] = []
+        mutated_snapshot["writable_caches"] = []
+        mutated_snapshot["capability_plan_sha256"] = None
+        # This is a valid capability-free snapshot, not a malformed
+        # toolchain/cache mutation.  Establish that no plan is accepted
+        # before supplying the unexpected genuine plan.
+        AtlasBubblewrapExecutor._validate_capability_binding(
+            type("Spec", (), {"policy_snapshot": mutated_snapshot,
+                              "capability_plan": None})()
+        )
+    elif mutation == "missing_toolchain":
+        mutated_snapshot["required_toolchains"] = []
+    elif mutation == "extra_toolchain":
+        _, extra = _capability_binding_fixture(tmp_path, toolchains=("rust", "go"),
+                                               caches=("cargo",))
+        mutated_plan = extra
+    elif mutation == "missing_cache":
+        mutated_snapshot["writable_caches"] = []
+    elif mutation == "extra_cache":
+        _, extra = _capability_binding_fixture(tmp_path, toolchains=("rust",),
+                                               caches=("cargo", "npm"))
+        mutated_plan = extra
+    else:
+        mutated_snapshot["capability_plan_sha256"] = "0" * 64
+    with pytest.raises(AtlasSandboxError, match="CAPABILITY_PLAN_BINDING"):
+        AtlasBubblewrapExecutor._validate_capability_binding(
+            type("Spec", (), {"policy_snapshot": mutated_snapshot,
+                              "capability_plan": mutated_plan})()
+        )

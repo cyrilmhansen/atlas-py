@@ -35,7 +35,8 @@ def _git(path, *args):
     return subprocess.check_output(["git", *args], cwd=path, text=True).strip()
 
 
-def _project(tmp_path, *, capabilities=True, qualification="rust:1"):
+def _project(tmp_path, *, capabilities=True, qualification="rust:1",
+             required_toolchains=None, required_caches=None):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -47,12 +48,16 @@ def _project(tmp_path, *, capabilities=True, qualification="rust:1"):
         'allowed_untracked = ["corpus_miner/"]\n'
     )
     policy = BASE_POLICY
-    if capabilities:
+    if required_toolchains is None:
+        required_toolchains = ["rust"] if capabilities else []
+    if required_caches is None:
+        required_caches = ["cargo"] if capabilities else []
+    if required_toolchains or required_caches:
         policy = policy.replace(
             'required_toolchains = []\n'
             'writable_caches = []\n',
-            'required_toolchains = ["rust"]\n'
-            'writable_caches = ["cargo"]\n', 1)
+            f'required_toolchains = {json.dumps(required_toolchains)}\n'
+            f'writable_caches = {json.dumps(required_caches)}\n', 1)
     (repo / "atlas-agent-policy.toml").write_text(policy)
     tool = tmp_path / "qualified-toolchain" / "bin" / "cargo"
     tool.parent.mkdir(parents=True)
@@ -136,6 +141,12 @@ def _production_inputs(workflow, accepted, plan, execution_id):
     snapshot = resolve_policy(
         load_policy(workflow.root / "atlas-agent-policy.toml"), prompt
     )
+    if plan is not None:
+        # The workflow adds this controller-derived binding before handing the
+        # spec to the executor.  Keep direct production-boundary fixtures on
+        # that same authority contract.
+        snapshot = dict(snapshot)
+        snapshot["capability_plan_sha256"] = plan.sha256
     return dict(
         generation=1,
         prompt_sha256=hashlib.sha256(prompt_bytes).hexdigest(),
@@ -416,7 +427,10 @@ def test_real_preflight_does_not_bypass_commandless_capability_plan(
     """Caches alone still require namespace capability validation."""
     if not shutil.which("bwrap") or not shutil.which("codex"):
         pytest.skip("Bubblewrap/native Codex unavailable")
-    _, workflow = _project(tmp_path, capabilities=False)
+    _, workflow = _project(
+        tmp_path, capabilities=False, required_toolchains=[],
+        required_caches=["cargo"]
+    )
     monkeypatch.setenv("ATLAS_AGENT_CAPABILITIES_FILE", str(
         tmp_path / "machine-capabilities.toml"
     ))
@@ -490,7 +504,10 @@ def test_production_bubblewrap_consumes_private_toolchain_and_cache_plan(
 def test_system_visible_capability_does_not_create_unrelated_usr_bind(
     tmp_path, monkeypatch, request
 ):
-    _, workflow = _project(tmp_path, capabilities=False)
+    _, workflow = _project(
+        tmp_path, capabilities=False, required_toolchains=["system"],
+        required_caches=[]
+    )
     if not shutil.which("bwrap") or not shutil.which("codex"):
         pytest.skip("Bubblewrap/native Codex unavailable")
     manifest = tmp_path / "system-capabilities.toml"

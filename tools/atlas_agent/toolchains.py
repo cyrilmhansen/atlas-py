@@ -189,6 +189,7 @@ class CapabilityPlan:
         self.mounts = tuple(mounts)
         self._environment = MappingProxyType(dict(environment))
         self._facts = deepcopy(facts)
+        self._authority_closed = False
         encoded = json.dumps(self._facts, sort_keys=True, separators=(",", ":")).encode()
         self.sha256 = hashlib.sha256(encoded).hexdigest()
         self.capability_plan_sha256 = self.sha256
@@ -202,6 +203,12 @@ class CapabilityPlan:
             _error("ATLAS_TOOLCHAIN_REQUIRED_UNAVAILABLE")
 
     def close_authority(self):
+        if self._authority_closed:
+            return
+        # Terminalize ownership before closing any descriptor.  The integer
+        # values in Mount are snapshots and may be reused by the OS after the
+        # close; a repeated cleanup must therefore not retry them.
+        self._authority_closed = True
         for mount in self.mounts:
             if mount.authority_fd >= 0:
                 try:

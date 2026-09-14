@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .codex_executor import CodexExecutor
 from .executor import ExecutorError, ExecutionResult, PreparedExecution
-from .toolchains import CacheStore
+from .toolchains import CacheStore, CapabilityPlan
 
 
 class AtlasSandboxError(ExecutorError):
@@ -466,25 +466,39 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def abandon_prepared_execution(self, prepared):
         """Release preparation-owned scratch when RUN_STARTED is not owned."""
         if (self._execution_ownership_transferred or
-                not self._run_lock.locked()):
+                not self._run_lock.locked() or
+                # A stale PreparedExecution must not be allowed to tear down
+                # a later preparation after this executor has been reused.
+                getattr(prepared, "runtime_handle", None) is not self._descriptor):
             return
+        # Terminalize this preparation's authority before handing the
+        # executor back to the pool.  In particular, clear the reference
+        # before releasing the run lock so a subsequent preparation cannot be
+        # mistaken for the owner of this plan.
+        plan = self._capability_plan
+        self._capability_plan = None
+        if plan is not None:
+            plan.close_authority()
         scratch = self._scratch
-        if scratch is not None:
-            try:
+        try:
+            if scratch is not None:
                 self._stop_server()
-            finally:
+            else:
+                # Preparation may have failed after creating a resource
+                # without publishing it as executor state; the store's
+                # authority map is the only safe source of cleanup targets.
+                spec = getattr(prepared, "spec", None)
+                if spec is not None:
+                    candidate = self.scratch_store.runs / str(spec.execution_id)
+                    if self.scratch_store.owned(candidate):
+                        self.scratch_store.cleanup(candidate)
+        finally:
+            # _stop_server normally releases these after a positive reap;
+            # only finish that cleanup here when teardown could not do so.
+            if self._capability_locks:
                 self._release_capability_locks()
-                if self._run_lock.locked():
-                    self._run_lock.release()
-            return
-        # Preparation may have failed after creating a resource without
-        # publishing it as executor state; the store's authority map is the
-        # only safe source of cleanup targets.
-        spec = getattr(prepared, "spec", None)
-        if spec is not None:
-            candidate = self.scratch_store.runs / str(spec.execution_id)
-            if self.scratch_store.owned(candidate):
-                self.scratch_store.cleanup(candidate)
+            if self._run_lock.locked():
+                self._run_lock.release()
 
     def _validate_namespace(self) -> None:
         command = [self.bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
@@ -1096,11 +1110,19 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         self._execution_ownership_transferred = False
         keep_lock = False
         try:
+            # A real plan is owned by the executor for the whole submission,
+            # including validation.  This is important for the rejection
+            # path: its qualified authority FDs must be closed by the same
+            # cleanup contract as a plan which got as far as mount setup.
+            submitted_plan = getattr(spec, "capability_plan", None)
+            if type(submitted_plan) is CapabilityPlan:
+                self._capability_plan = submitted_plan
             return self._prepare_execution_locked(spec)
         except BaseException:
             self._release_capability_locks()
             if self._capability_plan is not None:
                 self._capability_plan.close_authority()
+                self._capability_plan = None
             if self._scratch is not None and self._server is None:
                 try:
                     self.scratch_store.cleanup(self._scratch)
@@ -1111,7 +1133,14 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             raise
 
     def _prepare_execution_locked(self, spec):
-        self._capability_plan = getattr(spec, "capability_plan", None)
+        self._validate_capability_binding(spec)
+        # The ownership assignment also occurs before binding validation in
+        # prepare_execution(); retain the identity check here so malformed
+        # arbitrary objects can never become cleanup-owned plans.
+        submitted_plan = getattr(spec, "capability_plan", None)
+        self._capability_plan = (
+            submitted_plan if type(submitted_plan) is CapabilityPlan else None
+        )
         if self._capability_plan is not None:
             try:
                 for cache in self._capability_plan.caches:
@@ -1168,6 +1197,57 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             })
             self._capability_probe()
         return replace(prepared, runtime_handle=self._descriptor)
+
+    @staticmethod
+    def _validate_capability_binding(spec):
+        """Bind capability authority to the current policy snapshot.
+
+        This deliberately lives before any plan-derived cache, mount, or
+        environment state is consumed.  Historical snapshots have no current
+        capability contract and retain their replay semantics.
+        """
+        snapshot = getattr(spec, "policy_snapshot", None)
+        if not (isinstance(snapshot, dict) and
+                snapshot.get("schema") == "atlas-agent-policy-snapshot/4" and
+                snapshot.get("executor") == "codex"):
+            return
+        try:
+            required_toolchains = snapshot["required_toolchains"]
+            required_caches = snapshot["writable_caches"]
+            if (type(required_toolchains) is not list or
+                    type(required_caches) is not list or
+                    any(type(name) is not str or not name
+                        for name in required_toolchains + required_caches)):
+                raise ValueError("invalid snapshot requirements")
+            if (len(set(required_toolchains)) != len(required_toolchains) or
+                    len(set(required_caches)) != len(required_caches)):
+                raise ValueError("duplicate snapshot requirement")
+            plan = getattr(spec, "capability_plan", None)
+            empty = not required_toolchains and not required_caches
+            if empty:
+                if plan is not None:
+                    raise ValueError("unexpected capability plan")
+                return
+            if type(plan) is not CapabilityPlan:
+                raise ValueError("required capability plan")
+            if type(snapshot.get("capability_plan_sha256")) is not str:
+                raise ValueError("missing capability plan digest")
+            toolchains = plan.toolchains
+            caches = plan.caches
+            if (type(toolchains) is not tuple or type(caches) is not tuple or
+                    any(type(toolchain.name) is not str for toolchain in toolchains) or
+                    any(type(cache.name) is not str for cache in caches)):
+                raise ValueError("malformed capability plan")
+            toolchain_names = [toolchain.name for toolchain in toolchains]
+            cache_names = [cache.name for cache in caches]
+            if (len(set(toolchain_names)) != len(toolchain_names) or
+                    len(set(cache_names)) != len(cache_names) or
+                    set(toolchain_names) != set(required_toolchains) or
+                    set(cache_names) != set(required_caches) or
+                    plan.sha256 != snapshot["capability_plan_sha256"]):
+                raise ValueError("capability plan does not match snapshot")
+        except (KeyError, AttributeError, TypeError, ValueError) as error:
+            raise AtlasSandboxError("ATLAS_CAPABILITY_PLAN_BINDING_INVALID") from error
 
     def sandbox_descriptor(self):
         return dict(self._descriptor or {})
@@ -1352,6 +1432,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 finally:
                     if self._capability_plan is not None:
                         self._capability_plan.close_authority()
+                        self._capability_plan = None
                     if runtime_fd is not None:
                         try: os.close(runtime_fd)
                         except OSError: pass
