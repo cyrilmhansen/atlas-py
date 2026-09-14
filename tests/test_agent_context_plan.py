@@ -2,6 +2,7 @@
 import hashlib
 import json
 import stat
+import sys
 
 import pytest
 
@@ -14,6 +15,7 @@ from tools.atlas_agent.pvc_context import _stage_pvc_composition
 from tools.atlas_agent.review import ReviewPackage
 from test_agent_pvc_validation import _result
 from test_semantic_query import FAKE
+from test_python_semantic_query import FAKE as PYTHON_FAKE
 from test_agent_workflow_w221 import accepted, make_repo
 
 
@@ -28,6 +30,19 @@ def semantic_member(executable, kind="hover", path="a.rs", line=0, character=0):
     return {"kind": "SEMANTIC", "query": {"kind": kind, "path": path,
             "line": line, "character": character}, "executable": str(executable),
             "version": "fake"}
+
+
+def python_member(executable, path="a.py"):
+    return {"kind": "SEMANTIC", "backend": "python",
+            "query": {"kind": "hover", "path": path, "line": 0,
+                      "character": 8}, "executable": str(executable),
+            "version": "fake 1"}
+
+
+def _server(path, source):
+    path.write_text("#!" + sys.executable + "\n" + source)
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
 
 
 def test_context_plan_valid_schema_and_ordered_member_shapes(tmp_path):
@@ -301,3 +316,251 @@ def test_context_plan_cannot_smuggle_execution_authority(tmp_path):
                           **{key: "forbidden"})
         with pytest.raises(ValueError):
             parse_context_plan(path)
+
+
+def test_v2_rust_bridge_queries_fixture_and_records_owned_resource(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    authority = _server(tmp_path / "fake-ra", FAKE)
+    accepted(workflow)
+    (repo / "a.rs").write_text("fn main() {}\n")
+    plan = write_plan(tmp_path / "v2.json", [{
+        **semantic_member(authority, path="a.rs"), "backend": "rust",
+    }], schema="atlas-agent-context-plan/2")
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    try:
+        selection = composition.selections[0]
+        artifact = selection.result.validated_snapshot.document["artifacts"][0]
+        semantic = (selection.result.bundle_path /
+                    artifact["relativePath"]).read_bytes()
+        assert json.loads(semantic)["schema"] == "atlas-rust-semantic/1"
+        assert artifact["mediaType"] == (
+            "application/vnd.atlas.rust-semantic+json")
+        assert selection.purpose == "rust semantic context"
+        assert selection.result.scratch_path in composition.owned_resources
+    finally:
+        cleanup_context_composition(composition)
+
+
+def test_v2_model_execution_transports_review_and_python_once(tmp_path):
+    from tools.atlas_agent.codex_executor import CodexExecutor
+    from tools.atlas_agent.executor import ExecutionResult, PreparedExecution, utc_now
+
+    repo, workflow = make_repo(tmp_path)
+    server = _server(tmp_path / "pyright", PYTHON_FAKE.replace("a.py", "corpus_miner/a"))
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    (repo / "corpus_miner" / "a").write_bytes(
+        "é😀 target = 2\r\nprint(target)\r\n".encode())
+    plan = write_plan(tmp_path / "v2.json", [
+        {"kind": "REVIEW"}, python_member(server, path="corpus_miner/a"),
+    ], schema="atlas-agent-context-plan/2")
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    review = composition.selections[0]
+    review_payloads = [(review.result.bundle_path / item["relativePath"]).read_bytes()
+                       for item in review.result.validated_snapshot.document[
+                           "artifacts"]]
+    artifact = composition.selections[1].result.validated_snapshot.document[
+        "artifacts"][0]
+    python_bytes = (composition.selections[1].result.bundle_path /
+                    artifact["relativePath"]).read_bytes()
+
+    class Capture(CodexExecutor):
+        supports_authoritative_pvc_context = True
+
+        def __init__(self):
+            super().__init__(executable="/bin/true")
+            self.inputs = []
+            self.commands = []
+
+        def prepare_execution(self, spec):
+            return PreparedExecution(spec, "capture", ("capture",), "capture/1",
+                                     self._envelope(), spec.policy_snapshot)
+
+        def run_execution(self, prepared):
+            self.inputs.append(prepared.spec.prompt_bytes)
+            self.commands.append(prepared.command)
+            prepared.spec.report_dir.mkdir(parents=True, exist_ok=True)
+            (prepared.spec.report_dir / "stdout.log").write_bytes(b"")
+            (prepared.spec.report_dir / "stderr.log").write_bytes(b"")
+            now = utc_now()
+            return ExecutionResult(
+                str(prepared.spec.execution_id), "capture",
+                list(prepared.command), "capture/1", now, now, 0,
+                "reports/x/stdout.log", "reports/x/stderr.log", "capture-session",
+                "success", "reports/x/result.json",
+                prepared.permission_envelope,
+                execution_input_sha256=hashlib.sha256(
+                    prepared.spec.prompt_bytes).hexdigest())
+
+    capture = Capture()
+    try:
+        workflow.execute(1, capture, pvc_context=composition)
+        assert len(capture.inputs) == 1
+        actual = capture.inputs[0]
+        assert all(payload in actual for payload in review_payloads)
+        assert python_bytes in actual
+        assert b"atlas-python-semantic/1" in actual
+        assert "--image" not in capture.commands[0]
+        assert workflow._state()["generations"]["1"]["execution"][
+            "effective_prompt_sha256"] == hashlib.sha256(actual).hexdigest()
+    finally:
+        cleanup_context_composition(composition)
+
+
+def test_v2_mixed_plan_preserves_order_and_global_ordinals(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    rust = _server(tmp_path / "rust", FAKE)
+    python = _server(tmp_path / "python",
+                     PYTHON_FAKE.replace("a.py", "corpus_miner/a"))
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    (repo / "corpus_miner" / "a").write_bytes(
+        "é😀 target = 2\r\nprint(target)\r\n".encode())
+    retained = _result(repo / "corpus_miner")
+    plan = write_plan(tmp_path / "mixed.json", [
+        {"kind": "REVIEW"}, python_member(python, path="corpus_miner/a"),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
+        {**semantic_member(rust, path="corpus_miner/a"), "backend": "rust"},
+    ], schema="atlas-agent-context-plan/2")
+    composition = build_context_composition(workflow, parse_context_plan(plan))
+    staged = _stage_pvc_composition(composition)
+    try:
+        assert [x.purpose for x in composition.selections] == [
+            "patch review package", "python semantic context", "retained",
+            "rust semantic context"]
+        all_authorities = sorted((*staged.text_authorities,
+                                  *staged.image_authorities),
+                                 key=lambda x: x.ordinal)
+        assert [x.ordinal for x in all_authorities] == list(range(5))
+        assert [x.ordinal for x in staged.text_authorities] == [0, 1, 2, 4]
+        assert [x.ordinal for x in staged.image_authorities] == [3]
+    finally:
+        staged.cleanup()
+        cleanup_context_composition(composition)
+
+
+def test_context_composition_cleanup_removes_generated_semantics_only(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    rust = _server(tmp_path / "rust", FAKE)
+    python = _server(tmp_path / "python",
+                     PYTHON_FAKE.replace("a.py", "corpus_miner/a"))
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    (repo / "corpus_miner" / "a").write_bytes(
+        "é😀 target = 2\r\nprint(target)\r\n".encode())
+    retained = _result(repo / "corpus_miner")
+    retained_stdout = (retained.scratch_path / "stdout").read_bytes()
+    retained_artifact = retained.bundle_path / "artifacts" / "one.png"
+    retained_artifact_bytes = retained_artifact.read_bytes()
+    composition = build_context_composition(workflow, parse_context_plan(
+        write_plan(tmp_path / "lifecycle.json", [
+            {"kind": "REVIEW"}, python_member(python, path="corpus_miner/a"),
+            {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+             "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
+            {**semantic_member(rust, path="corpus_miner/a"), "backend": "rust"},
+        ], schema="atlas-agent-context-plan/2")))
+    review_root = composition.selections[0].result.scratch_path
+    python_root = composition.selections[1].result.scratch_path
+    retained_root = composition.selections[2].result.scratch_path
+    rust_root = composition.selections[3].result.scratch_path
+    owned_roots = (review_root, python_root, rust_root)
+    assert all(root.is_dir() for root in owned_roots)
+    assert retained_root.is_dir()
+    assert retained_artifact.is_file()
+    cleanup_context_composition(composition)
+    assert all(not root.exists() for root in owned_roots)
+    assert retained_root.is_dir()
+    assert (retained_root / "stdout").read_bytes() == retained_stdout
+    assert retained_artifact.is_file()
+    assert retained_artifact.read_bytes() == retained_artifact_bytes
+
+
+def test_context_composition_failure_cleans_python_but_borrows_source(
+        tmp_path, monkeypatch):
+    from tools.atlas_agent.python_semantic import PythonSemanticTablet
+
+    repo, workflow = make_repo(tmp_path)
+    python = _server(tmp_path / "python", PYTHON_FAKE.replace("a.py", "corpus_miner/a"))
+    accepted(workflow)
+    (repo / "corpus_miner").mkdir()
+    (repo / "corpus_miner" / "a").write_bytes(
+        "é😀 target = 2\r\nprint(target)\r\n".encode())
+    retained = _result(repo / "corpus_miner")
+    retained_stdout = (retained.scratch_path / "stdout").read_bytes()
+    retained_artifact = retained.bundle_path / "artifacts" / "one.png"
+    retained_artifact_bytes = retained_artifact.read_bytes()
+    captured_python_roots = []
+    captured_python_existence = []
+    real_python_pvc_context = PythonSemanticTablet.pvc_context
+
+    def record_python_root(tablet, purpose="python semantic context"):
+        selection = real_python_pvc_context(tablet, purpose)
+        root = selection.result.scratch_path
+        captured_python_roots.append(root)
+        captured_python_existence.append(root.is_dir())
+        return selection
+
+    monkeypatch.setattr(PythonSemanticTablet, "pvc_context",
+                        record_python_root)
+    plan = write_plan(tmp_path / "failure.json", [
+        python_member(python, path="corpus_miner/a"),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+         "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
+        python_member(tmp_path / "missing", path="a"),
+    ], schema="atlas-agent-context-plan/2")
+    with pytest.raises(ValueError, match="CONTEXT_PLAN_SEMANTIC_INVALID"):
+        build_context_composition(workflow, parse_context_plan(plan))
+    assert len(captured_python_roots) == 1
+    assert captured_python_existence == [True]
+    assert not captured_python_roots[0].exists()
+    assert retained.scratch_path.is_dir()
+    assert (retained.scratch_path / "stdout").read_bytes() == retained_stdout
+    assert retained_artifact.is_file()
+    assert retained_artifact.read_bytes() == retained_artifact_bytes
+
+
+def test_public_cli_v1_forwards_real_rust_selection(tmp_path, monkeypatch):
+    repo, workflow = make_repo(tmp_path)
+    authority = _server(tmp_path / "rust", FAKE)
+    accepted(workflow)
+    (repo / "a.rs").write_text("fn main() {}\n")
+    path = write_plan(tmp_path / "v1.json", [semantic_member(authority,
+                                                               path="a.rs")])
+    forwarded = []
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(workflow, "dispatch",
+                        lambda executor, observer=None, pvc_context=None:
+                        forwarded.append((
+                            pvc_context,
+                            json.loads((pvc_context.selections[0].result.bundle_path /
+                                        pvc_context.selections[0].result.validated_snapshot.document[
+                                            "artifacts"][0]["relativePath"]).read_bytes()))))
+    assert cli.main(["dispatch", "--context-plan", str(path)]) == 0
+    composition, document = forwarded[0]
+    selection = composition.selections[0]
+    assert selection.purpose == "rust semantic context"
+    assert document["schema"] == "atlas-rust-semantic/1"
+
+
+def test_public_cli_v2_forwards_real_python_selection(tmp_path, monkeypatch):
+    repo, workflow = make_repo(tmp_path)
+    authority = _server(tmp_path / "python", PYTHON_FAKE)
+    accepted(workflow)
+    (repo / "a.py").write_bytes("é😀 target = 1\r\nprint(target)\r\n".encode())
+    path = write_plan(tmp_path / "v2.json", [python_member(authority)],
+                      schema="atlas-agent-context-plan/2")
+    forwarded = []
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(workflow, "dispatch",
+                        lambda executor, observer=None, pvc_context=None:
+                        forwarded.append((
+                            pvc_context,
+                            json.loads((pvc_context.selections[0].result.bundle_path /
+                                        pvc_context.selections[0].result.validated_snapshot.document[
+                                            "artifacts"][0]["relativePath"]).read_bytes()))))
+    assert cli.main(["dispatch", "--context-plan", str(path)]) == 0
+    composition, document = forwarded[0]
+    selection = composition.selections[0]
+    assert selection.purpose == "python semantic context"
+    assert document["schema"] == "atlas-python-semantic/1"

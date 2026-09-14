@@ -8,6 +8,9 @@ from .review import (ReviewPackage, ReviewPackageError, ReviewTablet,
                      review_package_pvc_context)
 from .semantic import (SemanticResultError, SemanticTablet,
                         build_semantic_tablet, validate_semantic_result)
+from .python_semantic import (PythonSemanticResultError, PythonSemanticTablet,
+                              build_python_semantic_tablet,
+                              validate_python_semantic_result)
 
 __all__ = ["Workflow", "PvcContextSelection", "PvcContextComposition",
            "PvcContextError",
@@ -15,4 +18,6 @@ __all__ = ["Workflow", "PvcContextSelection", "PvcContextComposition",
            "build_review_package", "build_review_tablets",
            "review_package_pvc_context", "SemanticResultError",
            "SemanticTablet", "build_semantic_tablet",
-           "validate_semantic_result"]
+           "validate_semantic_result", "PythonSemanticResultError",
+           "PythonSemanticTablet", "build_python_semantic_tablet",
+           "validate_python_semantic_result"]

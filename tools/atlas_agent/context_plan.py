@@ -7,13 +7,17 @@ from pathlib import Path
 
 from atlas.semantic_query import (RustAnalyzerAuthority, SemanticQuery,
                                   query_rust_semantics)
+from atlas.python_semantic_query import (PyrightAuthority, PythonSemanticQuery,
+                                          query_python_semantics)
 from .pvc import PvcPrepareRequest, PvcPrepareResult, validate_prepare_result
 from .one_shot import ProcessResult
 from .pvc_context import PvcContextComposition, PvcContextSelection
 from .review import build_review_package
 from .semantic import build_semantic_tablet
+from .python_semantic import build_python_semantic_tablet
 
 SCHEMA = "atlas-agent-context-plan/1"
+SCHEMA_V2 = "atlas-agent-context-plan/2"
 
 
 def _pairs(items):
@@ -38,7 +42,12 @@ def parse_context_plan(path) -> dict:
         data = json.loads(raw, object_pairs_hook=_pairs, parse_constant=_finite)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise ValueError("CONTEXT_PLAN_INVALID") from None
-    if type(data) is not dict or data.get("schema") != SCHEMA:
+    schema = data.get("schema") if type(data) is dict else None
+    # Check the JSON type before using membership.  In particular, a list or
+    # object is unhashable and must not escape as a Python TypeError.
+    if type(schema) is not str:
+        raise ValueError("CONTEXT_PLAN_SCHEMA_INVALID")
+    if schema not in {SCHEMA, SCHEMA_V2}:
         raise ValueError("CONTEXT_PLAN_SCHEMA_INVALID")
     if set(data) != {"schema", "members"} or type(data["members"]) is not list or not data["members"]:
         raise ValueError("CONTEXT_PLAN_SCHEMA_INVALID")
@@ -60,6 +69,13 @@ def parse_context_plan(path) -> dict:
                 raise ValueError("CONTEXT_PLAN_SOURCE_INVALID")
         elif kind == "SEMANTIC":
             allowed = {"kind", "query", "executable", "version"}
+            if schema == SCHEMA_V2:
+                allowed.add("backend")
+                if (type(member.get("backend")) is not str
+                        or member["backend"] not in {"rust", "python"}):
+                    raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
+            if set(member) - allowed:
+                raise ValueError("CONTEXT_PLAN_UNKNOWN_FIELD")
             q = member.get("query")
             if set(member) - allowed or type(q) is not dict or set(q) != {"kind", "path", "line", "character"}:
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
@@ -69,6 +85,10 @@ def parse_context_plan(path) -> dict:
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
             if type(member.get("executable")) is not str or not Path(member["executable"]).is_absolute():
                 raise ValueError("CONTEXT_PLAN_AUTHORITY_REQUIRED")
+            if schema == SCHEMA_V2 and (
+                    type(member.get("version")) is not str
+                    or not member["version"].strip()):
+                raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
             if "version" in member and type(member["version"]) is not str:
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
         else:
@@ -139,15 +159,28 @@ def build_context_composition(workflow, plan: dict) -> PvcContextComposition:
             else:
                 q = member["query"]
                 try:
-                    query = SemanticQuery(q["kind"], q["path"], q["line"], q["character"])
-                    authority = RustAnalyzerAuthority(member["executable"], member.get("version"))
-                    payload = query_rust_semantics(workflow.root, authority, query)
+                    query_type = (PythonSemanticQuery if plan["schema"] == SCHEMA_V2
+                                  and member["backend"] == "python"
+                                  else SemanticQuery)
+                    authority_type = (PyrightAuthority if plan["schema"] == SCHEMA_V2
+                                      and member["backend"] == "python"
+                                      else RustAnalyzerAuthority)
+                    query = query_type(q["kind"], q["path"], q["line"], q["character"])
+                    authority = authority_type(member["executable"], member.get("version"))
+                    payload = (query_python_semantics(workflow.root, authority, query)
+                               if plan["schema"] == SCHEMA_V2
+                               and member["backend"] == "python"
+                               else query_rust_semantics(workflow.root, authority, query))
                 except Exception as error:
                     # The semantic boundary has its own detailed error
                     # vocabulary; the operator boundary deliberately exposes
                     # one stable rejection class.
                     raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID") from error
-                selection = build_semantic_tablet(payload).pvc_context()
+                tablet = (build_python_semantic_tablet(payload)
+                          if plan["schema"] == SCHEMA_V2
+                          and member["backend"] == "python"
+                          else build_semantic_tablet(payload))
+                selection = tablet.pvc_context()
                 selections.append(selection)
                 owned_resources.append(selection.result.scratch_path)
         return PvcContextComposition(tuple(selections), "operator context plan",

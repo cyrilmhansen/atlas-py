@@ -42,7 +42,9 @@ _REVIEW_MEDIA_TYPES = frozenset({
     "text/vnd.atlas.review-task", "text/vnd.atlas.review-diff",
 })
 _SEMANTIC_MEDIA_TYPE = "application/vnd.atlas.rust-semantic+json"
-_SEMANTIC_MEDIA_TYPES = frozenset({_SEMANTIC_MEDIA_TYPE})
+_PYTHON_SEMANTIC_MEDIA_TYPE = "application/vnd.atlas.python-semantic+json"
+_SEMANTIC_MEDIA_TYPES = frozenset({_SEMANTIC_MEDIA_TYPE,
+                                   _PYTHON_SEMANTIC_MEDIA_TYPE})
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _SNAPSHOT_ID = re.compile(r"^scs1-[a-f0-9]{64}$")
 

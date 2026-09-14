@@ -286,7 +286,8 @@ def _stage_pvc_context(selection: PvcContextSelection,
                     elif artifact["mediaType"] in {
                             "text/vnd.atlas.review-task",
                             "text/vnd.atlas.review-diff",
-                            "application/vnd.atlas.rust-semantic+json"}:
+                            "application/vnd.atlas.rust-semantic+json",
+                            "application/vnd.atlas.python-semantic+json"}:
                         try:
                             text = bytes(payload)
                             text.decode("utf-8")
@@ -342,7 +343,8 @@ def _stage_pvc_context(selection: PvcContextSelection,
                     framing.append(f"   provenance: {provenance}")
                 if media in {"text/vnd.atlas.review-task",
                              "text/vnd.atlas.review-diff",
-                             "application/vnd.atlas.rust-semantic+json"}:
+                             "application/vnd.atlas.rust-semantic+json",
+                             "application/vnd.atlas.python-semantic+json"}:
                     # The payload is inserted byte-for-byte between
                     # controller-authored delimiters.  No parsing,
                     # summarization, normalization, or semantic rewrite is
