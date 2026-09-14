@@ -17,6 +17,8 @@ from .store import Store, admit_fixture, open_store
 from .problem import (GroundedCandidate, GroundedDecisionProblem, M1Objective,
                       M1SelectionResult, ObjectiveValue, SelectionStatus, Decision,
                       CandidateExplanation, DecisionExplanation, ExplanationReason, ArtifactStatus)
+from .semantic_query import (RustAnalyzerAuthority, SemanticQuery, SemanticQueryError,
+                             query_rust_semantics, repository_witness)
 
 __all__ = [
     "AdmissionError", "AtlasError", "ClosedStoreError", "GroundingError",
@@ -36,4 +38,6 @@ __all__ = [
     "SelectionStatus", "M1SelectionResult", "Decision",
     "ArtifactStatus",
     "CandidateExplanation", "DecisionExplanation", "ExplanationReason",
+    "RustAnalyzerAuthority", "SemanticQuery", "SemanticQueryError",
+    "query_rust_semantics", "repository_witness",
 ]
