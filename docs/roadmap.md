@@ -1,8 +1,8 @@
 # Atlas / Atlas Agent — Roadmap
 
-Document version: **0.11**
-Planning date: **2026-09-13**
-Agent code baseline: **`cc0d687a1c94c926ade7ed6262b98a81c62e757c`** (`Qualify rebuilt Codex runtime`)
+Document version: **0.12**
+Planning date: **2026-09-14**
+Agent code baseline: **`9830692efc96d7e49916bd3f490668a65ee7350e`** (`Qualify rust semantic PVC tablet v0`)
 
 Architecture boundary: [`docs/architecture-boundaries.md`](architecture-boundaries.md)
 PVC observation baseline: [`docs/pvc-observation-v0.md`](pvc-observation-v0.md)
@@ -11,26 +11,38 @@ Specialized-service qualification workflow: [`docs/qualified-service-workflow.md
 Release procedure: [`docs/atlas-release-process.md`](atlas-release-process.md)
 Project deployment: [`docs/deploy-existing-project.md`](deploy-existing-project.md)
 
-This roadmap supersedes version 0.10.
+This roadmap supersedes version 0.11.
 
-Version 0.11 records three completed infrastructure/product steps since 0.10:
+Version 0.12 records the following completed work since 0.11:
 
-- the core A2.2 SOURCE-tablet path is qualified end to end through real Atlas
-  execution, including validated PVC selection, sealed descriptor authority,
-  Bubblewrap/Codex transport, deterministic provenance, and original-detail
-  image injection;
-- Atlas Agent now has an immutable qualified-host release/install path covering
-  custom Codex reconstruction/build, runtime preparation, repository-boundary
-  promotion, immutable controller installation/activation, verification, and
-  stripped-environment startup;
-- the rebuilt qualified Codex 0.154 runtime is bound into policy at
-  `27b9ce2f13b4f344207250cb913457549bee8ef56525ec9617e8092a64acb568`.
-
-The explicit next implementation priority moves from A2.2 to **A6.1 selectable
-model execution profiles**. PVC retains only bounded follow-up work such as
-TASK tablets and comparative dogfood where it provides concrete value.
-`rust-analyzer` A2.3/S1b and the first Rust Atlas Core conformance slice R0
-remain the next larger product fronts.
+- **A6.1 selectable model execution profiles — COMPLETE.** The qualified
+  profile layer separates compute selection from action/security authority.
+  Retained profiles are `luna-high`, `sol-medium`, and `astra-medium`.
+  The implementation/default policy remains deliberately small; not every
+  model/reasoning combination is supported.
+- **PVC typed context follow-up — COMPLETE FOR CURRENT NEEDS.** The
+  model-context boundary now supports `SOURCE → image`, and `TASK`, `DIFF`,
+  and `SEMANTIC → authenticated text`. TASK + DIFF review-package v0 was
+  qualified at `8e8300c706501404432739e754e93ba4b6f4d5b6` (`Qualify PVC review
+  package v0`). PVC/model context is not automatically Atlas semantic truth.
+- **S1b.1 rust-analyzer semantic query v0 — QUALIFIED.** Checkpoint
+  `f0bd8cd7ae32a783840855b2003db4816e80e6a2` (`Qualify rust-analyzer semantic
+  query v0`) qualifies exactly `definition`, `references`, and `hover`.
+  It has explicit executable authority, a fresh bounded LSP process per query,
+  UTF-8 LSP positions, witnessed repository bytes, canonical deterministic
+  `atlas-rust-semantic/1` output, normalized definition/reference/hover,
+  path/URI authority, strict JSON/JSON-RPC, and complete timeout/cleanup.
+  Implementations, diagnostics, `search_text`, Pyright, persistent reuse, and
+  automatic selection are not implemented.
+- **S1b.2 SEMANTIC PVC tablet v0 — QUALIFIED.** Checkpoint
+  `9830692efc96d7e49916bd3f490668a65ee7350e` (`Qualify rust semantic PVC
+  tablet v0`) carries `atlas-rust-semantic/1` through a SEMANTIC tablet and
+  authenticated PVC `_TextAuthority` transport to exact model-facing context.
+  The media type is `application/vnd.atlas.rust-semantic+json`. Canonical
+  validation, deterministic identity, digest binding to authenticated
+  payload SHA-256, exact byte preservation, effective-input binding, SOURCE
+  IMAGE + SEMANTIC TEXT coexistence, and typed-PVC cleanup/lifetime are
+  qualified. Final host suite: `1263 passed`.
 
 The current planning model has three related lanes:
 
@@ -129,7 +141,10 @@ These paths may overlap, but neither implies the other. Atlas Agent qualifies
 and executes the service; Atlas semantic admission remains a separate explicit
 decision. PVC's primary near-term path is direct multimodal model context.
 
-PVC is the first real one-shot context-compilation consumer. `rust-analyzer` remains the first planned interactive semantic-service consumer. Their different lifecycle shapes should exercise common qualification principles without forcing a premature universal provider framework.
+PVC is the first real one-shot context-compilation consumer. `rust-analyzer`
+is now the first qualified interactive semantic-service consumer. Their
+different lifecycle shapes should exercise common qualification principles
+without forcing a premature universal provider framework.
 
 ---
 
@@ -204,17 +219,28 @@ The existing Python Core V1 implementation is not discarded.
 Its specification, profile, tests, fixtures, persistent examples, and behavior should serve as:
 
 ```text
+active product-learning implementation
 prototype / reference implementation
 semantic design history
-executable oracle where appropriate
-conformance evidence for Rust
+executable oracle and conformance evidence where appropriate
 ```
 
 The semantic specification/profile remains above host-language details.
+Python is not merely historical reference material or an oracle for a
+predetermined Rust port. It is the active environment for learning which
+semantic/context abstractions, recurring queries, authority boundaries,
+ephemeral-versus-persistent state, and coordination concepts survive actual
+use. It need not remain the production language forever; Rust should
+preferentially encode contracts demonstrated by that experience rather than
+mechanically porting current Python abstractions.
 
 ## 4.2 New Rust Atlas Core
 
-New production Atlas Core development begins in **Rust**.
+New production Atlas Core development is intended to begin in **Rust**, but
+substantial semantic-core implementation is **DEFERRED UNTIL SUFFICIENT
+PYTHON DOGFOOD**. Rust remains the architectural destination and a roadmap
+lane, not an active parallel implementation front before the required Python
+product-learning cycle.
 
 Repository:
 
@@ -266,9 +292,12 @@ If Agent is later migrated to Rust, prefer incremental replacement behind explic
 
 ---
 
-# 5. R track — Rust semantic-core implementation
+# 5. R track — Rust semantic-core implementation (deferred until sufficient Python dogfood)
 
 The **R** track moves the existing Atlas semantic core toward its intended production Rust implementation.
+It remains an architectural destination and roadmap lane, with substantial
+implementation deferred until sufficient Python dogfood has produced
+experience-backed contracts.
 
 ## R0 — Rust Core baseline
 
@@ -375,7 +404,11 @@ semantic code navigation therefore remain distinct capabilities.
 
 ### S1a — Visual Context Compilation / PVC
 
-Near-term product goal: construct compact multimodal context for Atlas/model work. PVC transforms selected source/reference material into SOURCE tablets and, once an appropriate deterministic headless TASK operation exists, long task/specification material into TASK tablets. VC IDs, source/line ranges, and conservative symbol anchors provide an address map into supplied context, not authoritative language semantics or Atlas facts.
+Near-term product goal: construct compact multimodal context for Atlas/model
+work. PVC transforms selected source/reference material into SOURCE tablets
+and long task/specification material into TASK tablets. VC IDs, source/line
+ranges, and conservative symbol anchors provide an address map into supplied
+context, not authoritative language semantics or Atlas facts.
 
 The prototype is `cyrilmhansen/pi-visual-context`, baseline:
 
@@ -386,25 +419,35 @@ fix: separate runtime and rendering work roots
 
 Classical, PVC, and hybrid context modes remain first-class. Critical instructions, authorization boundaries, and small exact constraints normally remain text; normal tools remain available for exact, local, current, omitted, and verification material. A secondary role is portable visual-source context material that Atlas may later interpret as observation/evidence, but prepared context is not automatically admitted to Atlas semantic storage.
 
-PVC and `rust-analyzer` are complementary: PVC provides broad dense visual context and addressable tablets; rust-analyzer later provides precise interactive language semantics.
+PVC and `rust-analyzer` are complementary: PVC provides broad dense visual
+context and addressable tablets; rust-analyzer provides precise interactive
+language semantics.
 
 See [`pvc-observation-v0.md`](pvc-observation-v0.md).
+
+Current model-facing context primitives are complementary and are not
+automatically composed or selected:
+
+```text
+SOURCE   broad visual/source context
+TASK     exact task/specification material
+DIFF     exact repository transformation
+SEMANTIC precise language-semantic result
+```
 
 ### S1b — Semantic Code Navigation
 
 Give Atlas compact structured access to software semantics through language-aware backends.
 
-Initial query kinds remain:
+The qualified v0 query kinds are exactly:
 
 ```text
 definition
 references
-implementations
-diagnostics
-search_text
+hover
 ```
 
-Backend order:
+Later backend/query expansion remains open:
 
 1. `rust-analyzer`;
 2. Pyright or equivalent Python semantic backend;
@@ -424,6 +467,37 @@ output truncation
 Semantic observations are not automatically Atlas facts. They may remain ephemeral, become referenced evidence, or later be explicitly admitted as semantic knowledge with provenance.
 
 See [`semantic-observation-v0.md`](semantic-observation-v0.md).
+
+### S1b subdivision
+
+```text
+S1b.1 — Semantic acquisition v0                 COMPLETE
+S1b.2 — Semantic PVC transport v0                COMPLETE
+S1b.3 — Semantic context selection/composition   NEXT
+```
+
+S1b.1 and S1b.2 are qualified bounded milestones, not invitations to
+generalized hardening. S1b.3 has two explicit roles.
+
+**Product capability.** One model-facing execution consumes an explicitly
+selected composition of already-qualified context types:
+
+```text
+TASK + DIFF + SOURCE + SEMANTIC
+```
+
+The composition preserves ordering, provenance, authority, and exact payload
+semantics. Selection is initially explicit and caller-driven.
+
+**Product-learning / dogfood capability.** S1b.3 is part of the evidence loop
+through which Atlas learns what to stabilize and potentially reimplement in
+Rust. Its first important consumer is Atlas development itself; it is not
+merely plumbing before later work. Use should expose which abstractions and
+queries are useful, what is redundant or missing, how TASK, DIFF, SOURCE, and
+SEMANTIC interact, what belongs to Atlas versus Atlas Agent, and which state
+and coordination concepts survive sustained use. Observe and refine those
+semantic, context, and coordination contracts before Rust implementation and
+conformance work. No automatic optimizer is defined now.
 
 ### S1 non-goals
 
@@ -644,7 +718,7 @@ Remaining PVC work is bounded follow-up, not a prerequisite for the next
 product milestone:
 
 - deterministic headless TASK-tablet preparation/injection when long task
-  material justifies it;
+  material needs a different preparation shape;
 - model-facing address/index refinements only for demonstrated consumers;
 - classical/PVC/hybrid comparative dogfood when useful to quantify quality,
   context coverage, latency, render cost, quota/accounting, task time, and
@@ -657,7 +731,12 @@ context framework without evidence from real consumers.
 
 ### A2.3 — Persistent semantic service runtime
 
-First consumer: `rust-analyzer`. Agent owns qualification, workspace/material binding, configuration, capabilities, lifecycle, bounds, and truthful backend status; Atlas interprets semantic results.
+The first rust-analyzer semantic-service substrate is qualified through S1b.1,
+but v0 deliberately starts a fresh bounded rust-analyzer process per query.
+Persistent service lifecycle/reuse remains later A2.3 work only if repeated
+real usage justifies it. Agent owns qualification, workspace/material binding,
+configuration, capabilities, lifecycle, bounds, and truthful backend status;
+Atlas interprets semantic results.
 
 ### A2.4 — Additional semantic backends
 
@@ -793,7 +872,7 @@ a lower-cost/lower-capacity route. This later support item does not block curren
 Atlas Agent now has a supported immutable release/activation path on the
 qualified development host.
 
-Baseline:
+Historical release baseline:
 
 ```text
 cc0d687a1c94c926ade7ed6262b98a81c62e757c
@@ -865,20 +944,18 @@ simplification remains an explicit option.
 
 Refine policy only where concrete usage requires it.
 
-### A6.1 — Selectable model execution profiles — NEXT IMPLEMENTATION PRIORITY
+### A6.1 — Selectable model execution profiles — COMPLETE
 
-Provide a small explicit execution-profile selection layer for model/reasoning
-choice without coupling compute choice to security authority.
-
-Initial proven smoke points are:
+The qualified profile layer provides small, explicit model/reasoning selection
+without coupling compute choice to security authority. Retained profiles are:
 
 ```text
-Luna  High
-Sol   Medium
-Astra Medium
+luna-high
+sol-medium
+astra-medium
 ```
 
-The first implementation should remain deliberately small:
+The implementation/default policy remains deliberately small:
 
 - preserve all existing action defaults when no profile is requested;
 - allow a bounded named profile to select only model/reasoning and, where
@@ -890,9 +967,9 @@ The first implementation should remain deliberately small:
 - preserve requested / resolved / observed identity in execution evidence;
 - avoid immediately encoding a large Luna/Sol/Astra × reasoning-level matrix.
 
-The first useful consumer is operator selection among already demonstrated
-compute points. Broaden the matrix only after real usage shows which additional
-profiles are worth retaining.
+Do not imply that every model/reasoning combination is supported. Broaden the
+matrix only after real usage shows which additional profiles are worth
+retaining.
 
 ### A6.2 — Later policy refinements
 
@@ -924,6 +1001,8 @@ The roadmap is intentionally not one total ordering.
 ```text
 existing Atlas semantic contract / Python reference
         ↓
+Python product learning / dogfood
+        ↓
 R0 → R1 → R2 → R3
 
 A2.0 one-shot qualified tool-operation substrate
@@ -941,6 +1020,7 @@ S1 observations
 
 S2/S3/S4 may reuse R semantic concepts where appropriate
 but must not wait for complete Rust migration if the contract already exists
+and Python dogfood has demonstrated the need
 
 S3 assurance planning
         ↔ A3 qualification execution/evidence
@@ -962,36 +1042,20 @@ A5/A6 are also largely independent until a product slice requires them.
 
 # 9. Immediate development direction
 
-Version 0.11 deliberately returns attention from release plumbing to product
-work. The release/install baseline is closed unless a concrete defect appears.
+Version 0.12 keeps the release/install baseline closed unless a concrete defect
+appears. Under the stop rule, the following bounded tasks are closed rather
+than converted into generalized hardening:
 
-The explicit next implementation priority is **A6.1 selectable model execution
-profiles**. The two next larger product fronts remain **A2.3/S1b semantic code
-navigation with `rust-analyzer`** and **R0/R1 Rust Atlas Core conformance**.
+- **A6.1**: selectable execution profiles are qualified;
+- **PVC TASK/DIFF**: the current authenticated text transport is qualified;
+- **S1b.1**: the bounded semantic query contract is qualified;
+- **S1b.2**: the SEMANTIC tablet/model-context transport is qualified.
 
-## 9.1 A6.1 — Selectable model execution profiles — next
+## 9.1 PVC — bounded closure only
 
-Implement the smallest useful routing surface over the already-qualified model
-smoke points:
-
-```text
-existing action/policy authority
-        +
-explicit bounded compute profile
-        ↓
-model + reasoning (+ existing service tier where applicable)
-        ↓
-same sandbox/network/capabilities/session/tool authority
-```
-
-The initial purpose is operator control and reproducible execution identity,
-not dynamic optimization. Do not allow a model profile to weaken or silently
-change security policy.
-
-## 9.2 PVC — bounded closure only
-
-The A2.2 SOURCE-context path is already functional and qualified. Remaining PVC
-work should be selected only when it provides concrete product value:
+The model-facing PVC context boundary is qualified for SOURCE image and TASK +
+DIFF authenticated text. Remaining PVC work should be selected only when it
+provides concrete product value:
 
 ```text
 TASK tablets if long task material needs them
@@ -1000,48 +1064,42 @@ small address/index refinements for real consumers
 durability/lifecycle only when required
 ```
 
-PVC is no longer the global next milestone.
+PVC is no longer the global next milestone, and TASK is no longer merely
+future work.
 
-## 9.3 S1b / A2.3 — Semantic Code Navigation v0
+## 9.2 S1b.3 — Explicit semantic context composition / dogfood — next
 
-The first persistent semantic-service consumer remains `rust-analyzer`.
-
-The intended boundary remains:
-
-```text
-Rust Atlas implementation
-    asks a semantic question
-
-Python Atlas Agent
-    authorizes and executes a qualified semantic service
-
-rust-analyzer
-    produces the language-specific observation
-
-Rust Atlas implementation
-    receives and interprets the bounded structured result
-```
-
-Initial operations remain:
+The caller explicitly selects a qualified semantic query/result and combines
+the already-qualified context types through one model-facing execution:
 
 ```text
-definition
-references
-implementations
-diagnostics
-search_text
+TASK + DIFF + SOURCE + SEMANTIC
 ```
 
-A deterministic fake/fixture backend may prove transport and truthful status
-normalization first, but completion requires the qualified real backend. Keep
-the slice small enough that implementation experience can still change the
-protocol without invalidating a large framework.
+Preserve provenance, ordering, and authority, and dogfood the result on Atlas
+development. Do not add automatic query selection, composition, or optimizer
+logic at this stage.
 
-## 9.4 R0/R1 — Rust Core conformance
+## 9.3 Richer S1b semantic navigation — later, evidence-led
 
-In parallel or alternating with A2.3/S1b, choose one small already-specified
-Atlas semantic behavior and establish the first Rust conformance slice against
-the Python/specification evidence.
+Explore relevant-symbol/location selection and richer semantic queries only
+where S1b.3 usage demonstrates the need. Persistent A2.3 service lifecycle and
+reuse likewise remain later work only if repeated real usage justifies them.
+
+## 9.4 R0/R1 — Rust Core conformance, deferred until sufficient Python dogfood
+
+R0/R1 remains an architectural destination and roadmap lane, but is
+**DEFERRED UNTIL SUFFICIENT PYTHON DOGFOOD**. Do not treat it as an immediately
+available parallel product front or begin substantial Rust semantic-core work
+after S1b.3 merely because the composition plumbing is complete. First use
+S1b.3 for Atlas-on-Atlas Python dogfood, observe and refine the S1/S2
+contracts, perform additional Python product work where justified, and
+stabilize contracts demonstrated by actual use. There is no fixed quantitative
+dogfood threshold.
+
+After that experience, choose one small already-specified Atlas semantic
+behavior and establish the first Rust conformance slice against the
+Python/specification evidence.
 
 Prefer stable local invariants with little persistence coupling, such as:
 
@@ -1057,15 +1115,46 @@ Do not block S1b on a complete Python-to-Rust migration.
 ## 9.5 Practical near-term sequence
 
 ```text
-A6.1 selectable compute profiles
+A6.1 selectable compute profiles — COMPLETE
         ↓
-bounded PVC follow-up only if justified
+PVC TASK/DIFF follow-up — COMPLETE FOR CURRENT NEEDS
         ↓
-A2.3 / S1b rust-analyzer semantic navigation
-
-in parallel / alternating:
-R0 → R1 Rust semantic conformance
+S1b.3 explicit semantic/context composition
+        ↓
+sustained Atlas-on-Atlas Python dogfood
+        ↓
+refine S1/S2 contracts from observed use
+        ↓
+additional Python product work as justified
+        ↓
+stabilize contracts demonstrated by actual use
+        ↓
+R0/R1 Rust implementation/conformance only after contracts are sufficiently
+experience-backed
 ```
+
+The current next-priority sequence is therefore:
+
+```text
+S1b.3 explicit semantic/context composition
+        ↓
+sustained Atlas-on-Atlas Python dogfood
+        ↓
+refine S1/S2 contracts from observed use
+        ↓
+additional Python product work as justified
+        ↓
+stabilize contracts demonstrated by actual use
+        ↓
+R0/R1 only after contracts are sufficiently experience-backed
+```
+
+A2.3 richer/persistent lifecycle work remains demand-driven: pursue it only
+when S1b.3 and dogfood demonstrate a concrete need. A1 and other open Agent
+maintenance items remain non-prerequisites unless a concrete defect blocks
+product work. R0/R1 is not a current parallel implementation priority;
+additional Agent hardening is not required before the Python product-learning
+cycle.
 
 After these primitives are exercised by real consumers, continue toward:
 
