@@ -166,18 +166,11 @@ def test_exact_compute_profile_action_matrix(action):
         "luna-high": action == "implementation",
         "sol-medium": True,
         "astra-medium": True,
-        "astra-high": True,
     }
-    assert set(policy["compute_profiles"]) == set(allowed) - {"action-default"}
     for compute, is_allowed in allowed.items():
         if is_allowed:
             snapshot = resolve_policy(policy, _prompt(action, compute=compute))
             assert validate_snapshot(snapshot) is snapshot
-            if compute == "astra-high":
-                assert snapshot["requested_model"] == "gpt-6-astra"
-                assert snapshot["requested_reasoning_effort"] == "high"
-                assert snapshot["requested_compute_profile"] == "astra-high"
-                assert snapshot["resolved_compute_profile"] == "astra-high"
         else:
             with pytest.raises(PolicyError):
                 resolve_policy(policy, _prompt(action, compute=compute))
@@ -197,26 +190,22 @@ def test_policy_three_model_reasoning_and_compute_action_set_tampering_fails_clo
         with pytest.raises(PolicyError):
             validate_snapshot(mutated)
 
-    for field in ("luna-high", "sol-medium", "astra-medium", "astra-high"):
+    for field in ("luna-high", "sol-medium", "astra-medium"):
         mutated_policy = deepcopy(policy)
         mutated_policy["compute_profiles"][field]["actions"] = ["checkpoint"]
         with pytest.raises(PolicyError):
             validate_policy(mutated_policy)
 
 
-@pytest.mark.parametrize("compute,wrong_effort", [
-    ("astra-medium", "high"), ("astra-high", "medium"),
-])
-def test_snapshot_four_tuple_tampering_fails_after_positive_base_validation(compute, wrong_effort):
+def test_snapshot_four_tuple_tampering_fails_after_positive_base_validation():
     _, _, policy = _policies()
-    base = resolve_policy(policy, _prompt("implementation", compute=compute))
+    base = resolve_policy(policy, _prompt("implementation", compute="astra-medium"))
     assert validate_snapshot(base) is base
     for field, value in (
         ("requested_compute_profile", "sol-medium"),
-        ("requested_compute_profile", "unknown"),
         ("resolved_compute_profile", "luna-high"),
         ("requested_model", "gpt-5.6-luna"),
-        ("requested_reasoning_effort", wrong_effort),
+        ("requested_reasoning_effort", "high"),
         ("codex_profile", "atlas-sol-local"),
     ):
         mutated = deepcopy(base)

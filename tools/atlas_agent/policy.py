@@ -160,8 +160,6 @@ def validate_policy(data):
                            ["implementation", "patch_review", "state_audit"]),
             "astra-medium": ("gpt-6-astra", "medium",
                              ["implementation", "patch_review", "state_audit"]),
-            "astra-high": ("gpt-6-astra", "high",
-                           ["implementation", "patch_review", "state_audit"]),
         }
         if type(cp) is not dict or set(cp) != set(expected_compute):
             raise PolicyError("POLICY_SCHEMA_INVALID", "compute profiles")
@@ -365,7 +363,7 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
         if snapshot.get("policy_schema") != POLICY_SCHEMA:
             raise PolicyError("POLICY_SCHEMA_INVALID", "current snapshot policy")
         if is_codex:
-            if snapshot.get("requested_compute_profile") not in {"action-default", "luna-high", "sol-medium", "astra-medium", "astra-high"} or snapshot.get("resolved_compute_profile") != snapshot.get("requested_compute_profile"):
+            if snapshot.get("requested_compute_profile") not in {"action-default", "luna-high", "sol-medium", "astra-medium"} or snapshot.get("resolved_compute_profile") != snapshot.get("requested_compute_profile"):
                 raise PolicyError("POLICY_SCHEMA_INVALID", "compute provenance")
             if "codex_profile" not in snapshot or not runtime_keys <= set(snapshot):
                 raise PolicyError("POLICY_SCHEMA_INVALID", "codex runtime identity")
@@ -381,9 +379,7 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
                          "sol-medium": ("gpt-5.6-sol", "medium",
                                         {"implementation", "patch_review", "state_audit"}),
                          "astra-medium": ("gpt-6-astra", "medium",
-                                          {"implementation", "patch_review", "state_audit"}),
-                         "astra-high": ("gpt-6-astra", "high",
-                                        {"implementation", "patch_review", "state_audit"})}
+                                          {"implementation", "patch_review", "state_audit"})}
             selected = cp_models.get(snapshot["requested_compute_profile"])
             if selected is not None and snapshot["action"] not in selected[2]:
                 raise PolicyError("POLICY_SCHEMA_INVALID", "compute profile/action mismatch")
