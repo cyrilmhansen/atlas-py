@@ -104,12 +104,17 @@ def test_recovery_accepts_exact_existing_fallback_and_resyncs_directory(repo,mon
     w.recover()
     expected={name:(report/name).read_bytes() for name in event["payload"]["fallback_artifacts"]}
     from tools.atlas_agent import workflow as workflow_module
-    original_sync=workflow_module.fsync_dir; synced=[]
-    monkeypatch.setattr(workflow_module,"fsync_dir",lambda path: synced.append(path) or original_sync(path))
+    original_sync=workflow_module.os.fsync; synced=[]
+    def record_sync(fd):
+        opened=os.fstat(fd)
+        synced.append((opened.st_dev,opened.st_ino))
+        original_sync(fd)
+    monkeypatch.setattr(workflow_module.os,"fsync",record_sync)
     recovered=w.recover()
     assert recovered["generations"]["1"]["status"]=="INTERRUPTED"
     assert all((report/name).read_bytes()==data for name,data in expected.items())
-    assert synced.count(report)==len(expected)
+    directory=report.stat()
+    assert synced.count((directory.st_dev,directory.st_ino))==len(expected)
 
 def test_repeated_fallback_recovery_after_each_publication_is_idempotent(repo,monkeypatch):
     w,event,report=_crashed_missing_fallback(repo,monkeypatch)

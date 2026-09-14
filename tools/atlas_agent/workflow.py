@@ -5,6 +5,7 @@ from pathlib import Path
 from .model import Prompt, PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3
 from .prompt import parse_prompt, PromptError
 from .journal import Journal, JournalError, encode_context_supplement, canonical_context_identifier, canonical_execution_result
+from .journal import _archive_directory, _archive_file
 from .repository import RepositoryError,advance_checkpoint,prepare_checkpoint,rollback_checkpoint,verify_checkpoint_boundary,find_root,runtime_path,witness,is_ancestor
 from .spool import DIRS,lock,move_transaction,sha,validate_spool,fsync_dir
 from .executor import (ExecutionSpec, ExecutorError, FakeExecutor,
@@ -283,19 +284,24 @@ class Workflow:
         return {**transaction["execution"],"generation":transaction["generation"],"prompt_sha256":transaction["prompt_sha256"],"action":transaction["action"]}
     def _publish_missing_execution_file(self,path,data):
         """Publish or verify an exact journal-derived recovery artifact."""
-        def accept_existing():
+        def accept_existing(directory_fd):
             try:
-                current=path.read_bytes()
-            except OSError as error:
+                with _archive_file(directory_fd,path.name) as stream:
+                    current=stream.read()
+                    if current!=data:
+                        raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT")
+                    # Sync the existing inode we actually validated, not the
+                    # losing private candidate or a separately reopened name.
+                    os.fsync(stream.fileno())
+                    os.fsync(directory_fd)
+            except (OSError,JournalError) as error:
                 raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT") from error
-            if current!=data:
-                raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT")
-            # A prior recovery may have crashed after publication but before
-            # making the directory entry durable.  Retrying must close that
-            # durability gap even though the bytes are already canonical.
-            fsync_dir(path.parent)
         if path.exists() or path.is_symlink():
-            accept_existing()
+            try:
+                with _archive_directory(path.parent) as directory_fd:
+                    accept_existing(directory_fd)
+            except (OSError,JournalError) as error:
+                raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT") from error
             return
         fd,tmp=tempfile.mkstemp(prefix="recovery-artifact-",dir=self.base); staged=Path(tmp)
         try:
@@ -304,11 +310,15 @@ class Workflow:
             try:
                 # Linking a fully synced private inode publishes atomically
                 # without ever replacing an artifact that raced into place.
-                os.link(staged,path)
-            except FileExistsError:
-                accept_existing()
-                return
-            fsync_dir(path.parent)
+                with _archive_directory(path.parent) as directory_fd:
+                    try:
+                        os.link(staged,path.name,dst_dir_fd=directory_fd)
+                    except FileExistsError:
+                        accept_existing(directory_fd)
+                    else:
+                        os.fsync(directory_fd)
+            except (OSError,JournalError) as error:
+                raise WorkflowError("RECOVERY_FALLBACK_ARTIFACT_CONFLICT") from error
         finally:
             if staged.exists(): staged.unlink()
     def _prepare_execution_publication(self,transaction,artifact=None):
@@ -356,10 +366,7 @@ class Workflow:
             accepted=self.base/transaction["source"]
             if not accepted.is_file(): accepted=self.base/transaction["destination"]
             prompt_bytes=accepted.read_bytes()
-            derived=transaction.get("derived_context_supplement","")
-            if type(derived) is not str:
-                raise WorkflowError("EXECUTION_CONTEXT_INVALID")
-            context_bytes=derived.encode("utf-8")+context
+            context_bytes=self.journal.derived_context_bytes(transaction)+context
             self._publish_context(context_path,context_bytes)
             self._publish_context(effective_path,prompt_bytes+context_bytes)
 
@@ -383,10 +390,10 @@ class Workflow:
             raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
         # The accepted parent context is authoritative lifecycle data. PVC
         # framing is a separate, derived execution-context attestation.
-        derived=transaction.get("derived_context_supplement","")
-        if type(derived) is not str:
-            raise WorkflowError("EXECUTION_CONTEXT_INVALID")
-        context=derived.encode("utf-8")+supplement.encode("utf-8")
+        try:
+            context=self.journal.derived_context_bytes(transaction)+supplement.encode("utf-8")
+        except JournalError as error:
+            raise WorkflowError("EXECUTION_CONTEXT_INVALID") from error
         if prompt_bytes is None:
             source=self.base/transaction["source"]
             destination=self.base/transaction["destination"]
@@ -1402,7 +1409,7 @@ class Workflow:
             provenance={"prompt_input","context_path","effective_prompt_path","context_sha256","effective_prompt_sha256"}
             if not provenance <= set(execution) or "context_supplement" not in payload: continue
             try:
-                context=payload["context_supplement"].encode("utf-8")
+                context=self.journal.derived_context_bytes(payload)+payload["context_supplement"].encode("utf-8")
                 context_path=self.base/Path(execution["context_path"])
                 effective_path=self.base/Path(execution["effective_prompt_path"])
                 if context_path.parent != self.base/"reports"/"contexts" or effective_path.parent != context_path.parent:
@@ -1521,6 +1528,7 @@ class Workflow:
             s=replay_journal(self.journal.read()); self._save(s); return s
     def execute(self,generation,executor=None,observer=None,pvc_context=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
+        derived_archive = None
         preparation_owned = False
         staged_pvc = None
         execution_input = None
@@ -1691,9 +1699,25 @@ class Workflow:
                 context_supplement=parent_context.decode("utf-8")
                 execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
                 src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-                start_payload={"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
+                start_payload={"prompt_sha256":x["prompt_sha256"],"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
                 if derived_context:
-                    start_payload["derived_context_supplement"] = derived_context.decode("utf-8")
+                    # Large execution context and bounded lifecycle journal are
+                    # separate responsibilities: attest the framing, don't embed it.
+                    digest=hashlib.sha256(derived_context).hexdigest()
+                    relative=f"derived-contexts/{execution_id}-{digest}.txt"
+                    start_payload["derived_context"]={
+                        "schema":"atlas-derived-context/1", "sha256":digest,
+                        "byte_length":len(derived_context), "path":relative,
+                        "execution_id":execution_id, "prompt_sha256":x["prompt_sha256"],
+                        "context_sha256":metadata["context_sha256"],
+                    }
+                    archive_path=self.base/relative
+                    if archive_path.exists() or archive_path.is_symlink():
+                        raise WorkflowError("EXECUTION_CONTEXT_COLLISION")
+                    derived_archive=archive_path
+                    derived_archive.parent.mkdir(exist_ok=True)
+                    fsync_dir(self.base)
+                    self._publish_missing_execution_file(derived_archive,derived_context)
                 if snapshot is not None:
                     start_payload["network_access"] = prompt.network_access if prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} else False
                 self._validate_authoritative_provenance(start_payload,s,prompt_bytes)
@@ -1872,6 +1896,23 @@ class Workflow:
                     try: execution_input.unlink(missing_ok=True)
                     except OSError: pass
         finally:
+            if derived_archive is not None:
+                # Preparation failures precede the executor exception handler.
+                # Retain archives owned by a durable prepared transaction.
+                with lock(self.base/"lock"):
+                    try:
+                        durable=any(
+                            e["event"] in {"TRANSITION_PREPARED","RUN_STARTED"} and
+                            (e["payload"].get("derived_context") or {}).get("path")==str(derived_archive.relative_to(self.base))
+                            for e in self.journal.read())
+                    except (JournalError,OSError):
+                        durable=True  # Never discard possible recovery authority.
+                    if not durable:
+                        derived_archive.unlink(missing_ok=True)
+                        fsync_dir(derived_archive.parent)
+                        for key in ("historical_policy_path", "capability_archive_path"):
+                            if key in metadata:
+                                (self.base/metadata[key]).unlink(missing_ok=True)
             if execution_input is not None:
                 try:
                     execution_input.unlink(missing_ok=True)

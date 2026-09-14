@@ -2,7 +2,7 @@ import hashlib,json,os,subprocess,sys,time
 from pathlib import Path
 import pytest
 from tools.atlas_agent.workflow import Workflow,WorkflowError,replay_journal
-from tools.atlas_agent.journal import canonical,_hash_event
+from tools.atlas_agent.journal import JournalError,canonical,_hash_event
 from tools.atlas_agent.prompt import parse_prompt,PromptError
 from tools.atlas_agent.repository import witness
 from tools.atlas_agent.executor import FakeExecutor
@@ -188,7 +188,7 @@ def _append_rehashed(path, rows):
     path.write_text("\n".join(canonical(row) for row in rows)+"\n")
 def test_terminal_requires_exact_prepare(repo):
     p,w=repo; path=w.base/"events.jsonl"; rows=[json.loads(x) for x in path.read_text().splitlines()]; rows.append({"schema":"atlas-agent-workflow/1","seq":0,"timestamp":"2026-01-01T00:00:00Z","event":"RUN_STARTED","payload":{"transaction_id":"fake","source":"accepted/x","destination":"running/implementation/x","generation":1,"prompt_sha256":"0"*64,"action":"implementation"},"previous_event_sha256":"","event_sha256":""}); _append_rehashed(path,rows)
-    with pytest.raises(WorkflowError,match="PREPARE"): replay_journal(w.journal.read())
+    with pytest.raises(JournalError,match="PREPARE"): replay_journal(w.journal.read())
 def test_wrong_terminal_type_rejected(repo):
     p,w=repo; raw=prompt(w); w.ingest(); path=w.base/"events.jsonl"; rows=[json.loads(x) for x in path.read_text().splitlines()]; prep=rows[-2]; payload=dict(prep["payload"]); payload["logical_event"]="RUN_STARTED"; rows.append({"schema":"atlas-agent-workflow/1","seq":0,"timestamp":"2026-01-01T00:00:00Z","event":"RUN_COMPLETED","payload":{k:v for k,v in payload.items() if k!="logical_event"},"previous_event_sha256":"","event_sha256":""}); _append_rehashed(path,rows)
     with pytest.raises(Exception): replay_journal(w.journal.read())

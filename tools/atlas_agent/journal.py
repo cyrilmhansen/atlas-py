@@ -1,6 +1,7 @@
 """The append-only, strictly validated W1 journal."""
 from __future__ import annotations
-import hashlib, json, os, re, time
+import hashlib, json, os, re, stat, time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from .prompt import parse_prompt, PromptError
@@ -8,6 +9,41 @@ from typing import Any
 from .model import SCHEMA
 from .policy import validate_snapshot, PolicyError
 class JournalError(RuntimeError): pass
+
+@contextmanager
+def _archive_directory(path):
+    """Anchor archive acquisition without following the archive-directory alias."""
+    fd=os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        yield fd
+        opened=os.fstat(fd)
+        named=os.stat(path, follow_symlinks=False)
+        if (opened.st_dev,opened.st_ino)!=(named.st_dev,named.st_ino):
+            raise JournalError("derived context archive directory changed")
+    finally:
+        os.close(fd)
+
+@contextmanager
+def _archive_file(directory_fd, name):
+    """Use one securely opened regular inode for consumption and durability.
+
+    NONBLOCK allows rejecting a FIFO by fstat without waiting for a writer.
+    These checks do not make same-UID contents immutable; replay rechecks them.
+    """
+    fd=os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+               dir_fd=directory_fd)
+    try:
+        opened=os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise JournalError("derived context archive unavailable: not a regular file")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            yield stream
+        named=os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        if (opened.st_dev,opened.st_ino)!=(named.st_dev,named.st_ino):
+            raise JournalError("derived context archive identity changed")
+    finally:
+        os.close(fd)
+
 ZERO="0"*64
 EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED","REPOSITORY_BOUNDARY_ADOPTED"}
 HEX=re.compile(r"^[0-9a-f]{64}$")
@@ -273,105 +309,128 @@ class Journal:
 
     def read(self):
         if not self.path.exists(): return []
-        out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False
         with self.path.open("r",encoding="utf-8",newline="") as f:
-            for n,line in enumerate(f,1):
-                if not line.endswith("\n"): raise JournalError(f"journal line {n} is not newline terminated")
-                try: raw=json.loads(line)
-                except json.JSONDecodeError as x: raise JournalError(f"invalid JSON at line {n}: {x}") from x
-                if type(raw) is not dict or set(raw)!={"schema","seq","timestamp","event","payload","previous_event_sha256","event_sha256"}: raise JournalError(f"journal schema/fields invalid at line {n}")
-                if raw["schema"]!=SCHEMA or type(raw["seq"]) is not int or raw["seq"]!=n: raise JournalError(f"journal schema/sequence invalid at line {n}")
-                if not _timestamp(raw["timestamp"]): raise JournalError(f"timestamp invalid at line {n}")
-                if raw["event"] not in EVENTS or type(raw["payload"]) is not dict: raise JournalError(f"event invalid at line {n}")
-                if raw["previous_event_sha256"]!=previous or not HEX.fullmatch(raw["previous_event_sha256"]): raise JournalError(f"journal chain broken at line {n}")
-                if type(raw["event_sha256"]) is not str or not HEX.fullmatch(raw["event_sha256"]) or _hash_event(raw)!=raw["event_sha256"]: raise JournalError(f"event hash broken at line {n}")
-                if raw["event"] == "WORKFLOW_INITIALIZED":
-                    if n != 1 or initialized:
-                        raise JournalError(f"workflow initialization must be the unique root event at line {n}")
-                    epoch = raw["payload"].get("validation_epoch", 1)
-                    if type(epoch) is not int or epoch not in {1, 2}: raise JournalError(f"validation epoch invalid at line {n}")
-                    validation_epoch = epoch
-                    initialized=True
-                archived_prompt=None
-                if raw["event"] == "PROMPT_ACCEPTED":
-                    archived_prompt=self._archived_prompt(raw["payload"]["prompt_sha256"],n)
-                    archived_schema=archived_prompt.prompt_schema
-                    journal_schema=raw["payload"].get("prompt_schema")
-                    # The archived prompt is the durable authority for all
-                    # request metadata, not just the schema and network
-                    # setting.  In particular, action controls whether the
-                    # manual checkpoint execution-owner exemption applies.
-                    if raw["payload"].get("action") != archived_prompt.action:
-                        raise JournalError(f"prompt action archive mismatch at line {n}")
-                    if journal_schema is not None and journal_schema != archived_schema:
+            return self._validate_lines(f)
+
+    def _validate_lines(self, f):
+        """The single history validator, shared by read and pre-durable append."""
+        out=[]; previous=ZERO; generations={}; outstanding={}; validation_epoch=1; initialized=False
+        for n,line in enumerate(f,1):
+            if not line.endswith("\n"): raise JournalError(f"journal line {n} is not newline terminated")
+            try: raw=json.loads(line)
+            except json.JSONDecodeError as x: raise JournalError(f"invalid JSON at line {n}: {x}") from x
+            if type(raw) is not dict or set(raw)!={"schema","seq","timestamp","event","payload","previous_event_sha256","event_sha256"}: raise JournalError(f"journal schema/fields invalid at line {n}")
+            if raw["schema"]!=SCHEMA or type(raw["seq"]) is not int or raw["seq"]!=n: raise JournalError(f"journal schema/sequence invalid at line {n}")
+            if not _timestamp(raw["timestamp"]): raise JournalError(f"timestamp invalid at line {n}")
+            if raw["event"] not in EVENTS or type(raw["payload"]) is not dict: raise JournalError(f"event invalid at line {n}")
+            if raw["previous_event_sha256"]!=previous or not HEX.fullmatch(raw["previous_event_sha256"]): raise JournalError(f"journal chain broken at line {n}")
+            if type(raw["event_sha256"]) is not str or not HEX.fullmatch(raw["event_sha256"]) or _hash_event(raw)!=raw["event_sha256"]: raise JournalError(f"event hash broken at line {n}")
+            if raw["event"] == "WORKFLOW_INITIALIZED":
+                if n != 1 or initialized:
+                    raise JournalError(f"workflow initialization must be the unique root event at line {n}")
+                epoch = raw["payload"].get("validation_epoch", 1)
+                if type(epoch) is not int or epoch not in {1, 2}: raise JournalError(f"validation epoch invalid at line {n}")
+                validation_epoch = epoch
+                initialized=True
+            archived_prompt=None
+            if raw["event"] == "PROMPT_ACCEPTED":
+                archived_prompt=self._archived_prompt(raw["payload"]["prompt_sha256"],n)
+                archived_schema=archived_prompt.prompt_schema
+                journal_schema=raw["payload"].get("prompt_schema")
+                # The archived prompt is the durable authority for all
+                # request metadata, not just the schema and network
+                # setting.  In particular, action controls whether the
+                # manual checkpoint execution-owner exemption applies.
+                if raw["payload"].get("action") != archived_prompt.action:
+                    raise JournalError(f"prompt action archive mismatch at line {n}")
+                if journal_schema is not None and journal_schema != archived_schema:
+                    raise JournalError(f"prompt schema archive mismatch at line {n}")
+                if archived_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
+                    if journal_schema != archived_schema:
                         raise JournalError(f"prompt schema archive mismatch at line {n}")
-                    if archived_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}:
-                        if journal_schema != archived_schema:
-                            raise JournalError(f"prompt schema archive mismatch at line {n}")
-                        if (
-                            "network_access" not in raw["payload"]
-                            or raw["payload"]["network_access"] is not archived_prompt.network_access
-                        ):
-                            raise JournalError(f"prompt network archive mismatch at line {n}")
-                        if raw["payload"].get("session_mode") != archived_prompt.session_mode:
-                            raise JournalError(f"prompt session mode archive mismatch at line {n}")
-                        archived_target=archived_prompt.reuse_execution_id
-                        journal_target=raw["payload"].get("reuse_execution_id")
-                        if journal_target != archived_target:
-                            raise JournalError(f"prompt reuse target archive mismatch at line {n}")
-                    elif raw["event"] == "PROMPT_ACCEPTED":
-                        # A legacy fresh prompt cannot gain a reuse target
-                        # through mutable journal metadata.
-                        if archived_prompt.session_mode == "fresh" and raw["payload"].get("reuse_execution_id") is not None:
-                            raise JournalError(f"prompt reuse target archive mismatch at line {n}")
-                        if raw["payload"].get("session_mode") != archived_prompt.session_mode:
-                            raise JournalError(f"prompt session mode archive mismatch at line {n}")
-                # Once a generation has been accepted, its action is bound to
-                # the archived prompt above.  Do not let a later lifecycle
-                # payload select checkpoint semantics by relabelling itself.
-                if raw["event"] in {"TRANSITION_PREPARED", "RUN_STARTED",
-                                    "RUN_COMPLETED", "RUN_INTERRUPTED", "PROMPT_CANCELLED"}:
-                    generation=raw["payload"].get("generation")
-                    accepted=generations.get(generation)
-                    if accepted is not None and "action" in raw["payload"] and raw["payload"].get("action") != accepted["action"]:
-                        raise JournalError(f"lifecycle action mismatch at line {n}")
-                self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
-                p=raw["payload"]
-                if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
-                elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}:
-                    prepared=outstanding.pop(p["transaction_id"],None)
-                    if raw["event"]=="PROMPT_ACCEPTED":
-                        generations[p["generation"]]={
-                            "generation":p["generation"],
-                            "action":p["action"],
-                            "prompt_sha256":p["prompt_sha256"],
-                            "session_mode":p["session_mode"],
-                            "status":"ACCEPTED",
-                            "prompt_schema":p.get("prompt_schema"),
-                            "network_access": (
-                                archived_prompt.network_access
-                                if archived_prompt is not None
-                                and archived_prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
-                                else False
-                            ),
-                        }
-                    elif raw["event"]=="RUN_STARTED":
-                        rec=generations.get(p["generation"])
-                        if rec: rec.update({"status":"RUNNING","execution":p.get("execution")})
-                    elif raw["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
-                        rec=generations.get(p["generation"])
-                        if rec:
-                            rec["status"]="COMPLETED" if raw["event"]=="RUN_COMPLETED" else "INTERRUPTED"
-                            if "result" in p: rec["result"]=p["result"]
-                            if "executor_result" in p: rec["execution_result"]=p["executor_result"]
-                    elif raw["event"]=="PROMPT_CANCELLED":
-                        rec=generations.get(p["generation"])
-                        if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"]:
-                            raise JournalError("JOURNAL_LIFECYCLE")
-                        rec["status"]="CANCELLED"; rec["cancellation_reason"]=p["reason"]
-                previous=raw["event_sha256"]; out.append(raw)
+                    if (
+                        "network_access" not in raw["payload"]
+                        or raw["payload"]["network_access"] is not archived_prompt.network_access
+                    ):
+                        raise JournalError(f"prompt network archive mismatch at line {n}")
+                    if raw["payload"].get("session_mode") != archived_prompt.session_mode:
+                        raise JournalError(f"prompt session mode archive mismatch at line {n}")
+                    archived_target=archived_prompt.reuse_execution_id
+                    journal_target=raw["payload"].get("reuse_execution_id")
+                    if journal_target != archived_target:
+                        raise JournalError(f"prompt reuse target archive mismatch at line {n}")
+                elif raw["event"] == "PROMPT_ACCEPTED":
+                    # A legacy fresh prompt cannot gain a reuse target
+                    # through mutable journal metadata.
+                    if archived_prompt.session_mode == "fresh" and raw["payload"].get("reuse_execution_id") is not None:
+                        raise JournalError(f"prompt reuse target archive mismatch at line {n}")
+                    if raw["payload"].get("session_mode") != archived_prompt.session_mode:
+                        raise JournalError(f"prompt session mode archive mismatch at line {n}")
+            # Once a generation has been accepted, its action is bound to
+            # the archived prompt above.  Do not let a later lifecycle
+            # payload select checkpoint semantics by relabelling itself.
+            if raw["event"] in {"TRANSITION_PREPARED", "RUN_STARTED",
+                                "RUN_COMPLETED", "RUN_INTERRUPTED", "PROMPT_CANCELLED"}:
+                generation=raw["payload"].get("generation")
+                accepted=generations.get(generation)
+                if accepted is not None and "action" in raw["payload"] and raw["payload"].get("action") != accepted["action"]:
+                    raise JournalError(f"lifecycle action mismatch at line {n}")
+            self._validate_payload(raw["event"],raw["payload"],n, generations, validation_epoch)
+            p=raw["payload"]
+            if "derived_context" in p:
+                context=self.derived_context_bytes(p)+p["context_supplement"].encode("utf-8")
+                execution=p["execution"]
+                try:
+                    prompt=(self.path.parent/"prompts"/f"{p['prompt_sha256']}.txt").read_bytes()
+                except OSError as error:
+                    raise JournalError(f"prompt archive unavailable at line {n}") from error
+                if (hashlib.sha256(prompt).hexdigest()!=p["prompt_sha256"] or
+                    hashlib.sha256(context).hexdigest()!=execution["context_sha256"] or
+                    hashlib.sha256(prompt+context).hexdigest()!=execution["effective_prompt_sha256"] or
+                    execution.get("execution_input_sha256")!=execution["effective_prompt_sha256"]):
+                    raise JournalError(f"derived context provenance invalid at line {n}")
+            if raw["event"]=="TRANSITION_PREPARED": outstanding[p["transaction_id"]]=p
+            elif raw["event"] in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}:
+                prepared=outstanding.pop(p["transaction_id"],None)
+                if raw["event"]=="PROMPT_ACCEPTED":
+                    generations[p["generation"]]={
+                        "generation":p["generation"],
+                        "action":p["action"],
+                        "prompt_sha256":p["prompt_sha256"],
+                        "session_mode":p["session_mode"],
+                        "status":"ACCEPTED",
+                        "prompt_schema":p.get("prompt_schema"),
+                        "network_access": (
+                            archived_prompt.network_access
+                            if archived_prompt is not None
+                            and archived_prompt.prompt_schema in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"}
+                            else False
+                        ),
+                    }
+                elif raw["event"]=="RUN_STARTED":
+                    rec=generations.get(p["generation"])
+                    if rec: rec.update({"status":"RUNNING","execution":p.get("execution")})
+                elif raw["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
+                    rec=generations.get(p["generation"])
+                    if rec:
+                        rec["status"]="COMPLETED" if raw["event"]=="RUN_COMPLETED" else "INTERRUPTED"
+                        if "result" in p: rec["result"]=p["result"]
+                        if "executor_result" in p: rec["execution_result"]=p["executor_result"]
+                elif raw["event"]=="PROMPT_CANCELLED":
+                    rec=generations.get(p["generation"])
+                    if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"]:
+                        raise JournalError("JOURNAL_LIFECYCLE")
+                    rec["status"]="CANCELLED"; rec["cancellation_reason"]=p["reason"]
+            previous=raw["event_sha256"]; out.append(raw)
         if out and not initialized:
             raise JournalError("nonempty journal must have workflow initialization root")
+        # Replay owns transaction/lifecycle semantics. Import lazily to avoid
+        # the module initialization cycle; do not duplicate its validator here.
+        from .workflow import replay_journal, WorkflowError
+        try:
+            replay_journal(out)
+        except WorkflowError as error:
+            raise JournalError(str(error)) from error
         return out
     @staticmethod
     def _validate_payload(event,p,n,generations=None,validation_epoch=1):
@@ -392,7 +451,7 @@ class Journal:
             "RECOVERY_PERFORMED":{"repaired"},
             "REPOSITORY_BOUNDARY_ADOPTED":{"previous_witness","witness","reason"},
         }[event]
-        if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement","derived_context_supplement"}
+        if event in {"TRANSITION_PREPARED", "RUN_STARTED"}: allowed=allowed | {"context_supplement","derived_context_supplement","derived_context"}
         if not set(p)<=allowed: raise JournalError(f"payload fields invalid for {event} at line {n}")
         if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
@@ -636,6 +695,11 @@ class Journal:
                              (event == "TRANSITION_PREPARED" and p.get("logical_event") == "RUN_STARTED"))
         if context_transaction and has_provenance != ("context_supplement" in p):
             raise JournalError(f"context provenance pairing invalid at line {n}")
+        if "derived_context" in p or "derived_context_supplement" in p:
+            if "context_supplement" not in p or not context_transaction:
+                raise JournalError(f"derived context pairing invalid at line {n}")
+            if "derived_context" in p and "derived_context_supplement" in p:
+                raise JournalError(f"mixed derived context representations at line {n}")
         if "context_supplement" in p:
             supplement=p["context_supplement"]
             if type(supplement) is not str or len(supplement.encode("utf-8")) > 4096:
@@ -647,6 +711,9 @@ class Journal:
             if form["kind"] == "execution" and form["action"] == "checkpoint": raise JournalError(f"context supplement invalid at line {n}")
             if generations is not None:
                 _validate_parent_context(form,p.get("generation",0),generations,n)
+            if "derived_context" in p:
+                Journal._derived_descriptor(p)
+                return  # Exact archived bytes are checked by the history validator.
             derived=p.get("derived_context_supplement", "")
             if type(derived) is not str or len(derived.encode("utf-8")) > 4096:
                 raise JournalError(f"derived context supplement invalid at line {n}")
@@ -654,9 +721,53 @@ class Journal:
             combined=derived.encode("utf-8")+supplement.encode("utf-8")
             if not isinstance(execution,dict) or "context_sha256" not in execution or hashlib.sha256(combined).hexdigest()!=execution["context_sha256"]:
                 raise JournalError(f"context supplement provenance invalid at line {n}")
+    @staticmethod
+    def _derived_descriptor(payload):
+        descriptor=payload["derived_context"]
+        execution=payload.get("execution", {})
+        if (type(descriptor) is not dict or
+            set(descriptor)!={"schema","sha256","byte_length","execution_id","prompt_sha256","context_sha256","path"} or
+            descriptor.get("schema")!="atlas-derived-context/1"):
+            raise JournalError("derived context descriptor invalid")
+        digest=descriptor["sha256"]
+        owner=descriptor["execution_id"]
+        if (type(digest) is not str or not HEX.fullmatch(digest) or
+            type(owner) is not str or not SAFE_CONTEXT.fullmatch(owner) or
+            type(descriptor["byte_length"]) is not int or not 0 < descriptor["byte_length"] < 2**63 or
+            owner!=execution.get("execution_id") or
+            descriptor["prompt_sha256"]!=payload.get("prompt_sha256") or
+            descriptor["context_sha256"]!=execution.get("context_sha256") or
+            descriptor["path"]!=f"derived-contexts/{owner}-{digest}.txt"):
+            raise JournalError("derived context binding invalid")
+        return descriptor
+
+    def derived_context_bytes(self, payload):
+        """Load exact authoritative framing; never consult the mutable worktree."""
+        if "derived_context" not in payload:
+            legacy=payload.get("derived_context_supplement", "")
+            if type(legacy) is not str or len(legacy.encode("utf-8"))>4096:
+                raise JournalError("derived context supplement invalid")
+            return legacy.encode("utf-8")
+        if "derived_context_supplement" in payload:
+            raise JournalError("mixed derived context representations")
+        descriptor=self._derived_descriptor(payload)
+        try:
+            archive=self.path.parent/descriptor["path"]
+            with _archive_directory(archive.parent) as directory_fd:
+                with _archive_file(directory_fd, archive.name) as stream:
+                    raw=stream.read()
+                    if len(raw)!=descriptor["byte_length"] or hashlib.sha256(raw).hexdigest()!=descriptor["sha256"]:
+                        raise JournalError("derived context archive mismatch")
+        except OSError as error:
+            raise JournalError("derived context archive unavailable") from error
+        return raw
+
     def append(self,event,**fields):
         events=self.read(); seq=len(events)+1
         e={"schema":SCHEMA,"seq":seq,"timestamp":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"event":event,"payload":fields,"previous_event_sha256":events[-1]["event_sha256"] if events else ZERO}
-        e["event_sha256"]=_hash_event(e); self.path.parent.mkdir(parents=True,exist_ok=True)
-        with self.path.open("a",encoding="utf-8") as f: f.write(canonical(e)+"\n"); f.flush(); os.fsync(f.fileno())
+        e["event_sha256"]=_hash_event(e)
+        candidate=canonical(e)+"\n"
+        self._validate_lines([*(canonical(item)+"\n" for item in events),candidate])
+        self.path.parent.mkdir(parents=True,exist_ok=True)
+        with self.path.open("a",encoding="utf-8") as f: f.write(candidate); f.flush(); os.fsync(f.fileno())
         return e

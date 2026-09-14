@@ -289,7 +289,9 @@ def test_keyboard_interrupt_at_first_post_start_projection_is_terminal(tmp_path,
 
     def interrupt_after_start(events):
         nonlocal tripped
-        if not tripped and any(e["event"] == "RUN_STARTED" for e in events):
+        if (not tripped and any(e["event"] == "RUN_STARTED" for e in events)
+                and any(json.loads(line)["event"] == "RUN_STARTED"
+                        for line in w.journal.path.read_text().splitlines())):
             tripped = True
             raise KeyboardInterrupt()
         return original(events)
@@ -318,7 +320,9 @@ def test_start_run_keyboard_interrupt_at_first_post_start_projection_is_terminal
 
     def interrupt_after_start(events):
         nonlocal tripped
-        if not tripped and any(e["event"] == "RUN_STARTED" for e in events):
+        if (not tripped and any(e["event"] == "RUN_STARTED" for e in events)
+                and any(json.loads(line)["event"] == "RUN_STARTED"
+                        for line in w.journal.path.read_text().splitlines())):
             tripped = True
             raise KeyboardInterrupt()
         return original(events)

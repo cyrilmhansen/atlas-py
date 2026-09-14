@@ -4,6 +4,7 @@ import hashlib
 import pytest
 
 from tools.atlas_agent.executor import FakeExecutor
+from tools.atlas_agent.journal import JournalError
 from tools.atlas_agent.workflow import WorkflowError
 from test_agent_workflow_w221 import accepted, make_repo, prompt
 
@@ -248,6 +249,8 @@ def test_cancellation_journal_authority_rejects_tampering(tmp_path, mutation):
     else:
         terminal["reason"] = "different"
     w.journal.append("TRANSITION_PREPARED", **prepared)
-    w.journal.append("PROMPT_CANCELLED", **terminal)
-    with pytest.raises(WorkflowError):
-        w.rebuild()
+    before = w.journal.path.read_bytes()
+    with pytest.raises(JournalError):
+        w.journal.append("PROMPT_CANCELLED", **terminal)
+    assert w.journal.path.read_bytes() == before
+    w.journal.read()

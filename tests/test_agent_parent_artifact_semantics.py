@@ -81,16 +81,16 @@ def test_false_effective_hash_does_not_publish_owner_or_commit(tmp_path):
            "prompt_input":"accepted_prompt_plus_atlas_context",
            "context_path":f"reports/contexts/{execution_id}.txt","effective_prompt_path":f"reports/contexts/{execution_id}-effective.txt",
            "context_sha256":hashlib.sha256(supplement.encode()).hexdigest(),"effective_prompt_sha256":"0"*64}
-    w.journal.append("TRANSITION_PREPARED",transaction_id="tx",logical_event="RUN_STARTED",
-                     source=f"accepted/{source.name}",destination=f"running/implementation/{source.name}",
-                     prompt_sha256=hashlib.sha256(raw).hexdigest(),generation=1,action="implementation",
-                     network_access=False,
-                     execution=owner,context_supplement=supplement)
-    with pytest.raises(WorkflowError,match="(?:EXECUTION_CONTEXT_HASH_MISMATCH|epoch-2 start witness incomplete)"):
-        w.recover()
-    assert not (w.base/"reports"/"executions"/execution_id/"execution.json").exists()
+    before=w.journal.path.read_bytes()
     with pytest.raises(JournalError, match="epoch-2 start witness"):
-        w.journal.read()
+        w.journal.append("TRANSITION_PREPARED",transaction_id="tx",logical_event="RUN_STARTED",
+                         source=f"accepted/{source.name}",destination=f"running/implementation/{source.name}",
+                         prompt_sha256=hashlib.sha256(raw).hexdigest(),generation=1,action="implementation",
+                         network_access=False,
+                         execution=owner,context_supplement=supplement)
+    assert w.journal.path.read_bytes()==before
+    assert not (w.base/"reports"/"executions"/execution_id/"execution.json").exists()
+    w.journal.read()
 
 
 def test_modern_provenance_fields_cannot_be_reclassified_as_legacy(tmp_path):
