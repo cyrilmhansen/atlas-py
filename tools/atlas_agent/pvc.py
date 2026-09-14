@@ -41,6 +41,8 @@ _SOURCE_MEDIA_TYPES = frozenset({"image/png"})
 _REVIEW_MEDIA_TYPES = frozenset({
     "text/vnd.atlas.review-task", "text/vnd.atlas.review-diff",
 })
+_SEMANTIC_MEDIA_TYPE = "application/vnd.atlas.rust-semantic+json"
+_SEMANTIC_MEDIA_TYPES = frozenset({_SEMANTIC_MEDIA_TYPE})
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _SNAPSHOT_ID = re.compile(r"^scs1-[a-f0-9]{64}$")
 
@@ -461,6 +463,11 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
         if isinstance(tablet, dict) and tablet.get("profile") == "review"
         and isinstance(tablet.get("artifactId"), str)
     }
+    semantic_artifact_ids = {
+        tablet.get("artifactId") for tablet in document["tablets"]
+        if isinstance(tablet, dict) and tablet.get("profile") == "semantic"
+        and isinstance(tablet.get("artifactId"), str)
+    }
     artifacts = {}
     paths = set()
     for item in document["artifacts"]:
@@ -476,7 +483,10 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
         if type(artifact["mediaType"]) is not str:
             _fail("PVC_BUNDLE_ARTIFACT_MEDIA_TYPE_UNSUPPORTED")
         if artifact["mediaType"] not in _SOURCE_MEDIA_TYPES:
-            if (artifact_id not in review_artifact_ids
+            if artifact_id in semantic_artifact_ids:
+                if artifact["mediaType"] not in _SEMANTIC_MEDIA_TYPES:
+                    _fail("PVC_BUNDLE_ARTIFACT_MEDIA_TYPE_UNSUPPORTED")
+            elif (artifact_id not in review_artifact_ids
                     or artifact["mediaType"] not in _REVIEW_MEDIA_TYPES):
                 _fail("PVC_BUNDLE_ARTIFACT_MEDIA_TYPE_UNSUPPORTED")
         if type(artifact["sha256"]) is not str or not _SHA256.fullmatch(
@@ -495,7 +505,8 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
             _hash_bounded(
                 artifact_fd, artifact["byteLength"], artifact["sha256"],
                 label="ARTIFACT",
-                utf8=artifact["mediaType"] in _REVIEW_MEDIA_TYPES,
+                utf8=(artifact["mediaType"] in _REVIEW_MEDIA_TYPES
+                      or artifact["mediaType"] in _SEMANTIC_MEDIA_TYPES),
             )
         except OSError:
             _fail("PVC_BUNDLE_ARTIFACT_UNREADABLE")
@@ -535,6 +546,9 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
             _fail("PVC_BUNDLE_TABLET_ARTIFACT_INVALID")
         if artifact_id not in artifacts:
             _fail("PVC_BUNDLE_TABLET_ARTIFACT_MISSING")
+        if (tablet["profile"] == "semantic"
+                and artifacts[artifact_id]["mediaType"] not in _SEMANTIC_MEDIA_TYPES):
+            _fail("PVC_BUNDLE_SEMANTIC_MEDIA_PROFILE_MISMATCH")
         if "digest" in tablet and (
                 type(tablet["digest"]) is not str
                 or not _SHA256.fullmatch(tablet["digest"])):
@@ -550,6 +564,15 @@ def _validate_bundle_contents(result, bundle_fd, stdout, snapshot_bytes, documen
                 or type(tablet.get("provenance")) is not str
                 or not tablet["provenance"]):
             _fail("PVC_BUNDLE_REVIEW_TABLET_METADATA_INVALID")
+        if artifacts[artifact_id]["mediaType"] in _SEMANTIC_MEDIA_TYPES and (
+                tablet["profile"] != "semantic"
+                or "digest" not in tablet or "byteLength" not in tablet
+                or type(tablet.get("provenance")) is not str
+                or not tablet["provenance"]):
+            _fail("PVC_BUNDLE_SEMANTIC_TABLET_METADATA_INVALID")
+        if (artifacts[artifact_id]["mediaType"] in _SEMANTIC_MEDIA_TYPES
+                and tablet["digest"] != artifacts[artifact_id]["sha256"]):
+            _fail("PVC_BUNDLE_SEMANTIC_TABLET_METADATA_INVALID")
         for span in tablet["spans"]:
             span = _object(span, "PVC_BUNDLE_SPAN_SHAPE")
             if "sourceIndex" not in span:
