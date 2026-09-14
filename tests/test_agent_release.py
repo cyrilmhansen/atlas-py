@@ -4,10 +4,43 @@ from pathlib import Path
 import pytest
 
 from tools.atlas_agent.release import (
+    MODEL_SMOKES,
     ReleaseCheckError,
     _latest_agent_message,
     _require_single,
 )
+
+
+def test_qualified_model_smoke_matrix(tmp_path, monkeypatch):
+    import subprocess
+    import tools.atlas_agent.release as release
+
+    expected = (
+        ("luna-high", "gpt-5.6-luna", "high", "ATLAS_SMOKE_LUNA_HIGH_OK"),
+        ("sol-medium", "gpt-5.6-sol", "medium", "ATLAS_SMOKE_SOL_MEDIUM_OK"),
+        ("astra-medium", "gpt-6-astra", "medium", "ATLAS_SMOKE_ASTRA_MEDIUM_OK"),
+        ("astra-high", "gpt-6-astra", "high", "ATLAS_SMOKE_ASTRA_HIGH_OK"),
+    )
+    assert MODEL_SMOKES == expected
+    calls = []
+
+    def run(argv, **kwargs):
+        _, model, effort, marker = expected[len(calls)]
+        assert argv[argv.index("--model") + 1] == model
+        assert f'model_reasoning_effort="{effort}"' in argv
+        assert argv[-1].endswith(marker)
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, json.dumps({
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": marker},
+        }), "")
+
+    monkeypatch.setattr(release.subprocess, "run", run)
+    assert release._model_smoke(tmp_path / "codex", tmp_path, timeout=1) == [
+        {"label": label, "model": model, "reasoning": effort, "status": "PASS"}
+        for label, model, effort, marker in expected
+    ]
+    assert len(calls) == len(expected)
 
 
 def test_latest_agent_message_uses_completed_agent_message_only():
