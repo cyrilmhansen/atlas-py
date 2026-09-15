@@ -79,3 +79,8 @@ actions = ["implementation", "patch_review", "state_audit"]
 model = "gpt-6-astra"
 reasoning_effort = "medium"
 actions = ["implementation", "patch_review", "state_audit"]
+
+[compute_profiles.astra-high]
+model = "gpt-6-astra"
+reasoning_effort = "high"
+actions = ["implementation", "patch_review", "state_audit"]

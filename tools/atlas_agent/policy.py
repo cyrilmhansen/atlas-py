@@ -135,7 +135,7 @@ def _profile(value, name, modern=True):
     return value
 
 
-def validate_policy(data):
+def validate_policy(data, *, historical=False):
     valid_schemas = {LEGACY_POLICY_SCHEMA, HISTORICAL_POLICY_SCHEMA, POLICY_SCHEMA}
     if type(data) is not dict or data.get("schema") not in valid_schemas:
         raise PolicyError("POLICY_SCHEMA_INVALID")
@@ -160,8 +160,15 @@ def validate_policy(data):
                            ["implementation", "patch_review", "state_audit"]),
             "astra-medium": ("gpt-6-astra", "medium",
                              ["implementation", "patch_review", "state_audit"]),
+            "astra-high": ("gpt-6-astra", "high",
+                           ["implementation", "patch_review", "state_audit"]),
         }
-        if type(cp) is not dict or set(cp) != set(expected_compute):
+        # Archived /3 policies predate astra-high. Validate their exact matrix
+        # without adding authority or changing their semantic hash on replay.
+        original_compute = {"luna-high", "sol-medium", "astra-medium"}
+        if type(cp) is not dict or not (
+                set(cp) == set(expected_compute)
+                or (historical and set(cp) == original_compute)):
             raise PolicyError("POLICY_SCHEMA_INVALID", "compute profiles")
         for name, value in cp.items():
             if (type(value) is not dict or set(value) !=
@@ -184,11 +191,11 @@ def load_policy(path: Path):
     return validate_policy(data)
 
 
-def policy_config_sha256(data):
+def policy_config_sha256(data, *, historical=False):
     if "_atlas_legacy_empty_manual_capabilities" in data:
         data = {key: value for key, value in data.items()
                 if not key.startswith("_atlas_")}
-    validate_policy(data)
+    validate_policy(data, historical=historical)
     semantic = toml_dumps(data).encode("utf-8")
     return hashlib.sha256(semantic).hexdigest()
 
@@ -205,7 +212,7 @@ def _snapshot_base(policy, prompt, action, profile, network_access, *, historica
                    else HISTORICAL_SNAPSHOT_SCHEMA if policy["schema"] == HISTORICAL_POLICY_SCHEMA
                    else HISTORICAL_SNAPSHOT_SCHEMA_V2),
         "policy_schema": policy["schema"],
-        "policy_config_sha256": policy_config_sha256(policy),
+        "policy_config_sha256": policy_config_sha256(policy, historical=historical),
         "action": action,
         "checkpoint": prompt.checkpoint,
         "profile": profile,
@@ -275,6 +282,10 @@ def _snapshot_base(policy, prompt, action, profile, network_access, *, historica
 def resolve_policy(policy, prompt, *, for_new_execution=False, historical=False):
     if for_new_execution and policy.get("schema") != POLICY_SCHEMA:
         raise PolicyError("POLICY_REPLAY_ONLY", "historical policy cannot create execution")
+    if for_new_execution:
+        # Direct dictionary callers must meet live authority even if they
+        # also request historical resolution.
+        validate_policy(policy)
     action = prompt.action
     cfg = policy["profiles"].get(action)
     if cfg is None:
@@ -363,7 +374,7 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
         if snapshot.get("policy_schema") != POLICY_SCHEMA:
             raise PolicyError("POLICY_SCHEMA_INVALID", "current snapshot policy")
         if is_codex:
-            if snapshot.get("requested_compute_profile") not in {"action-default", "luna-high", "sol-medium", "astra-medium"} or snapshot.get("resolved_compute_profile") != snapshot.get("requested_compute_profile"):
+            if snapshot.get("requested_compute_profile") not in {"action-default", "luna-high", "sol-medium", "astra-medium", "astra-high"} or snapshot.get("resolved_compute_profile") != snapshot.get("requested_compute_profile"):
                 raise PolicyError("POLICY_SCHEMA_INVALID", "compute provenance")
             if "codex_profile" not in snapshot or not runtime_keys <= set(snapshot):
                 raise PolicyError("POLICY_SCHEMA_INVALID", "codex runtime identity")
@@ -379,6 +390,8 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
                          "sol-medium": ("gpt-5.6-sol", "medium",
                                         {"implementation", "patch_review", "state_audit"}),
                          "astra-medium": ("gpt-6-astra", "medium",
+                                          {"implementation", "patch_review", "state_audit"}),
+                         "astra-high": ("gpt-6-astra", "high",
                                           {"implementation", "patch_review", "state_audit"})}
             selected = cp_models.get(snapshot["requested_compute_profile"])
             if selected is not None and snapshot["action"] not in selected[2]:

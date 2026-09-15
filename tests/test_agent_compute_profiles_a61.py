@@ -1,5 +1,7 @@
 """Substantive A6.1 frozen-format and compute-profile qualification tests."""
 from copy import deepcopy
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -8,7 +10,7 @@ import pytest
 from tools.atlas_agent.codex_executor import CodexExecutor
 from tools.atlas_agent.executor import ExecutionSpec, ExecutorError, FakeExecutor
 from tools.atlas_agent.policy import (
-    PolicyError, SNAPSHOT_SCHEMA, resolve_policy, validate_policy,
+    PolicyError, SNAPSHOT_SCHEMA, load_policy, policy_config_sha256, resolve_policy, toml_dumps, validate_policy,
     validate_snapshot,
 )
 from tools.atlas_agent.prompt import PromptError, parse_prompt
@@ -166,6 +168,7 @@ def test_exact_compute_profile_action_matrix(action):
         "luna-high": action == "implementation",
         "sol-medium": True,
         "astra-medium": True,
+        "astra-high": True,
     }
     for compute, is_allowed in allowed.items():
         if is_allowed:
@@ -190,7 +193,7 @@ def test_policy_three_model_reasoning_and_compute_action_set_tampering_fails_clo
         with pytest.raises(PolicyError):
             validate_snapshot(mutated)
 
-    for field in ("luna-high", "sol-medium", "astra-medium"):
+    for field in ("luna-high", "sol-medium", "astra-medium", "astra-high"):
         mutated_policy = deepcopy(policy)
         mutated_policy["compute_profiles"][field]["actions"] = ["checkpoint"]
         with pytest.raises(PolicyError):
@@ -490,3 +493,118 @@ def test_only_current_pair_is_codex_execution_authority():
         else:
             with pytest.raises(Exception):
                 executor._require_executable_snapshot(snapshot)
+
+
+@pytest.mark.parametrize("action", ["implementation", "patch_review", "state_audit"])
+def test_astra_high_exact_resolution(action):
+    _, _, policy = _policies()
+    assert set(policy["compute_profiles"]) == {
+        "luna-high", "sol-medium", "astra-medium", "astra-high",
+    }
+    snapshot = resolve_policy(policy, _prompt(action, compute="astra-high"))
+    assert snapshot["requested_model"] == "gpt-6-astra"
+    assert snapshot["requested_reasoning_effort"] == "high"
+    assert snapshot["requested_compute_profile"] == "astra-high"
+    assert snapshot["resolved_compute_profile"] == "astra-high"
+    assert validate_snapshot(snapshot) is snapshot
+    for field, value in (
+        ("requested_model", "gpt-5.6-sol"),
+        ("requested_reasoning_effort", "medium"),
+        ("requested_compute_profile", "astra-medium"),
+        ("resolved_compute_profile", "astra-medium"),
+        ("requested_compute_profile", "astra-unknown"),
+    ):
+        mutated = deepcopy(snapshot)
+        mutated[field] = value
+        with pytest.raises(PolicyError):
+            validate_snapshot(mutated)
+
+
+def test_pre_astra_high_policy_replays_without_new_authority(tmp_path):
+    _, _, policy = _policies()
+    assert validate_policy(policy) is policy
+    assert validate_policy(policy, historical=True) is policy
+    resolve_policy(policy, _prompt(compute="astra-high"), for_new_execution=True)
+    del policy["compute_profiles"]["astra-high"]
+    original = deepcopy(policy)
+    expected_hash = hashlib.sha256(toml_dumps(policy).encode()).hexdigest()
+    assert validate_policy(policy, historical=True) is policy
+    assert policy_config_sha256(policy, historical=True) == expected_hash
+    with pytest.raises(PolicyError, match="POLICY_SCHEMA_INVALID"):
+        validate_policy(policy)
+    with pytest.raises(PolicyError, match="POLICY_SCHEMA_INVALID"):
+        policy_config_sha256(policy)
+    path = tmp_path / "policy.toml"
+    path.write_text(toml_dumps(policy))
+    with pytest.raises(PolicyError, match="POLICY_SCHEMA_INVALID"):
+        load_policy(path)
+    with pytest.raises(PolicyError, match="POLICY_SCHEMA_INVALID"):
+        resolve_policy(policy, _prompt(compute="astra-medium"))
+    for historical in (False, True):
+        with pytest.raises(PolicyError, match="POLICY_SCHEMA_INVALID"):
+            resolve_policy(policy, _prompt(compute="astra-medium"),
+                           for_new_execution=True, historical=historical)
+    snapshot = resolve_policy(policy, _prompt(compute="astra-medium"), historical=True)
+    assert validate_snapshot(snapshot) is snapshot
+    assert snapshot["policy_config_sha256"] == expected_hash
+    assert snapshot["requested_reasoning_effort"] == "medium"
+    with pytest.raises(PolicyError):
+        resolve_policy(policy, _prompt(compute="astra-high"), historical=True)
+    assert policy == original
+
+
+def test_compute_matrix_rejects_unknown_profiles_and_partial_sets():
+    _, _, policy = _policies()
+    with pytest.raises(PolicyError):
+        resolve_policy(policy, _prompt(compute="astra-unknown"))
+    mutated = deepcopy(policy)
+    mutated["compute_profiles"]["astra-unknown"] = deepcopy(
+        mutated["compute_profiles"]["astra-high"])
+    with pytest.raises(PolicyError):
+        validate_policy(mutated)
+    for name in ("luna-high", "sol-medium", "astra-medium"):
+        mutated = deepcopy(policy)
+        del mutated["compute_profiles"][name]
+        with pytest.raises(PolicyError):
+            validate_policy(mutated)
+
+
+def test_archived_three_profile_execution_replays_after_extension(tmp_path, monkeypatch):
+    _, _, policy = _policies()
+    old_policy = deepcopy(policy)
+    del old_policy["compute_profiles"]["astra-high"]
+    # Simulate the validator in force before the extension only while creating
+    # the historical execution. Replay below uses unmodified current code.
+    def historical_validator(data, **kwargs):
+        assert set(data["compute_profiles"]) == {
+            "luna-high", "sol-medium", "astra-medium",
+        }
+        return validate_policy(data, historical=True)
+
+    with monkeypatch.context() as historical_runtime:
+        historical_runtime.setattr(
+            "tools.atlas_agent.policy.validate_policy", historical_validator)
+        repo, workflow = make_repo(tmp_path, policy_text=toml_dumps(old_policy))
+        workflow.prompt_create("before-astra-high", "implementation", b"body\n",
+                               compute_profile="astra-medium")
+        workflow.ingest()
+        workflow.execute(1, FakeExecutor(
+            observed_thread_id="historical-compute-thread",
+            observed_model="gpt-6-astra", observed_reasoning="medium"))
+    before = deepcopy(workflow._state()["generations"]["1"])
+    assert before["status"] == "COMPLETED"
+    execution = before["execution"]
+    archive = workflow.base / execution["historical_policy_path"]
+    original_bytes = archive.read_bytes()
+    assert json.loads(original_bytes) == old_policy
+    original_hash = hashlib.sha256(original_bytes).hexdigest()
+    assert execution["historical_policy_sha256"] == original_hash
+    expected_semantic_hash = hashlib.sha256(toml_dumps(old_policy).encode()).hexdigest()
+    assert execution["policy_snapshot"]["policy_config_sha256"] == expected_semantic_hash
+    (repo / "atlas-agent-policy.toml").write_text(toml_dumps(policy))
+    assert load_policy(repo / "atlas-agent-policy.toml") == policy
+    (workflow.base / "state.json").unlink()
+    rebuilt = workflow.rebuild()
+    assert rebuilt["generations"]["1"] == before
+    assert archive.read_bytes() == original_bytes
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == original_hash

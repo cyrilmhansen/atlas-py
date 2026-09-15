@@ -30,6 +30,7 @@ MODEL_SMOKES = (
     ("luna-high", "gpt-5.6-luna", "high", "ATLAS_SMOKE_LUNA_HIGH_OK"),
     ("sol-medium", "gpt-5.6-sol", "medium", "ATLAS_SMOKE_SOL_MEDIUM_OK"),
     ("astra-medium", "gpt-6-astra", "medium", "ATLAS_SMOKE_ASTRA_MEDIUM_OK"),
+    ("astra-high", "gpt-6-astra", "high", "ATLAS_SMOKE_ASTRA_HIGH_OK"),
 )
 
 

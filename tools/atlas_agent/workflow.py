@@ -524,7 +524,7 @@ class Workflow:
             data=json.loads(raw.decode("utf-8"))
             from .policy import validate_policy
             try:
-                validate_policy(data)
+                validate_policy(data, historical=True)
             except PolicyError:
                 # Early /2 policy archives included empty capability keys on
                 # the manual profile.  Preserve their bytes and hash, but
@@ -535,7 +535,7 @@ class Workflow:
                             for key in ("required_toolchains", "writable_caches"))):
                     data["profiles"]["checkpoint"].pop("required_toolchains", None)
                     data["profiles"]["checkpoint"].pop("writable_caches", None)
-                    validate_policy(data)
+                    validate_policy(data, historical=True)
                     data["_atlas_legacy_empty_manual_capabilities"] = True
                 else:
                     raise
