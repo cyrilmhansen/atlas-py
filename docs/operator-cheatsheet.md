@@ -62,21 +62,6 @@ optional machine-install overrides.
 
 ## Normal generation
 
-### Explicit context (optional, before dispatch)
-
-```sh
-aa context-plan-example > /tmp/plan.json
-# Read/edit: choose members, coordinates, retained images and tool authority.
-aa context-plan-check --context-plan /tmp/plan.json
-aa dispatch --context-plan /tmp/plan.json
-```
-
-The check previews the lowest ACCEPTED generation and exact requests, without
-semantic acquisition or temporary PVC resources. It is not dispatch admission
-or a target reservation. Dispatch acquires the explicitly requested context.
-See [context plans](context-plan.md) for the complete `/2` example, UTF-8 byte
-coordinates, REVIEW/SOURCE/SEMANTIC meanings and validation limits.
-
 ### 1. Create and admit
 
 Put the bounded task in `task.txt`; do not rely on a remembered generation:
@@ -86,6 +71,22 @@ aa prompt-create --checkpoint <name> \
     --action <implementation|patch_review|state_audit|checkpoint> < task.txt
 aa ingest
 ```
+
+### Explicit context (optional, after admission and before dispatch)
+
+```sh
+aa context-plan-example > /tmp/plan.json
+# Read/edit: choose members, coordinates, retained images and tool authority.
+aa context-plan-check --context-plan /tmp/plan.json
+aa dispatch --context-plan /tmp/plan.json
+```
+
+The check needs an actual ACCEPTED target and previews that target and the exact
+requests without semantic acquisition or temporary PVC resources. It is not
+dispatch admission or a target reservation. Dispatch binds the target, acquires
+the explicitly requested context, then revalidates authority before execution.
+See [context plans](context-plan.md) for the complete `/2` example, UTF-8 byte
+coordinates, REVIEW/SOURCE/SEMANTIC meanings and validation limits.
 
 `prompt-create` prints the generation number. Run one accepted non-checkpoint
 generation:

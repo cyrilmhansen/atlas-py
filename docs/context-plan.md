@@ -33,7 +33,7 @@ witness changes. Relative **plan file** paths are relative to the shell's cwd.
     {"kind": "REVIEW"},
     {
       "kind": "SOURCE",
-      "result_path": "/absolute/path/to/retained-pvc-result",
+      "result_path": "relative/path/to/retained-pvc-result",
       "tablet_ids": ["APO-VC-000001"],
       "purpose": "Inspect the selected source image",
       "sources": ["atlas-agent.toml"]
@@ -66,8 +66,10 @@ A plan cannot authorize model, network, sandbox, session or execution policy.
   not a code review performed by a model and does not discover SOURCE images.
 - **SOURCE**: borrows only explicitly named PNG tablets from an already-retained
   PVC result directory (containing `stdout`, `stderr` and the referenced bundle).
-  `result_path` is absolute or repository-root-relative. `tablet_ids` selects exact
-  IDs, not glob patterns or file names. `purpose` is a nonblank selection reason.
+  `result_path` is repository-root-relative. Its resolved target must remain
+  inside the repository (an in-repository symlink is permitted). `tablet_ids`
+  selects exact IDs, not glob patterns or file names. `purpose` is a nonblank
+  selection reason.
   Optional `sources` contains repository-relative source paths for the retained
   request; omission or an empty list uses the existing `atlas-agent.toml` default.
   These paths are validated, not used to discover or render additional context.

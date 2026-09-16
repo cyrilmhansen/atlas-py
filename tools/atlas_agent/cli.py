@@ -220,13 +220,16 @@ def main(argv=None):
                                            build_context_composition,
                                            cleanup_context_composition)
                 plan = parse_context_plan(a.context_plan)
-                composition = build_context_composition(w, plan)
+                def acquire(target):
+                    nonlocal composition
+                    composition = build_context_composition(w, plan, target)
+                    return composition
             try:
-                if composition is None:
-                    w.dispatch(executor, observer=presenter.event)
-                else:
+                if a.context_plan:
                     w.dispatch(executor, observer=presenter.event,
-                               pvc_context=composition)
+                               pvc_context_provider=acquire)
+                else:
+                    w.dispatch(executor, observer=presenter.event)
             finally:
                 if composition is not None:
                     cleanup_context_composition(composition)

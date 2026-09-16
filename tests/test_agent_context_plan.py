@@ -45,6 +45,10 @@ def _server(path, source):
     return path
 
 
+def _bound_target(workflow):
+    return workflow.preview_dispatch_target()
+
+
 def test_context_plan_valid_schema_and_ordered_member_shapes(tmp_path):
     exe = tmp_path / "ra"
     members = [{"kind": "REVIEW"},
@@ -152,7 +156,7 @@ def test_review_source_and_plan_order_cross_adapter_boundary(tmp_path):
     retained = _result(repo / "corpus_miner")
     plan = write_plan(tmp_path / "plan.json", [
         {"kind": "REVIEW"},
-        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
          "tablet_ids": ["APO-VC-000001"], "purpose": "explicit source"},
         semantic_member(authority, path="a"),
     ])
@@ -185,7 +189,7 @@ def test_source_is_borrowed_and_owned_members_are_cleaned(tmp_path):
     retained_bytes = (retained.scratch_path / "stdout").read_bytes()
     plan = write_plan(tmp_path / "plan.json", [
         {"kind": "REVIEW"},
-        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
          "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
     ])
     composition = build_context_composition(workflow, parse_context_plan(plan))
@@ -216,7 +220,7 @@ def test_source_survives_later_member_failure_and_prior_owned_data_does_not(
                         record_real_review_resource)
     plan = write_plan(tmp_path / "plan.json", [
         {"kind": "REVIEW"},
-        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
          "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
         {"kind": "SOURCE", "result_path": str(tmp_path / "missing"),
          "tablet_ids": ["APO-VC-000001"], "purpose": "fails"},
@@ -248,14 +252,14 @@ def test_source_rejects_unvalidated_and_unknown_tablets(tmp_path):
     retained = _result(repo)
     for tablet in ("unknown",):
         plan = write_plan(tmp_path / "plan.json", [{
-            "kind": "SOURCE", "result_path": str(retained.scratch_path),
+            "kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
             "tablet_ids": [tablet], "purpose": "x"}])
         with pytest.raises((ValueError, RuntimeError)):
             build_context_composition(workflow, parse_context_plan(plan))
-    bad = tmp_path / "not-a-result"
+    bad = repo / "not-a-result"
     bad.mkdir()
     plan = write_plan(tmp_path / "bad.json", [{
-        "kind": "SOURCE", "result_path": str(bad),
+        "kind": "SOURCE", "result_path": "not-a-result",
         "tablet_ids": ["APO-VC-000001"], "purpose": "x"}])
     with pytest.raises(Exception, match="PVC_BUNDLE_STDOUT_MISSING"):
         build_context_composition(workflow, parse_context_plan(plan))
@@ -268,8 +272,8 @@ def test_public_cli_loads_plan_and_passes_composition(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "Workflow", lambda: workflow)
     monkeypatch.setattr(workflow, "dispatch",
-                        lambda executor, observer=None, pvc_context=None:
-                        calls.append(pvc_context))
+                        lambda executor, observer=None, pvc_context_provider=None:
+                        calls.append(pvc_context_provider(_bound_target(workflow))))
     assert cli.main(["dispatch", "--context-plan", str(plan)]) == 0
     assert isinstance(calls[0], PvcContextComposition)
 
@@ -282,7 +286,7 @@ def test_cli_dispatch_finally_cleanup_preserves_retained_source(tmp_path,
     retained = _result(repo / "corpus_miner")
     before = (retained.scratch_path / "stdout").read_bytes()
     plan = write_plan(tmp_path / "plan.json", [{
-        "kind": "SOURCE", "result_path": str(retained.scratch_path),
+        "kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
         "tablet_ids": ["APO-VC-000001"], "purpose": "retained"}])
     monkeypatch.setattr(cli, "Workflow", lambda: workflow)
     monkeypatch.setattr(workflow, "dispatch",
@@ -419,7 +423,7 @@ def test_v2_mixed_plan_preserves_order_and_global_ordinals(tmp_path):
     retained = _result(repo / "corpus_miner")
     plan = write_plan(tmp_path / "mixed.json", [
         {"kind": "REVIEW"}, python_member(python, path="corpus_miner/a"),
-        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
          "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
         {**semantic_member(rust, path="corpus_miner/a"), "backend": "rust"},
     ], schema="atlas-agent-context-plan/2")
@@ -456,7 +460,7 @@ def test_context_composition_cleanup_removes_generated_semantics_only(tmp_path):
     composition = build_context_composition(workflow, parse_context_plan(
         write_plan(tmp_path / "lifecycle.json", [
             {"kind": "REVIEW"}, python_member(python, path="corpus_miner/a"),
-            {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+            {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
              "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
             {**semantic_member(rust, path="corpus_miner/a"), "backend": "rust"},
         ], schema="atlas-agent-context-plan/2")))
@@ -505,7 +509,7 @@ def test_context_composition_failure_cleans_python_but_borrows_source(
                         record_python_root)
     plan = write_plan(tmp_path / "failure.json", [
         python_member(python, path="corpus_miner/a"),
-        {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+        {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
          "tablet_ids": ["APO-VC-000001"], "purpose": "retained"},
         python_member(tmp_path / "missing", path="a"),
     ], schema="atlas-agent-context-plan/2")
@@ -530,9 +534,9 @@ def test_public_cli_v1_forwards_real_rust_selection(tmp_path, monkeypatch):
     forwarded = []
     monkeypatch.setattr(cli, "Workflow", lambda: workflow)
     monkeypatch.setattr(workflow, "dispatch",
-                        lambda executor, observer=None, pvc_context=None:
+                        lambda executor, observer=None, pvc_context_provider=None:
                         forwarded.append((
-                            pvc_context,
+                            (pvc_context := pvc_context_provider(_bound_target(workflow))),
                             json.loads((pvc_context.selections[0].result.bundle_path /
                                         pvc_context.selections[0].result.validated_snapshot.document[
                                             "artifacts"][0]["relativePath"]).read_bytes()))))
@@ -556,9 +560,9 @@ def test_public_cli_v2_forwards_real_python_selection(tmp_path, monkeypatch):
     assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 0
     assert path.read_bytes() == plan_bytes
     monkeypatch.setattr(workflow, "dispatch",
-                        lambda executor, observer=None, pvc_context=None:
+                        lambda executor, observer=None, pvc_context_provider=None:
                         forwarded.append((
-                            pvc_context,
+                            (pvc_context := pvc_context_provider(_bound_target(workflow))),
                             json.loads((pvc_context.selections[0].result.bundle_path /
                                         pvc_context.selections[0].result.validated_snapshot.document[
                                             "artifacts"][0]["relativePath"]).read_bytes()))))
@@ -592,7 +596,7 @@ def test_cli_static_check_preserves_exact_requests_and_state(tmp_path, monkeypat
     authority = _server(tmp_path / "python", "raise RuntimeError('must not run')")
     retained = _result(repo)
     members = [python_member(authority), {"kind": "REVIEW"},
-               {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+               {"kind": "SOURCE", "result_path": str(retained.scratch_path.relative_to(repo)),
                 "tablet_ids": ["APO-VC-000001"], "purpose": "only this image"},
                {**semantic_member(authority), "backend": "rust"}]
     path = write_plan(tmp_path / "check.json", members,
@@ -674,3 +678,88 @@ def test_malformed_query_types_are_cli_rejections(tmp_path, monkeypatch, capsys,
     monkeypatch.setattr(cli, "Workflow", lambda: workflow)
     assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 1
     assert "CONTEXT_PLAN_SEMANTIC_INVALID" in capsys.readouterr().err
+
+
+def test_source_result_path_stays_within_repository_after_resolution(tmp_path):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    (repo / "corpus_miner" / "inside").mkdir(parents=True)
+    inside = _result(repo / "corpus_miner" / "inside")
+    (repo / "inside-link").symlink_to(inside.scratch_path, target_is_directory=True)
+
+    valid = write_plan(tmp_path / "inside.json", [{
+        "kind": "SOURCE", "result_path": "inside-link",
+        "tablet_ids": ["APO-VC-000001"], "purpose": "inside symlink",
+    }])
+    composition = build_context_composition(workflow, parse_context_plan(valid))
+    assert composition.selections[0].result.scratch_path == inside.scratch_path
+
+    (tmp_path / "outside").mkdir()
+    outside = _result(tmp_path / "outside")
+    (repo / "outside-link").symlink_to(outside.scratch_path, target_is_directory=True)
+    for index, result_path in enumerate((
+            str(outside.scratch_path), "../outside", "outside-link")):
+        plan = write_plan(tmp_path / f"escape-{index}.json", [{
+            "kind": "SOURCE", "result_path": result_path,
+            "tablet_ids": ["APO-VC-000001"], "purpose": "escape",
+        }])
+        with pytest.raises(ValueError, match="CONTEXT_PLAN_SOURCE_INVALID"):
+            build_context_composition(workflow, parse_context_plan(plan))
+
+
+def test_dispatch_binds_provider_to_selected_target(tmp_path):
+    from tools.atlas_agent.executor import FakeExecutor
+
+    _, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    seen = []
+
+    def acquire(target):
+        seen.append((target.generation, target.prompt_sha256,
+                     target.expected_head, target.prompt.body))
+        return None
+
+    result = workflow.dispatch(FakeExecutor(observed_thread_id="bound-target"),
+                               pvc_context_provider=acquire)
+    assert result["generation"] == 1
+    assert seen[0][0] == 1
+    assert seen[0][1] == workflow._state()["generations"]["1"]["prompt_sha256"]
+    assert seen[0][3] == "W2.2.1\n"
+
+
+def test_dispatch_rejects_workflow_change_during_context_acquisition(tmp_path):
+    from tools.atlas_agent.executor import FakeExecutor
+    from tools.atlas_agent.workflow import WorkflowError
+
+    _, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    executor = FakeExecutor(observed_thread_id="must-not-run")
+
+    def acquire(target):
+        assert target.generation == 1
+        accepted(workflow, generation=2)
+        return None
+
+    with pytest.raises(WorkflowError, match="DISPATCH_TARGET_AUTHORITY_CHANGED"):
+        workflow.dispatch(executor, pvc_context_provider=acquire)
+    assert executor.launched == 0
+    assert workflow._state()["generations"]["1"]["status"] == "ACCEPTED"
+
+
+def test_dispatch_rejects_repository_change_during_context_acquisition(tmp_path):
+    from tools.atlas_agent.executor import FakeExecutor
+    from tools.atlas_agent.workflow import WorkflowError
+
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    executor = FakeExecutor(observed_thread_id="must-not-run")
+
+    def acquire(target):
+        assert target.generation == 1
+        (repo / "a").write_text("authority changed")
+        return None
+
+    with pytest.raises(WorkflowError, match="REPOSITORY_WITNESS_MISMATCH"):
+        workflow.dispatch(executor, pvc_context_provider=acquire)
+    assert executor.launched == 0
+    assert workflow._state()["generations"]["1"]["status"] == "ACCEPTED"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import hashlib, json, os, re, tempfile, uuid, tomllib
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from .model import Prompt, PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3
 from .prompt import parse_prompt, PromptError
@@ -19,6 +19,22 @@ from .pvc_context import (PvcContextSelection, PvcContextComposition,
                           PvcContextError, _stage_pvc_context,
                           _stage_integrated_context)
 class WorkflowError(RuntimeError): pass
+
+
+@dataclass(frozen=True)
+class DispatchTarget:
+    """Workflow-selected authority to which dispatch context is bound."""
+    generation: int
+    prompt_sha256: str
+    expected_head: str
+    action: str
+    checkpoint: str
+    prompt: Prompt
+    state_seq: int
+    protected_untracked: tuple
+    patch_owned_untracked: tuple
+
+
 class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
 
@@ -879,6 +895,37 @@ class Workflow:
         hits=[p for p in folder.glob(f"g{g:06d}-*.txt") if p.is_file()]
         if len(hits)!=1 or sha(hits[0])!=digest: raise WorkflowError("SPOOL_CORRUPT")
         return hits[0]
+    def _dispatch_target(self, state, verify_repository=False):
+        """Select and bind the one target according to workflow authority."""
+        accepted = [record for record in state["generations"].values()
+                    if record["status"] == "ACCEPTED"]
+        if not accepted:
+            return None
+        record = min(accepted, key=lambda value: value["generation"])
+        accepted_path = self._find(self.base/"accepted", record["generation"],
+                                   record["prompt_sha256"])
+        try:
+            prompt = parse_prompt(accepted_path.read_bytes())
+        except PromptError as error:
+            raise WorkflowError(error.code) from error
+        if verify_repository:
+            ownership = {
+                "protected_untracked": state.get("protected_untracked", []),
+                "patch_owned_untracked": state.get("patch_owned_untracked", []),
+            }
+            if witness(self.root, self.allowed, ownership) != record["witness"]:
+                raise WorkflowError("REPOSITORY_WITNESS_MISMATCH")
+        return DispatchTarget(
+            record["generation"], record["prompt_sha256"],
+            record["expected_head"], record["action"], record["checkpoint"],
+            prompt, state["last_seq"],
+            tuple(state.get("protected_untracked", [])),
+            tuple(state.get("patch_owned_untracked", [])))
+    def preview_dispatch_target(self):
+        """Return the current target for static previews, without reserving it."""
+        with lock(self.base/"lock"):
+            _, state = self._preflight()
+            return self._dispatch_target(state)
     def cancel(self, generation, reason, hook=None):
         """Move an accepted prompt to the terminal cancelled spool."""
         if type(reason) is not str or not reason.strip():
@@ -1526,7 +1573,8 @@ class Workflow:
                 raise WorkflowError(f"CHECKPOINT_RECOVERY_REQUIRED: {error}") from error
             self._finish_checkpoint(generation,x,intent,now)
             s=replay_journal(self.journal.read()); self._save(s); return s
-    def execute(self,generation,executor=None,observer=None,pvc_context=None):
+    def execute(self,generation,executor=None,observer=None,pvc_context=None,
+                _dispatch_target=None):
         """Explicitly execute one accepted generation through W1 lifecycle."""
         derived_archive = None
         preparation_owned = False
@@ -1536,6 +1584,17 @@ class Workflow:
             with lock(self.base/"lock"):
                 s,x=self._record(generation)
                 if x["status"]!="ACCEPTED": raise WorkflowError("generation is not accepted")
+                if _dispatch_target is not None:
+                    accepted_targets = [record for record in s["generations"].values()
+                                        if record["status"] == "ACCEPTED"]
+                    selected = min(accepted_targets,
+                                   key=lambda value: value["generation"]) if accepted_targets else None
+                    if (selected is None
+                            or selected["generation"] != _dispatch_target.generation
+                            or x["prompt_sha256"] != _dispatch_target.prompt_sha256
+                            or x["expected_head"] != _dispatch_target.expected_head
+                            or s["last_seq"] != _dispatch_target.state_seq):
+                        raise WorkflowError("DISPATCH_TARGET_AUTHORITY_CHANGED")
                 self._admit_run_start(s, generation)
                 accepted=self._find(self.base/"accepted",generation,x["prompt_sha256"])
                 prompt_bytes=accepted.read_bytes()
@@ -2012,30 +2071,34 @@ class Workflow:
             usage=load_presentation_usage(usage_path,record)
             if usage is not None: summary["tokens"]=usage
         return summary
-    def dispatch(self, executor=None, observer=None, pvc_context=None):
+    def dispatch(self, executor=None, observer=None, pvc_context=None,
+                 pvc_context_provider=None):
         """Execute exactly one already accepted generation.
 
         Selection is deliberately limited to the first accepted generation.
         Execution remains the authority for policy and lifecycle validation;
         in particular, a blocked generation is never skipped.
         """
+        if pvc_context is not None and pvc_context_provider is not None:
+            raise WorkflowError("DISPATCH_CONTEXT_AMBIGUOUS")
         with lock(self.base/"lock"):
             _, state = self._preflight()
-            accepted = [record for record in state["generations"].values()
-                        if record["status"] == "ACCEPTED"]
-            if not accepted:
+            target = self._dispatch_target(state, verify_repository=True)
+            if target is None:
                 running = [record for record in state["generations"].values()
                            if record["status"] == "RUNNING"]
                 if running:
                     generation = min(running, key=lambda value: value["generation"])["generation"]
                     raise WorkflowError(f"GENERATION_{generation}: generation is not accepted")
                 raise WorkflowError("NO_DISPATCHABLE_GENERATION")
-            record = min(accepted, key=lambda value: value["generation"])
-            generation = record["generation"]
+            generation = target.generation
             self._admit_run_start(state, generation)
         try:
+            if pvc_context_provider is not None:
+                pvc_context = pvc_context_provider(target)
             state = self.execute(generation, executor, observer=observer,
-                                 pvc_context=pvc_context)
+                                 pvc_context=pvc_context,
+                                 _dispatch_target=target)
         except Exception as error:
             try:
                 failed=self._state()
