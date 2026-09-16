@@ -1,0 +1,8 @@
+#!/bin/sh
+exec python -m pytest -q \
+    --cov=tools/atlas_agent \
+    --cov-branch \
+    --cov-context=test \
+    --cov-report=term-missing \
+    --cov-report=html:htmlcov \
+    "$@"
