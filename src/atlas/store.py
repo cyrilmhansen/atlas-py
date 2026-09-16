@@ -55,10 +55,18 @@ def _require_exact_keys(value, keys, message):
 
 class Store:
     def __init__(self, path):
-        self.path=str(path); self._db=sqlite3.connect(self.path); self._db.row_factory=sqlite3.Row; self._closed=False
-        self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
-        self._migrate_knowledge_identity()
-        self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.supersessions={}; self._supersession_claimants=[]; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.decisions={}; self.isolated=_Isolated(); self._load()
+        self.path=str(path); self._db=sqlite3.connect(self.path)
+        try:
+            self._db.row_factory=sqlite3.Row; self._closed=False
+            self._db.executescript("CREATE TABLE IF NOT EXISTS records (id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_identity (knowledge_id TEXT PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL)")
+            self._migrate_knowledge_identity()
+            self.vocabulary=Vocabulary({},{}); self.descriptions={}; self.sources={}; self.rules={}; self.contexts={}; self.snapshots={}; self.records={}; self.derivations={}; self.supersessions={}; self._supersession_claimants=[]; self.decision_scopes={}; self.decision_groundings={}; self.grounded_decision_problems={}; self.decisions={}; self.isolated=_Isolated(); self._load()
+        except BaseException:
+            try:
+                self._db.close()
+            except BaseException:
+                pass
+            raise
 
     def _check(self):
         if self._closed: raise ClosedStoreError("store is closed")
