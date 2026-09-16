@@ -17,7 +17,7 @@ from .policy import PolicyError, load_policy, policy_config_sha256, resolve_poli
 from .toolchains import CapabilityResolver, load_machine_capabilities, CapabilityError
 from .pvc_context import (PvcContextSelection, PvcContextComposition,
                           PvcContextError, _stage_pvc_context,
-                          _stage_pvc_composition)
+                          _stage_integrated_context)
 class WorkflowError(RuntimeError): pass
 class _RunTerminalError(WorkflowError):
     """A meaningful failure that already durably ended the run."""
@@ -1605,11 +1605,11 @@ class Workflow:
                                     False) is not True):
                         raise WorkflowError("PVC_CONTEXT_IMAGE_CAPABILITY_REQUIRED")
                     try:
-                        staged_pvc = (
-                            _stage_pvc_context(pvc_context)
-                            if isinstance(pvc_context, PvcContextSelection)
-                            else _stage_pvc_composition(pvc_context)
-                        )
+                        # The single-selection API retains its qualified v0
+                        # bytes. Context plans always use integrated composition.
+                        staged_pvc = (_stage_pvc_context(pvc_context)
+                                      if isinstance(pvc_context, PvcContextSelection)
+                                      else _stage_integrated_context(pvc_context, prompt.body))
                     except PvcContextError as error:
                         raise WorkflowError(str(error)) from error
                     derived_context = staged_pvc.framing.encode("utf-8")
@@ -1979,6 +1979,9 @@ class Workflow:
         for record in sorted(state["generations"].values(),key=lambda value:value["generation"]):
             execution=record.get("execution") or {}; result=self._execution_result(record)
             row={"generation":record["generation"],"action":record["action"],"status":record["status"],"execution_id":execution.get("execution_id"),"report_available":self._report_available(record) if execution else False}
+            for key in ("context_path", "effective_prompt_path", "effective_prompt_sha256"):
+                if key in execution:
+                    row[key] = execution[key]
             if record["status"] == "CANCELLED":
                 row["cancellation_reason"] = record["cancellation_reason"]
             snapshot=execution.get("policy_snapshot") if isinstance(execution.get("policy_snapshot"),dict) else {}

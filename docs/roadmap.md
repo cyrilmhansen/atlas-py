@@ -1269,3 +1269,12 @@ Do not rename `atlas-py` yet merely for symmetry.
 Do not create `atlas-protocol` until a real independently versioned shared package is justified by multiple consumers.
 
 The final boundaries inside `atlas-core` should be learned from Rust semantic conformance work and multiple real observation consumers rather than frozen from repository naming alone.
+
+## S1b.3 integrated context implementation note
+
+The integrated execution boundary is implemented in Python using the existing
+PVC/context-plan authority. See [integrated context](integrated-context.md) for
+ordering, exact-byte semantics, selection bounds, operator inspection, legacy
+compatibility, and the first Atlas parser dogfood scenario. Qualification and
+checkpoint transitions remain Atlas-owned. Next: real-task dogfood of selection
+quality, not additional language-server capabilities or a Rust migration.

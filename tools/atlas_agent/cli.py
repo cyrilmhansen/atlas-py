@@ -268,5 +268,10 @@ def main(argv=None):
                 if row.get("reuse_fallback_reason"):
                     fields.append("reuse fallback "+row["reuse_fallback_reason"])
                 print(" · ".join(fields))
+                if row.get("context_path"):
+                    print("  context: " + row["context_path"])
+                if row.get("effective_prompt_path"):
+                    print("  effective input: " + row["effective_prompt_path"]
+                          + " sha256=" + row.get("effective_prompt_sha256", "unavailable"))
     except (WorkflowError,ValueError,OSError,RuntimeError) as e: print(f"error: {e}",file=sys.stderr); return 1
     return 0

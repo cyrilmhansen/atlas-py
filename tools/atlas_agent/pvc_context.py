@@ -153,6 +153,7 @@ class _StagedPvcContext:
     framing: str
     root: Path | None = None
     roots: tuple[Path, ...] = ()
+    contributions: tuple[PvcContextContribution, ...] = ()
 
     def cleanup(self) -> None:
         """Release the staged descriptors and backing directory, once."""
@@ -368,7 +369,7 @@ def _stage_pvc_context(selection: PvcContextSelection,
 
 def _stage_pvc_composition(
         composition: PvcContextComposition) -> _StagedPvcContext:
-    """Stage members in caller order without merging their PVC authority."""
+    """Legacy v0 frame compatibility; execution uses integrated staging below."""
     if type(composition) is not PvcContextComposition:
         raise PvcContextError("PVC_CONTEXT_COMPOSITION_REQUIRED")
     staged_members = []
@@ -406,3 +407,109 @@ def _stage_pvc_composition(
                   if staged.root is not None)
     return _StagedPvcContext(images, texts, "\n".join(framing) + "\n",
                              roots[0] if roots else None, roots)
+
+
+# Final composition limits include images, not just model-facing text.  There
+# is no truncation: a selected tablet either crosses intact or execution fails.
+MAX_CONTEXT_ITEMS = 64
+MAX_CONTEXT_BYTES = 16 * 1024 * 1024
+CATEGORY_ORDER = ("TASK", "DIFF", "SOURCE", "SEMANTIC")
+_CATEGORY_BY_MEDIA = {
+    "text/vnd.atlas.review-task": "TASK",
+    "text/vnd.atlas.review-diff": "DIFF",
+    "image/png": "SOURCE",
+    "application/vnd.atlas.rust-semantic+json": "SEMANTIC",
+    "application/vnd.atlas.python-semantic+json": "SEMANTIC",
+}
+
+
+@dataclass(frozen=True)
+class PvcContextContribution:
+    """Typed view of staged PVC authority, not an alternative input authority.
+
+    Framing includes authenticated exact text (or the image attachment's
+    digest), snapshot, tablet, artifact, addresses and original provenance.
+    """
+
+    category: str
+    origin: str
+    purpose: str
+    framing: str
+
+
+def _stage_integrated_context(composition: PvcContextComposition,
+                              task: str) -> _StagedPvcContext:
+    """Compose authorized TASK and PVC selections at the execution boundary.
+
+    Category order is fixed; within categories the operator's selection and
+    tablet order is retained. Repeated snapshot/tablet identities are errors,
+    even when their purposes differ. No observation is inferred or queried here.
+    """
+    if type(composition) is not PvcContextComposition or type(task) is not str:
+        raise PvcContextError("PVC_CONTEXT_INTEGRATED_INPUT_INVALID")
+    chosen = []
+    seen = set()
+    size = len(task.encode("utf-8"))
+    for selection in composition.selections:
+        doc = selection.result.validated_snapshot.document
+        tablets = {t["id"]: t for t in doc["tablets"]}
+        artifacts = {a["artifactId"]: a for a in doc["artifacts"]}
+        for tablet_id in selection.tablet_ids:
+            key = (doc["snapshotId"], tablet_id)
+            if key in seen:
+                raise PvcContextError("PVC_CONTEXT_DUPLICATE_CONTRIBUTION")
+            seen.add(key)
+            if tablet_id not in tablets:
+                raise PvcContextError("PVC_CONTEXT_TABLET_NOT_VALIDATED")
+            artifact = artifacts[tablets[tablet_id]["artifactId"]]
+            category = _CATEGORY_BY_MEDIA.get(artifact["mediaType"])
+            if category is None:
+                raise PvcContextError("PVC_CONTEXT_MEDIA_TYPE_UNSUPPORTED")
+            size += artifact["byteLength"]
+            chosen.append((category, selection, tablet_id))
+            if len(chosen) + 1 > MAX_CONTEXT_ITEMS or size > MAX_CONTEXT_BYTES:
+                raise PvcContextError("PVC_CONTEXT_COMPOSITION_BOUNDED")
+    if size > MAX_CONTEXT_BYTES:
+        raise PvcContextError("PVC_CONTEXT_COMPOSITION_BOUNDED")
+    staged = []
+    contributions = []
+    try:
+        for category in CATEGORY_ORDER:
+            for kind, selection, tablet_id in chosen:
+                if kind != category:
+                    continue
+                member = _stage_pvc_context(PvcContextSelection(
+                    selection.result, (tablet_id,), selection.purpose), len(staged))
+                staged.append(member)
+                if category == "TASK" and member.text_authorities[0].payload != task.encode("utf-8"):
+                    raise PvcContextError("PVC_CONTEXT_TASK_MISMATCH")
+                contributions.append(PvcContextContribution(
+                    category, "validated PVC tablet", selection.purpose, member.framing))
+        if not any(c.category == "TASK" for c in contributions):
+            payload = task.encode("utf-8")
+            contributions.insert(0, PvcContextContribution(
+                "TASK", "accepted prompt body", "exact authorized task",
+                f"payload-sha256={hashlib.sha256(payload).hexdigest()} "
+                f"payload-bytes={len(payload)}\npayload-begin\n{task}\npayload-end\n"))
+        lines = ["Atlas integrated context / 1",
+                 "Context is authorized model input, not semantic truth.",
+                 f"Purpose: {composition.purpose}"]
+        for category in CATEGORY_ORDER:
+            items = [c for c in contributions if c.category == category]
+            lines.append(f"## {category} ({len(items)} contributions)" if items
+                         else f"## {category} (not selected)")
+            for index, item in enumerate(items, 1):
+                lines.extend([f"### {category}.{index} origin={item.origin}",
+                              f"Selection reason: {item.purpose}", item.framing])
+        framing = "\n".join(lines) + "\n"
+        if len(framing.encode("utf-8")) > MAX_CONTEXT_BYTES:
+            raise PvcContextError("PVC_CONTEXT_COMPOSITION_BOUNDED")
+        roots = tuple(m.root for m in staged)
+        return _StagedPvcContext(
+            tuple(a for m in staged for a in m.image_authorities),
+            tuple(a for m in staged for a in m.text_authorities),
+            framing, roots[0] if roots else None, roots, tuple(contributions))
+    except BaseException:
+        for member in staged:
+            member.cleanup()
+        raise

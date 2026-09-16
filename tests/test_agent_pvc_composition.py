@@ -92,7 +92,7 @@ def test_full_explicit_composition_crosses_workflow_and_preserves_authority(
     prompt = (f'+++\nschema = "atlas-agent-prompt/1"\ngeneration = 1\n'
               f'parent = "genesis"\ncheckpoint = "composition"\n'
               f'action = "implementation"\nexpected_head = "{head}"\n'
-              'session_mode = "fresh"\n+++\naccepted\n').encode()
+              'session_mode = "fresh"\n+++\nTASK').encode()
     (workflow.base / "inbox" / "prompt.txt").write_bytes(prompt)
     workflow.ingest()
 
