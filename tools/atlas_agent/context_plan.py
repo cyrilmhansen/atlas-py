@@ -79,7 +79,9 @@ def parse_context_plan(path) -> dict:
             q = member.get("query")
             if set(member) - allowed or type(q) is not dict or set(q) != {"kind", "path", "line", "character"}:
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
-            if q["kind"] not in {"definition", "references", "hover"}:
+            if (type(q["kind"]) is not str
+                    or q["kind"] not in {"definition", "references", "hover"}
+                    or type(q["path"]) is not str):
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
             if type(q["line"]) is not int or type(q["character"]) is not int or q["line"] < 0 or q["character"] < 0:
                 raise ValueError("CONTEXT_PLAN_SEMANTIC_INVALID")
@@ -96,6 +98,93 @@ def parse_context_plan(path) -> dict:
         if set(member) - allowed:
             raise ValueError("CONTEXT_PLAN_UNKNOWN_FIELD")
     return data
+
+
+def context_plan_example() -> dict:
+    """An authoring template, not discovered or recommended context."""
+    return {"schema": SCHEMA_V2, "members": [
+        {"kind": "REVIEW"},
+        {"kind": "SOURCE", "result_path": "/absolute/path/to/retained-pvc-result",
+         "tablet_ids": ["APO-VC-000001"], "purpose": "Inspect the selected source image",
+         "sources": ["atlas-agent.toml"]},
+        {"kind": "SEMANTIC", "backend": "python",
+         "query": {"kind": "definition", "path": "tools/atlas_agent/cli.py",
+                   "line": 0, "character": 0},
+         "executable": "/absolute/path/to/pyright-langserver",
+         "version": "operator-supplied Pyright version"},
+    ]}
+
+
+def _semantic_request(plan, member):
+    """Reuse backend validation without starting a server or probing its version."""
+    python = plan["schema"] == SCHEMA_V2 and member["backend"] == "python"
+    query_type = PythonSemanticQuery if python else SemanticQuery
+    authority_type = PyrightAuthority if python else RustAnalyzerAuthority
+    q = member["query"]
+    query = query_type(q["kind"], q["path"], q["line"], q["character"])
+    authority = authority_type(member["executable"], member.get("version"))
+    return query, authority
+
+
+def _accepted_target(workflow, state):
+    accepted = [x for x in state["generations"].values() if x["status"] == "ACCEPTED"]
+    if not accepted:
+        return None, None
+    record = min(accepted, key=lambda x: x["generation"])
+    # Workflow._find authenticates the accepted spool entry against its digest.
+    accepted_path = workflow._find(workflow.base / "accepted",
+                                   record["generation"], record["prompt_sha256"])
+    from .prompt import parse_prompt
+    return record, parse_prompt(accepted_path.read_bytes())
+
+
+def check_context_plan(workflow, plan: dict) -> str:
+    """Static validation and request preview; no acquisition or temporary PVCs.
+
+    This deliberately does not claim execution admission or a frozen target.
+    Dispatch still revalidates and acquires every explicitly selected member.
+    """
+    _, state = workflow._preflight()
+    record, _ = _accepted_target(workflow, state)
+    lines = ["Context plan: static check OK (not dispatch readiness)",
+             f"schema: {plan['schema']}", f"repository: {workflow.root}",
+             "No semantic acquisition, version probe, review construction, or temporary PVC resources."]
+    if record is None:
+        lines.append("target: none — NO_DISPATCHABLE_GENERATION (no ACCEPTED generation)")
+    else:
+        lines.extend([
+            f"target: g{record['generation']} · {record['action']} · {record['checkpoint']} · ACCEPTED",
+            f"expected head: {record['expected_head']}",
+            f"accepted prompt sha256: {record['prompt_sha256']}",
+        ])
+    lines.extend([
+        "Target is the lowest ACCEPTED generation now; not reserved. Dispatch never skips a blocked target.",
+        "Requested members (plan order; rendering is TASK, DIFF, SOURCE, SEMANTIC):",
+    ])
+    for index, member in enumerate(plan["members"], 1):
+        kind = member["kind"]
+        try:
+            if kind == "REVIEW":
+                lines.append(f"  {index}. REVIEW — accepted TASK + exact Git DIFF (not constructed)")
+            elif kind == "SOURCE":
+                selection = _source(workflow.root, member)
+                lines.append(f"  {index}. SOURCE — retained PNG selection validated")
+                lines.append(f"     result: {json.dumps(str(selection.result.scratch_path))}")
+                lines.append(f"     tablets: {json.dumps(member['tablet_ids'])}; purpose: {json.dumps(member['purpose'])}")
+                lines.append(f"     sources: {json.dumps(member.get('sources') or ['atlas-agent.toml'])}")
+            else:
+                query, authority = _semantic_request(plan, member)
+                backend = member.get("backend", "rust")
+                lines.append(f"  {index}. SEMANTIC — {backend} {query.kind} {json.dumps(query.path)} line={query.line} character={query.character} (zero-based UTF-8 bytes)")
+                lines.append(f"     executable: {json.dumps(authority.executable)}; version: {json.dumps(authority.version)} (operator assertion)")
+        except Exception as error:
+            raise ValueError(f"CONTEXT_PLAN_MEMBER_{index}_{kind}_INVALID: {error}") from error
+    lines.extend([
+        "Checked: schema, query/path shape, executable availability, retained SOURCE authority, accepted spool provenance.",
+        "Not checked: semantic file/coordinate bounds, server identity/protocol/results, review diff, aggregate render limits, execution policy or repository admission.",
+        "Dispatch acquires observations and constructs temporary REVIEW/SEMANTIC PVCs; SOURCE is borrowed, never generated.",
+    ])
+    return "\n".join(lines)
 
 
 def _source(root, member):
@@ -131,17 +220,9 @@ def _source(root, member):
 def build_context_composition(workflow, plan: dict) -> PvcContextComposition:
     """Construct selections in exactly the order supplied by the operator."""
     state = workflow._state()
-    accepted = [x for x in state["generations"].values() if x["status"] == "ACCEPTED"]
-    if not accepted:
+    record, prompt = _accepted_target(workflow, state)
+    if record is None:
         raise ValueError("NO_DISPATCHABLE_GENERATION")
-    record = min(accepted, key=lambda x: x["generation"])
-    # Workflow._find is the authority for both the accepted spool entry and
-    # its recorded digest.  Do not recreate the spool naming convention here.
-    accepted_path = workflow._find(workflow.base / "accepted",
-                                   record["generation"],
-                                   record["prompt_sha256"])
-    from .prompt import parse_prompt
-    prompt = parse_prompt(accepted_path.read_bytes())
     selections = []
     owned_resources = []
     try:
@@ -157,16 +238,8 @@ def build_context_composition(workflow, plan: dict) -> PvcContextComposition:
             elif member["kind"] == "SOURCE":
                 selections.append(_source(workflow.root, member))
             else:
-                q = member["query"]
                 try:
-                    query_type = (PythonSemanticQuery if plan["schema"] == SCHEMA_V2
-                                  and member["backend"] == "python"
-                                  else SemanticQuery)
-                    authority_type = (PyrightAuthority if plan["schema"] == SCHEMA_V2
-                                      and member["backend"] == "python"
-                                      else RustAnalyzerAuthority)
-                    query = query_type(q["kind"], q["path"], q["line"], q["character"])
-                    authority = authority_type(member["executable"], member.get("version"))
+                    query, authority = _semantic_request(plan, member)
                     payload = (query_python_semantics(workflow.root, authority, query)
                                if plan["schema"] == SCHEMA_V2
                                and member["backend"] == "python"

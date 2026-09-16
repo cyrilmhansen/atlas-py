@@ -473,7 +473,7 @@ See [`semantic-observation-v0.md`](semantic-observation-v0.md).
 ```text
 S1b.1 — Semantic acquisition v0                 COMPLETE
 S1b.2 — Semantic PVC transport v0                COMPLETE
-S1b.3 — Semantic context selection/composition   NEXT
+S1b.3 — Semantic context selection/composition   LIVE; g197/g198 DOGFOODED
 ```
 
 S1b.1 and S1b.2 are qualified bounded milestones, not invitations to
@@ -1067,7 +1067,17 @@ durability/lifecycle only when required
 PVC is no longer the global next milestone, and TASK is no longer merely
 future work.
 
-## 9.2 S1b.3 — Explicit semantic context composition / dogfood — next
+## 9.2 S1b.3 — Explicit semantic context composition / dogfood — live
+
+Integrated TASK/DIFF/SOURCE/SEMANTIC delivery and Python observations are live
+and dogfooded in g197/g198. Definition was useful navigation; references were
+partly redundant. The resulting usability tranche adds a discoverable `/2`
+template and static validation/request/target preview; see the
+[operator workflow](context-plan.md). It does not acquire observations during
+preview or give Workflow/executors relevance-selection authority. Next evidence
+should come from real patch-review use, not speculative semantic capabilities
+or automatic selection. Live dispatch qualification of the new operator flow
+must be reported separately from fixture coverage.
 
 The caller explicitly selects a qualified semantic query/result and combines
 the already-qualified context types through one model-facing execution:

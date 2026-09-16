@@ -552,6 +552,9 @@ def test_public_cli_v2_forwards_real_python_selection(tmp_path, monkeypatch):
                       schema="atlas-agent-context-plan/2")
     forwarded = []
     monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    plan_bytes = path.read_bytes()
+    assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 0
+    assert path.read_bytes() == plan_bytes
     monkeypatch.setattr(workflow, "dispatch",
                         lambda executor, observer=None, pvc_context=None:
                         forwarded.append((
@@ -564,3 +567,110 @@ def test_public_cli_v2_forwards_real_python_selection(tmp_path, monkeypatch):
     selection = composition.selections[0]
     assert selection.purpose == "python semantic context"
     assert document["schema"] == "atlas-python-semantic/1"
+
+
+def test_cli_example_is_complete_json_without_repository(tmp_path, monkeypatch, capsys):
+    def forbidden():
+        pytest.fail("example must not open a workflow")
+    monkeypatch.setattr(cli, "Workflow", forbidden)
+    assert cli.main(["context-plan-example"]) == 0
+    raw = capsys.readouterr().out
+    path = tmp_path / "example.json"
+    path.write_text(raw)
+    plan = parse_context_plan(path)
+    assert plan["schema"] == "atlas-agent-context-plan/2"
+    assert [m["kind"] for m in plan["members"]] == ["REVIEW", "SOURCE", "SEMANTIC"]
+    assert plan["members"][2]["backend"] == "python"
+
+
+def test_cli_static_check_preserves_exact_requests_and_state(tmp_path, monkeypatch, capsys):
+    from tools.atlas_agent import context_plan as adapter
+
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    accepted(workflow, generation=2)
+    authority = _server(tmp_path / "python", "raise RuntimeError('must not run')")
+    retained = _result(repo)
+    members = [python_member(authority), {"kind": "REVIEW"},
+               {"kind": "SOURCE", "result_path": str(retained.scratch_path),
+                "tablet_ids": ["APO-VC-000001"], "purpose": "only this image"},
+               {**semantic_member(authority), "backend": "rust"}]
+    path = write_plan(tmp_path / "check.json", members,
+                      schema="atlas-agent-context-plan/2")
+    before = {p: p.read_bytes() for p in repo.rglob("*") if p.is_file()}
+    plan_bytes = path.read_bytes()
+    def forbidden(*args, **kwargs):
+        pytest.fail("static check must not acquire context or construct temporary PVCs")
+    monkeypatch.setattr(adapter, "query_python_semantics", forbidden)
+    monkeypatch.setattr(adapter, "query_rust_semantics", forbidden)
+    monkeypatch.setattr(adapter, "build_review_package", forbidden)
+    monkeypatch.setattr(adapter, "build_python_semantic_tablet", forbidden)
+    monkeypatch.setattr(adapter, "build_semantic_tablet", forbidden)
+    monkeypatch.setattr(cli, "AtlasBubblewrapExecutor", forbidden)
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 0
+    output = capsys.readouterr().out
+    assert "target: g1 · implementation" in output
+    assert output.index("1. SEMANTIC") < output.index("2. REVIEW") < output.index("3. SOURCE") < output.index("4. SEMANTIC")
+    assert 'python hover "a.py" line=0 character=8' in output
+    assert 'rust hover "a.rs" line=0 character=0' in output
+    assert str(authority) in output and '"fake 1" (operator assertion)' in output
+    assert 'tablets: ["APO-VC-000001"]; purpose: "only this image"' in output
+    assert "No semantic acquisition" in output
+    assert "Not checked: semantic file/coordinate bounds" in output
+    assert "not reserved" in output
+    assert before == {p: p.read_bytes() for p in repo.rglob("*") if p.is_file()}
+    assert path.read_bytes() == plan_bytes
+
+
+@pytest.mark.parametrize("failure", ["path", "executable", "source", "spool", "state"])
+def test_cli_static_check_fails_closed(tmp_path, monkeypatch, capsys, failure):
+    repo, workflow = make_repo(tmp_path)
+    accepted(workflow)
+    authority = _server(tmp_path / "python", "raise RuntimeError('must not run')")
+    member = python_member(authority)
+    if failure == "path":
+        member["query"]["path"] = "../outside.py"
+    elif failure == "executable":
+        member["executable"] = str(tmp_path / "missing")
+    elif failure == "source":
+        member = {"kind": "SOURCE", "result_path": str(tmp_path / "missing"),
+                  "tablet_ids": ["missing"], "purpose": "explicit"}
+    elif failure == "spool":
+        accepted_path = next((workflow.base / "accepted").glob("*.txt"))
+        accepted_path.write_bytes(accepted_path.read_bytes() + b"tampered\n")
+    else:
+        state = workflow._state()
+        state["generations"]["1"]["expected_head"] = "0" * 40
+        workflow._save(state)
+    path = write_plan(tmp_path / "bad.json", [member], schema="atlas-agent-context-plan/2")
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 1
+    output = capsys.readouterr()
+    assert not output.out
+    assert "error:" in output.err
+    if failure in {"path", "executable", "source"}:
+        assert "CONTEXT_PLAN_MEMBER_1_" in output.err
+
+
+def test_cli_static_check_no_target_and_required_argument(tmp_path, monkeypatch, capsys):
+    _, workflow = make_repo(tmp_path)
+    path = write_plan(tmp_path / "review.json", [{"kind": "REVIEW"}])
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 0
+    assert "target: none — NO_DISPATCHABLE_GENERATION" in capsys.readouterr().out
+    assert cli.main(["context-plan-check"]) == 1
+    assert "--context-plan PLAN.json is required" in capsys.readouterr().err
+    assert cli.main(["execute", "--context-plan", str(path)]) == 1
+    assert "only valid for dispatch or context-plan-check" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("field,value", [("kind", []), ("kind", {}), ("path", [])])
+def test_malformed_query_types_are_cli_rejections(tmp_path, monkeypatch, capsys, field, value):
+    _, workflow = make_repo(tmp_path)
+    member = python_member(tmp_path / "pyright")
+    member["query"][field] = value
+    path = write_plan(tmp_path / "bad.json", [member], schema="atlas-agent-context-plan/2")
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    assert cli.main(["context-plan-check", "--context-plan", str(path)]) == 1
+    assert "CONTEXT_PLAN_SEMANTIC_INVALID" in capsys.readouterr().err

@@ -62,6 +62,21 @@ optional machine-install overrides.
 
 ## Normal generation
 
+### Explicit context (optional, before dispatch)
+
+```sh
+aa context-plan-example > /tmp/plan.json
+# Read/edit: choose members, coordinates, retained images and tool authority.
+aa context-plan-check --context-plan /tmp/plan.json
+aa dispatch --context-plan /tmp/plan.json
+```
+
+The check previews the lowest ACCEPTED generation and exact requests, without
+semantic acquisition or temporary PVC resources. It is not dispatch admission
+or a target reservation. Dispatch acquires the explicitly requested context.
+See [context plans](context-plan.md) for the complete `/2` example, UTF-8 byte
+coordinates, REVIEW/SOURCE/SEMANTIC meanings and validation limits.
+
 ### 1. Create and admit
 
 Put the bounded task in `task.txt`; do not rely on a remembered generation:

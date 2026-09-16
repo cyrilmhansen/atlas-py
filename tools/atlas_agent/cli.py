@@ -141,18 +141,33 @@ class DispatchPresenter:
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(prog="atlas-agent")
-    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create","adopt-boundary"])
+    p=argparse.ArgumentParser(prog="atlas-agent", epilog=(
+        "Context plans: context-plan-example prints a /2 JSON template; "
+        "context-plan-check --context-plan PLAN.json statically validates and previews "
+        "requests/target without acquisition. dispatch --context-plan PLAN.json "
+        "acquires the selected context and executes. See docs/context-plan.md."))
+    p.add_argument("command",choices=["init","ingest","rebuild-state","recover","status","doctor","history","report","start-run","complete-run","interrupt-run","cancel","checkpoint","executor-info","execute","dispatch","prompt-create","adopt-boundary","context-plan-example","context-plan-check"])
     p.add_argument("generation",nargs="?",type=int); p.add_argument("--result"); p.add_argument("--message"); p.add_argument("--reason"); p.add_argument("--expected-head"); p.add_argument("--new-head"); p.add_argument("--model"); p.add_argument("--checkpoint"); p.add_argument("--action",choices=sorted(ACTIONS)); p.add_argument("--session-mode",choices=["fresh","reuse"],default="fresh"); p.add_argument("--reuse-execution-id"); p.add_argument("--compute-profile"); p.add_argument("--fast",action="store_true",help="request Codex Fast service tier for this execution"); p.add_argument("--sandbox",default="read-only",choices=["read-only","workspace-write","danger-full-access"]); p.add_argument("--network-access",action="store_true",help="explicitly request workspace-write network access"); p.add_argument("--timeout-seconds",type=float,default=300)
     p.add_argument("--history", type=_history_value, default=DEFAULT_STATUS_HISTORY,
                    help="status history count (non-negative integer or all)")
     p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
                    help="status history detail level")
-    p.add_argument("--context-plan")
+    p.add_argument("--context-plan", help="explicit /1 or /2 JSON plan for dispatch or context-plan-check")
     a=p.parse_args(argv)
     try:
+        if a.context_plan and a.command not in {"dispatch", "context-plan-check"}:
+            raise WorkflowError("--context-plan is only valid for dispatch or context-plan-check")
+        if a.command == "context-plan-example":
+            from .context_plan import context_plan_example
+            print(json.dumps(context_plan_example(), indent=2))
+            return 0
+        if a.command == "context-plan-check" and not a.context_plan:
+            raise WorkflowError("--context-plan PLAN.json is required")
         w=Workflow()
         if a.command=="init": w.init()
+        elif a.command == "context-plan-check":
+            from .context_plan import parse_context_plan, check_context_plan
+            print(check_context_plan(w, parse_context_plan(a.context_plan)))
         elif a.command=="prompt-create":
             if a.checkpoint is None: raise WorkflowError("--checkpoint is required")
             if a.action is None: raise WorkflowError("--action is required")

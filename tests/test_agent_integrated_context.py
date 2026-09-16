@@ -77,7 +77,7 @@ def test_missing_task_uses_authorized_body_and_legacy_renderer_unchanged(tmp_pat
         shutil.rmtree(selection.result.scratch_path)
 
 
-def test_atlas_prompt_parser_change_reaches_execution_and_replay(tmp_path):
+def test_atlas_prompt_parser_change_reaches_execution_and_replay(tmp_path, monkeypatch, capsys):
     """Dogfood subject is Atlas's real parser; server is deterministic test authority.
 
     No PVC rasterizer is run: SOURCE is honestly not selected. TASK, exact
@@ -90,9 +90,7 @@ def test_atlas_prompt_parser_change_reaches_execution_and_replay(tmp_path):
     from test_python_semantic_query import FAKE
     from test_agent_workflow_w221 import prompt
     from test_agent_derived_context_journal import Capture
-    from tools.atlas_agent.context_plan import (
-        parse_context_plan, build_context_composition, cleanup_context_composition,
-    )
+    from tools.atlas_agent import cli
     original = (Path(__file__).parents[1] / 'tools/atlas_agent/prompt.py').read_bytes()
     # Install actual Atlas source in the fixture's authorized patch path.
     repo, workflow = make_repo(tmp_path, policy=False)
@@ -110,43 +108,46 @@ def test_atlas_prompt_parser_change_reaches_execution_and_replay(tmp_path):
         "{'line':10,'character':4}").replace("def rg(a=5, b=11):", "def rg(a=4, b=16):").replace("'line': 0", "'line': 10"))
     member = python_member(server, path='corpus_miner/parser.py')
     member['query'].update(kind='definition', line=10, character=4)
-    plan = parse_context_plan(write_plan(tmp_path / 'plan.json', [member, {'kind': 'REVIEW'}],
-                                         schema='atlas-agent-context-plan/2'))
+    plan = write_plan(tmp_path / 'plan.json', [member, {'kind': 'REVIEW'}],
+                      schema='atlas-agent-context-plan/2')
     from atlas.semantic_query import repository_witness
     expected_witness = repository_witness(repo)
-    composition = build_context_composition(workflow, plan)
     capture = Capture()
-    try:
-        workflow.dispatch(capture, pvc_context=composition)
-        text = capture.input.decode()
-        assert text.index('## TASK') < text.index('## DIFF') < text.index('## SEMANTIC')
-        assert task in text
-        assert '+    # Preserve authorized task bytes.' in text
-        assert '+def parse_prompt(raw: bytes) -> Prompt:' in text
-        assert '## SOURCE (not selected)' in text
-        semantic = composition.selections[0]
-        artifact = semantic.result.validated_snapshot.document['artifacts'][0]
-        payload = (semantic.result.bundle_path / artifact['relativePath']).read_bytes()
-        observation = json.loads(payload)
-        assert observation['query']['path'] == 'corpus_miner/parser.py'
-        assert observation['query']['kind'] == 'definition'
-        assert payload in capture.input
-        assert observation['repositoryWitness'] == expected_witness
-        assert observation['result']['value'][0]['start'] == {'line': 10, 'character': 4}
-        execution = workflow._state()['generations']['1']['execution']
-        assert (workflow.base / execution['effective_prompt_path']).read_bytes() == capture.input
-        assert execution['effective_prompt_sha256'] == hashlib.sha256(capture.input).hexdigest()
-        # Replay/recovery consumes archived input, never reruns semantic services.
-        server.unlink()
-        from tools.atlas_agent.workflow import replay_journal
-        replayed = replay_journal(workflow.journal.read())
-        assert replayed['generations']['1']['execution'] == execution
-        (workflow.base / execution['effective_prompt_path']).unlink()
-        workflow._recover_context_artifacts(replayed)
-        assert (workflow.base / execution['effective_prompt_path']).read_bytes() == capture.input
-        assert execution['effective_prompt_sha256'] == hashlib.sha256(capture.input).hexdigest()
-    finally:
-        cleanup_context_composition(composition)
+    monkeypatch.setattr(cli, "Workflow", lambda: workflow)
+    monkeypatch.setattr(cli, "AtlasBubblewrapExecutor", lambda **kwargs: capture)
+    plan_bytes = plan.read_bytes()
+    assert cli.main(["context-plan-check", "--context-plan", str(plan)]) == 0
+    preview = capsys.readouterr().out
+    assert "target: g1" in preview
+    assert 'python definition "corpus_miner/parser.py" line=10 character=4' in preview
+    assert cli.main(["dispatch", "--context-plan", str(plan)]) == 0
+    assert plan.read_bytes() == plan_bytes
+    text = capture.input.decode()
+    assert text.index('## TASK') < text.index('## DIFF') < text.index('## SEMANTIC')
+    assert task in text
+    assert '+    # Preserve authorized task bytes.' in text
+    assert '+def parse_prompt(raw: bytes) -> Prompt:' in text
+    assert '## SOURCE (not selected)' in text
+    payload = next(line for line in capture.input.splitlines(keepends=True)
+                   if line.startswith(b'{') and b'"schema":"atlas-python-semantic/1"' in line)
+    observation = json.loads(payload)
+    assert observation['query']['path'] == 'corpus_miner/parser.py'
+    assert observation['query']['kind'] == 'definition'
+    assert payload in capture.input
+    assert observation['repositoryWitness'] == expected_witness
+    assert observation['result']['value'][0]['start'] == {'line': 10, 'character': 4}
+    execution = workflow._state()['generations']['1']['execution']
+    assert (workflow.base / execution['effective_prompt_path']).read_bytes() == capture.input
+    assert execution['effective_prompt_sha256'] == hashlib.sha256(capture.input).hexdigest()
+    # Replay/recovery consumes archived input, never reruns semantic services.
+    server.unlink()
+    from tools.atlas_agent.workflow import replay_journal
+    replayed = replay_journal(workflow.journal.read())
+    assert replayed['generations']['1']['execution'] == execution
+    (workflow.base / execution['effective_prompt_path']).unlink()
+    workflow._recover_context_artifacts(replayed)
+    assert (workflow.base / execution['effective_prompt_path']).read_bytes() == capture.input
+    assert execution['effective_prompt_sha256'] == hashlib.sha256(capture.input).hexdigest()
 
 
 def test_four_categories_stable_attachment_order_and_no_payload_rewrite(tmp_path):

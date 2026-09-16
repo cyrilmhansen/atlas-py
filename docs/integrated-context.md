@@ -3,8 +3,10 @@
 `dispatch --context-plan PLAN.json` uses the existing context-plan/1 or /2
 operator contract. No policy, prompt, journal, semantic, or archive schema changes
 are needed. A plan may select REVIEW (TASK + exact Git DIFF), retained SOURCE PNG
-tablets, and existing Rust or Python SEMANTIC queries. See the context-plan tests
-for complete /2 examples. Executable authority remains explicit; composition
+tablets, and existing Rust or Python SEMANTIC queries. See the
+[operator context-plan guide](context-plan.md) for a complete /2 example,
+coordinate/authority guidance and static check/preview before dispatch.
+Executable authority remains explicit; composition
 never discovers or starts additional services.
 
 ## Authority and execution
