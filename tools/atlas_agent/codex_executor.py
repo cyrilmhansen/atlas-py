@@ -901,11 +901,18 @@ class CodexExecutor:
         staged = self._take_prepared_pvc(prepared)
         if staged is not None:
             staged.cleanup()
+        return True
 
     def post_start_prepare(self, prepared):
         # No subprocess or fallible runtime probing is permitted after the
         # durable RUN_STARTED boundary.
         return prepared
+    def execution_returned_quiescent(self, prepared, result):
+        """run_execution returns only after its synchronous cleanup contract.
+
+        Exceptions, including shutdown failures, never reach this hook.
+        """
+        return True
     @staticmethod
     def _permission_observations(out_path, err_path, max_line_bytes=DEFAULT_MAX_JSONL_LINE_BYTES):
         failures=[]

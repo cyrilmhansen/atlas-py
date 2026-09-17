@@ -45,10 +45,11 @@ def _archive_file(directory_fd, name):
         os.close(fd)
 
 ZERO="0"*64
-EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED","REPOSITORY_BOUNDARY_ADOPTED"}
+EVENTS={"WORKFLOW_INITIALIZED","PROMPT_RECEIVED","PROMPT_ACCEPTED","PROMPT_REJECTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","EXECUTOR_QUIESCENCE_CONFIRMED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED","RECOVERY_PERFORMED","REPOSITORY_BOUNDARY_ADOPTED"}
 HEX=re.compile(r"^[0-9a-f]{64}$")
 CONTEXT_PATH=re.compile(r"^reports/contexts/[A-Za-z0-9][A-Za-z0-9._-]*\.txt$")
 SAFE_CONTEXT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+_EXECUTION_ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 CONTEXT_HEADER="Atlas-generated context supplement\n\nPrevious generation artifacts:\n"
 _CONTEXT_LINE=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 def canonical_context_identifier(value):
@@ -421,6 +422,9 @@ class Journal:
                     if not rec or rec["status"]!="ACCEPTED" or rec["prompt_sha256"]!=p["prompt_sha256"]:
                         raise JournalError("JOURNAL_LIFECYCLE")
                     rec["status"]="CANCELLED"; rec["cancellation_reason"]=p["reason"]
+            elif raw["event"]=="EXECUTOR_QUIESCENCE_CONFIRMED":
+                rec=generations.get(p["generation"])
+                if rec: rec["executor_quiescence_confirmed"]=True
             previous=raw["event_sha256"]; out.append(raw)
         if out and not initialized:
             raise JournalError("nonempty journal must have workflow initialization root")
@@ -434,17 +438,18 @@ class Journal:
         return out
     @staticmethod
     def _validate_payload(event,p,n,generations=None,validation_epoch=1):
-        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set(),"REPOSITORY_BOUNDARY_ADOPTED":{"previous_witness","witness","reason"}}[event]
+        required={"WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness"},"PROMPT_RECEIVED":{"prompt_sha256","source"},"PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},"PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness"},"TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256"},"RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action"},"RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness"},"RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason"},"EXECUTOR_QUIESCENCE_CONFIRMED":{"generation","prompt_sha256","execution_id","authority","witness","acquired_untracked"},"PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},"CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},"CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},"RECOVERY_PERFORMED":set(),"REPOSITORY_BOUNDARY_ADOPTED":{"previous_witness","witness","reason"}}[event]
         if not required<=set(p): raise JournalError(f"payload for {event} incomplete at line {n}")
         allowed={
             "WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness","validation_epoch"},
             "PROMPT_RECEIVED":{"prompt_sha256","source"},
             "PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},
             "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},
-            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts","acquired_untracked"},
-            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness","network_access"},
+            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts","acquired_untracked","quiescence_protocol","executor_launched"},
+            "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness","network_access","quiescence_protocol"},
             "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution","acquired_untracked"},
-            "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts"},
+            "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts","witness","acquired_untracked","executor_launched"},
+            "EXECUTOR_QUIESCENCE_CONFIRMED":{"generation","prompt_sha256","execution_id","authority","witness","acquired_untracked"},
             "PROMPT_CANCELLED":{"transaction_id","source","destination","generation","prompt_sha256","reason"},
             "CHECKPOINT_INTENT":{"generation","prompt_sha256","parent_head","tree_sha","commit_sha","witness"},
             "CHECKPOINT_ABORTED":{"generation","prompt_sha256","commit_sha","reason"},
@@ -456,7 +461,8 @@ class Journal:
         if event in {"PROMPT_RECEIVED","PROMPT_REJECTED","PROMPT_ACCEPTED","TRANSITION_PREPARED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("prompt_sha256")) is not str or not HEX.fullmatch(p["prompt_sha256"])): raise JournalError(f"prompt hash invalid at line {n}")
         if event in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"} and (type(p.get("transaction_id")) is not str or not p["transaction_id"]): raise JournalError(f"transaction id missing at line {n}")
         if event=="TRANSITION_PREPARED" and p.get("logical_event") not in {"PROMPT_ACCEPTED","PROMPT_REJECTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}: raise JournalError(f"logical event invalid at line {n}")
-        if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED"}: _witness(p["witness"],n)
+        if event in {"WORKFLOW_INITIALIZED","PROMPT_ACCEPTED","RUN_COMPLETED","EXECUTOR_QUIESCENCE_CONFIRMED"}: _witness(p["witness"],n)
+        if event == "RUN_INTERRUPTED" and "witness" in p: _witness(p["witness"],n)
         if event == "RUN_STARTED" and "witness" in p: _witness(p["witness"],n)
         if event == "REPOSITORY_BOUNDARY_ADOPTED":
             _witness(p["previous_witness"],n); _witness(p["witness"],n)
@@ -466,20 +472,24 @@ class Journal:
                 raise JournalError(f"boundary adoption branch mismatch at line {n}")
             if type(p["reason"]) is not str or not p["reason"].strip() or len(p["reason"]) > 1024 or "\x00" in p["reason"]:
                 raise JournalError(f"boundary adoption reason invalid at line {n}")
-        if event == "RUN_COMPLETED" and "acquired_untracked" in p:
+        if event in {"RUN_COMPLETED", "RUN_INTERRUPTED", "EXECUTOR_QUIESCENCE_CONFIRMED"} and "acquired_untracked" in p:
             acquired=p["acquired_untracked"]
             if (type(acquired) is not list or acquired != sorted(acquired) or
                 len(acquired) != len(set(acquired)) or
                 any(type(path) is not str or not re.fullmatch(r"(?:[0-9a-f]{2})+", path) for path in acquired)):
                 raise JournalError(f"acquired ownership invalid at line {n}")
         if event=="WORKFLOW_INITIALIZED" and (type(p["repository_root"]) is not str or type(p["head"]) is not str or not re.fullmatch(r"[0-9a-f]{40,64}",p["head"]) or (p["branch"] is not None and type(p["branch"]) is not str) or type(p.get("validation_epoch",1)) is not int or p.get("validation_epoch",1) not in {1,2}): raise JournalError(f"initialization payload invalid at line {n}")
-        if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
+        if event in {"PROMPT_ACCEPTED","RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","EXECUTOR_QUIESCENCE_CONFIRMED","PROMPT_CANCELLED","CHECKPOINT_INTENT","CHECKPOINT_ABORTED"} and (type(p.get("generation")) is not int or p["generation"]<=0): raise JournalError(f"generation invalid at line {n}")
+        if event=="RUN_STARTED" and "quiescence_protocol" in p and p["quiescence_protocol"]!="workflow-execute/1": raise JournalError(f"quiescence protocol invalid at line {n}")
+        if event=="EXECUTOR_QUIESCENCE_CONFIRMED" and (p["authority"]!="workflow.execute-return/1" or type(p["execution_id"]) is not str or not _EXECUTION_ID.fullmatch(p["execution_id"])): raise JournalError(f"quiescence authority invalid at line {n}")
         if event=="PROMPT_ACCEPTED" and (type(p["parent"]) not in (int,str) or type(p["checkpoint"]) is not str or type(p["action"]) is not str or type(p["session_mode"]) is not str or type(p["expected_head"]) is not str): raise JournalError(f"prompt metadata invalid at line {n}")
         if event=="PROMPT_ACCEPTED":
             if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2", "atlas-agent-prompt/3"}: raise JournalError(f"prompt schema invalid at line {n}")
             if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
             if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
+        if event=="RUN_INTERRUPTED" and "executor_launched" in p and type(p["executor_launched"]) is not bool:
+            raise JournalError(f"executor launch state invalid at line {n}")
         if event=="PROMPT_CANCELLED" and (type(p["reason"]) is not str or not p["reason"].strip()): raise JournalError(f"cancellation reason invalid at line {n}")
         started=(generations or {}).get(p.get("generation")) or (generations or {}).get(str(p.get("generation")))
         started_execution=started.get("execution") if isinstance(started,dict) else None

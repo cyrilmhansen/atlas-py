@@ -470,7 +470,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 # A stale PreparedExecution must not be allowed to tear down
                 # a later preparation after this executor has been reused.
                 getattr(prepared, "runtime_handle", None) is not self._descriptor):
-            return
+            return False
         # Terminalize this preparation's authority before handing the
         # executor back to the pool.  In particular, clear the reference
         # before releasing the run lock so a subsequent preparation cannot be
@@ -499,6 +499,7 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 self._release_capability_locks()
             if self._run_lock.locked():
                 self._run_lock.release()
+        return True
 
     def _validate_namespace(self) -> None:
         command = [self.bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",

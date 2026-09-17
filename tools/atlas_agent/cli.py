@@ -240,10 +240,12 @@ def main(argv=None):
             events,state=w._preflight(require_state=True)
             if not state["initialized"]: raise WorkflowError("WORKFLOW_NOT_INITIALIZED")
             if state["outstanding_transactions"]: raise WorkflowError("INCOMPLETE_TRANSACTION: run recover")
-            current=__import__("tools.atlas_agent.repository",fromlist=["witness"]).witness(w.root,w.allowed)
+            ownership={"protected_untracked":state.get("protected_untracked",[]),
+                       "patch_owned_untracked":state.get("patch_owned_untracked",[])}
+            current=__import__("tools.atlas_agent.repository",fromlist=["witness"]).witness(w.root,w.allowed,ownership)
             running=[x for x in state["generations"].values() if x["status"]=="RUNNING"]
             if running:
-                if any(not witness_matches_policy(current,x["witness"],x["action"],running=True) for x in running): raise WorkflowError("REPOSITORY_WITNESS_MISMATCH_RUNNING")
+                if any(not witness_matches_policy(current,x["witness"],x["action"],running=True,ownership=ownership) for x in running): raise WorkflowError("REPOSITORY_WITNESS_MISMATCH_RUNNING")
             elif current!=state["latest_repository_witness"]: raise WorkflowError("REPOSITORY_WITNESS_MISMATCH_BOUNDARY")
             for g,x in state["generations"].items():
                 if x["status"] in {"RUNNING","COMPLETED","INTERRUPTED"} and x["action"] not in {"implementation","patch_review","state_audit","checkpoint"}: raise WorkflowError("BAD_ACTION")

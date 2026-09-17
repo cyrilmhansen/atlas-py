@@ -35,6 +35,12 @@ def validate_spool(root,canonical_state):
     """Fail closed unless every owned prompt is in exactly its lifecycle location."""
     errors=[]; seen=set(); base=Path(root); expected_archives=set(); expected_reports=set(); expected_execution_files=set(); required_execution_files=set()
     for g,rec in canonical_state.get("generations",{}).items():
+        executor_active=(rec.get("status")=="RUNNING" or
+                         (rec.get("status")=="INTERRUPTED" and
+                          rec.get("quiescence_protocol")=="workflow-execute/1" and
+                          not rec.get("executor_quiescence_confirmed")))
+        terminal_artifacts=(not executor_active and
+                            rec.get("executor_launched", True) is not False)
         expected={"ACCEPTED":base/"accepted","RUNNING":base/"running"/rec["action"],"COMPLETED":base/"completed","INTERRUPTED":base/"interrupted","CANCELLED":base/"cancelled"}.get(rec["status"])
         if expected is None: errors.append(f"g{g}: unknown lifecycle"); continue
         matches=[]
@@ -108,7 +114,7 @@ def validate_spool(root,canonical_state):
                         else:
                             relative=str(path.relative_to("reports")); expected_execution_files.add(relative)
                 required_execution_files.add(str(execution_rel/"execution.json"))
-                if rec["status"]!="RUNNING": required_execution_files.update(str(execution_rel/name) for name in ("stdout.log","stderr.log","result.json","usage.json"))
+                if terminal_artifacts: required_execution_files.update(str(execution_rel/name) for name in ("stdout.log","stderr.log","result.json","usage.json"))
                 execution_file=base/"reports"/execution_rel/"execution.json"
                 result_file=base/"reports"/execution_rel/"result.json"
                 try: execution_data=json.loads(execution_file.read_text(encoding="utf-8"))
@@ -134,12 +140,12 @@ def validate_spool(root,canonical_state):
                 try: result_data=json.loads(result_file.read_text(encoding="utf-8"))
                 except (OSError,UnicodeError,json.JSONDecodeError):
                     result_data=None
-                    if rec["status"]!="RUNNING" and modern:
+                    if terminal_artifacts and modern:
                         errors.append(f"result artifact invalid g{g}")
-                if result_data is not None and rec["status"]!="RUNNING":
+                if result_data is not None and terminal_artifacts:
                     if not isinstance(result_data,dict):
                         errors.append(f"result artifact invalid g{g}"); result_data=None
-                if isinstance(result_data,dict) and rec["status"]!="RUNNING":
+                if isinstance(result_data,dict) and terminal_artifacts:
                     for key,value in owner.items():
                         if result_data.get(key)!=value: errors.append(f"result owner mismatch g{g}: {key}")
                     exit_code=result_data.get("exit_code"); outcome=result_data.get("outcome")
@@ -170,7 +176,7 @@ def validate_spool(root,canonical_state):
                             errors.append(f"result authority incomplete g{g}")
                     except Exception:
                         errors.append(f"result executor representation invalid g{g}")
-                if rec["status"]!="RUNNING" and isinstance(result_data,dict) and result_data.get("telemetry_status")=="failed":
+                if terminal_artifacts and isinstance(result_data,dict) and result_data.get("telemetry_status")=="failed":
                     required_execution_files.discard(str(execution_rel/"usage.json"))
         if result and result.get("report_path") is not None:
             report=result.get("report_path")

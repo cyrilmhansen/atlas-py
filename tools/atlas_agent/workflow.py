@@ -76,6 +76,36 @@ def replay_journal(events):
             state["latest_repository_witness"]=p["witness"]
             state["repository_witnesses"].append(p["witness"])
             if "patch_owned_untracked" in state: state["patch_owned_untracked"]=[]
+        elif e["event"]=="EXECUTOR_QUIESCENCE_CONFIRMED":
+            g=str(p["generation"]); rec=state["generations"].get(g)
+            owner=rec.get("execution") if isinstance(rec,dict) else None
+            if (not rec or rec.get("status")!="INTERRUPTED" or
+                    rec.get("prompt_sha256")!=p["prompt_sha256"] or
+                    rec.get("quiescence_protocol")!="workflow-execute/1" or
+                    rec.get("executor_quiescence_confirmed") or
+                    not isinstance(owner,dict) or
+                    owner.get("execution_id")!=p["execution_id"] or
+                    p.get("authority")!="workflow.execute-return/1"):
+                raise WorkflowError("JOURNAL_QUIESCENCE_BINDING")
+            ownership={"protected_untracked":state.get("protected_untracked",[]),
+                       "patch_owned_untracked":state.get("patch_owned_untracked",[])}
+            terminal=p["witness"]
+            if not witness_matches_policy(terminal,rec["witness"],rec["action"],
+                                          running=True,ownership=ownership):
+                raise WorkflowError("JOURNAL_INTERRUPTION_WITNESS_POLICY")
+            existing=set(ownership["patch_owned_untracked"])
+            protected={x["path"] for x in ownership["protected_untracked"]}
+            start={x["path"] for x in rec.get("start_witness",rec["witness"]).get("unexpected_untracked",[])}
+            final={x["path"] for x in terminal.get("unexpected_untracked",[])}
+            derived=final-start-protected-existing if rec["action"]=="implementation" else set()
+            acquired=set(p["acquired_untracked"])
+            if acquired!=derived or acquired & protected or acquired & existing:
+                raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
+            if existing or acquired or "patch_owned_untracked" in state:
+                state["patch_owned_untracked"]=sorted(existing | acquired)
+            rec["executor_quiescence_confirmed"]=True
+            state["latest_repository_witness"]=terminal
+            state["repository_witnesses"].append(terminal)
         elif e["event"]=="CHECKPOINT_INTENT":
             g=str(p["generation"]); rec=state["generations"].get(g)
             outstanding=state.setdefault("outstanding_checkpoints",{})
@@ -126,6 +156,11 @@ def replay_journal(events):
                 rec["status"]="RUNNING"
                 if "witness" in p: rec["start_witness"]=p["witness"]
                 if "execution" in p: rec["execution"]=p["execution"]
+                if "quiescence_protocol" in p:
+                    if not isinstance(p.get("execution"),dict):
+                        raise WorkflowError("JOURNAL_QUIESCENCE_BINDING")
+                    rec["quiescence_protocol"]=p["quiescence_protocol"]
+                    rec["executor_quiescence_confirmed"]=False
                 state["lifecycle"][g]="RUNNING"; continue
             if e["event"] in {"RUN_COMPLETED","RUN_INTERRUPTED"}:
                 g=str(p["generation"]); rec=state["generations"].get(g)
@@ -134,6 +169,11 @@ def replay_journal(events):
                     raise WorkflowError("JOURNAL_TERMINAL_EXECUTION_MISMATCH")
                 status="COMPLETED" if e["event"]=="RUN_COMPLETED" else "INTERRUPTED"; rec["status"]=status; state["lifecycle"][g]=status
                 if e["event"]=="RUN_COMPLETED":
+                    # Completion keeps its established semantics; the marker
+                    # exists only to make an interrupted owner an explicit
+                    # admission barrier until execute() regains control.
+                    rec.pop("quiescence_protocol",None)
+                    rec.pop("executor_quiescence_confirmed",None)
                     intent=state.get("outstanding_checkpoints",{}).get(g)
                     if rec["action"]=="checkpoint" and (not intent or p["result"].get("commit_sha")!=intent["commit_sha"] or p["witness"]["head"]!=intent["commit_sha"]): raise WorkflowError("JOURNAL_CHECKPOINT_COMPLETION_MISMATCH")
                     if intent:
@@ -142,23 +182,36 @@ def replay_journal(events):
                     rec["result"]=p["result"]; state["results"][g]=p["result"]
                     if rec["action"] == "checkpoint":
                         if "patch_owned_untracked" in state: state["patch_owned_untracked"]=[]
-                    elif rec["action"] == "implementation":
-                        existing=set(state.get("patch_owned_untracked",[]))
-                        protected={x["path"] for x in state.get("protected_untracked",[])}
-                        start={x["path"] for x in rec.get("start_witness",rec["witness"]).get("unexpected_untracked",[])}
-                        terminal={x["path"] for x in p["witness"].get("unexpected_untracked",[])}
-                        derived=terminal-start-protected-existing
-                        if rec.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and "acquired_untracked" not in p:
-                            raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
-                        acquired=set(p.get("acquired_untracked", sorted(derived)))
-                        if acquired != derived or acquired & protected or acquired & existing:
-                            raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
-                        if existing or acquired or "patch_owned_untracked" in state:
-                            state["patch_owned_untracked"]=sorted(existing | acquired)
                 elif "result" in p:
                     rec["result"]=p["result"]; state["results"][g]=p["result"]
+                terminal_witness=p.get("witness")
+                if e["event"]=="RUN_INTERRUPTED" and terminal_witness is not None:
+                    raise WorkflowError("JOURNAL_INTERRUPTION_QUIESCENCE_MISSING")
+                if (e["event"]=="RUN_INTERRUPTED" and terminal_witness is not None and
+                        not witness_matches_policy(
+                            terminal_witness,rec["witness"],rec["action"],running=True,
+                            ownership={"protected_untracked":state.get("protected_untracked",[]),
+                                       "patch_owned_untracked":state.get("patch_owned_untracked",[])})):
+                    raise WorkflowError("JOURNAL_INTERRUPTION_WITNESS_POLICY")
+                if rec["action"]=="implementation" and terminal_witness is not None:
+                    existing=set(state.get("patch_owned_untracked",[]))
+                    protected={x["path"] for x in state.get("protected_untracked",[])}
+                    start={x["path"] for x in rec.get("start_witness",rec["witness"]).get("unexpected_untracked",[])}
+                    terminal={x["path"] for x in terminal_witness.get("unexpected_untracked",[])}
+                    derived=terminal-start-protected-existing
+                    if rec.get("prompt_schema") in {"atlas-agent-prompt/2", "atlas-agent-prompt/3"} and "acquired_untracked" not in p:
+                        raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
+                    acquired=set(p.get("acquired_untracked", sorted(derived)))
+                    if acquired != derived or acquired & protected or acquired & existing:
+                        raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
+                    if existing or acquired or "patch_owned_untracked" in state:
+                        state["patch_owned_untracked"]=sorted(existing | acquired)
+                elif e["event"]=="RUN_INTERRUPTED" and "acquired_untracked" in p:
+                    raise WorkflowError("JOURNAL_OWNERSHIP_DELTA")
                 if "executor_result" in p: rec["execution_result"]=p["executor_result"]
-                if p.get("witness"): state["latest_repository_witness"]=p["witness"]
+                if e["event"]=="RUN_INTERRUPTED" and "executor_launched" in p:
+                    rec["executor_launched"]=p["executor_launched"]
+                if terminal_witness is not None: state["latest_repository_witness"]=terminal_witness
                 continue
     return state
 def projection_equal(a,b): return a==b
@@ -203,7 +256,10 @@ class Workflow:
         """Apply the repository-wide single-running admission rule."""
         active = [
             record["generation"] for key, record in state.get("generations", {}).items()
-            if record.get("status") == "RUNNING" and int(key) != generation
+            if (record.get("status") == "RUNNING" or
+                (record.get("status") == "INTERRUPTED" and
+                 record.get("quiescence_protocol") == "workflow-execute/1" and
+                 not record.get("executor_quiescence_confirmed"))) and int(key) != generation
         ]
         if active:
             raise WorkflowError("RUNNING_GENERATION_EXISTS")
@@ -1492,7 +1548,8 @@ class Workflow:
             if isinstance(result,dict) and result.get("telemetry_status")!="failed" and not (report_dir/"usage.json").is_file():
                 missing.append("usage.json")
         return missing
-    def interrupt_run(self,generation,reason,executor_result=None):
+    def interrupt_run(self,generation,reason,executor_result=None,
+                     executor_launched=None):
         with lock(self.base/"lock"):
             try:
                 s,x=self._record(generation)
@@ -1519,11 +1576,78 @@ class Workflow:
                     except (ExecutorError,WorkflowError):
                         pass
                 payload["result"]={"report_provenance":descriptor}
-            fallback=self._missing_interruption_artifacts(x)
+            fallback=(
+                []
+                if executor_launched is False
+                else self._missing_interruption_artifacts(x)
+            )
             if fallback: payload["fallback_artifacts"]=fallback
+            if executor_launched is not None:
+                if executor_launched is not False:
+                    raise WorkflowError("EXECUTOR_LAUNCH_STATE_INVALID")
+                payload["executor_launched"]=False
             self._validate_terminal_transition("RUN_INTERRUPTED", payload, s)
             move_transaction(self.base,self.journal,src,self.base/"interrupted"/src.name,x["prompt_sha256"],"RUN_INTERRUPTED",payload)
             return self._project_interruption(reason)
+    def _confirm_executor_quiescence(self,generation,execution_id):
+        """Record authority obtained only by this execute() invocation."""
+        with lock(self.base/"lock"):
+            # A malformed executor result artifact must not be able to prevent
+            # the control-flow owner from recording quiescence.  Journal replay
+            # is the lifecycle authority at this narrow terminal boundary;
+            # ordinary preflight resumes after the confirmation is durable.
+            s=self._replayed()[1]
+            x=s["generations"].get(str(generation))
+            if not x: raise WorkflowError("UNKNOWN_GENERATION")
+            owner=x.get("execution") or {}
+            if (x["status"]!="INTERRUPTED" or
+                    x.get("quiescence_protocol")!="workflow-execute/1" or
+                    owner.get("execution_id")!=execution_id):
+                raise WorkflowError("EXECUTOR_QUIESCENCE_BINDING")
+            if x.get("executor_quiescence_confirmed"):
+                return s
+            ownership={"protected_untracked":s.get("protected_untracked",[]),
+                       "patch_owned_untracked":s.get("patch_owned_untracked",[])}
+            now=witness(self.root,self.allowed,ownership)
+            if not witness_matches_policy(now,x["witness"],x["action"],
+                                          running=True,ownership=ownership):
+                raise WorkflowError("REPOSITORY_POLICY_VIOLATION")
+            owned=set(ownership["patch_owned_untracked"])
+            protected={item["path"] for item in ownership["protected_untracked"]}
+            start={item["path"] for item in x.get("start_witness",x["witness"]).get("unexpected_untracked",[])}
+            terminal={item["path"] for item in now.get("unexpected_untracked",[])}
+            acquired=sorted(terminal-start-protected-owned) if x["action"]=="implementation" else []
+            self.journal.append(
+                "EXECUTOR_QUIESCENCE_CONFIRMED", generation=generation,
+                prompt_sha256=x["prompt_sha256"], execution_id=execution_id,
+                authority="workflow.execute-return/1", witness=now,
+                acquired_untracked=acquired)
+            projected=replay_journal(self.journal.read())
+            try:
+                self._save(projected)
+            except BaseException:
+                # The journal event is already durable.  Preserve the existing
+                # terminalization contract: callers/recovery may observe that
+                # projection lag without duplicating lifecycle events.
+                return False
+            return projected
+    def _interrupt_after_executor_return(self,generation,reason,execution_id,
+                                         executor_result=None):
+        """Terminalize (if needed), then persist execute()'s return authority."""
+        try:
+            self.interrupt_run(generation,reason,executor_result)
+        except WorkflowError as error:
+            # A manual interrupt may have won while run_execution still owned
+            # the workspace.  Only that already-interrupted state is eligible
+            # for the later execute-return confirmation below.
+            try:
+                state=self._replayed()[1]
+                record=state["generations"].get(str(generation))
+            except BaseException:
+                raise error
+            if not record or record.get("status")!="INTERRUPTED":
+                raise error
+        return self._confirm_executor_quiescence(generation,execution_id)
     def _finish_checkpoint(self,generation,x,intent,now):
         src=self._find(self.base/("accepted" if x["status"]=="ACCEPTED" else "running/checkpoint"),generation,x["prompt_sha256"])
         if x["status"]=="ACCEPTED":
@@ -1758,7 +1882,7 @@ class Workflow:
                 context_supplement=parent_context.decode("utf-8")
                 execution_artifact={**metadata,"generation":generation,"prompt_sha256":x["prompt_sha256"],"action":x["action"],"command":list(prepared.command),"version":prepared.version,"permission_envelope":prepared.permission_envelope}
                 src=self._find(self.base/"accepted",generation,x["prompt_sha256"])
-                start_payload={"prompt_sha256":x["prompt_sha256"],"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement}
+                start_payload={"prompt_sha256":x["prompt_sha256"],"generation":generation,"action":x["action"],"witness":x["witness"],"execution":metadata,"context_supplement":context_supplement,"quiescence_protocol":"workflow-execute/1"}
                 if derived_context:
                     # Large execution context and bounded lifecycle journal are
                     # separate responsibilities: attest the framing, don't embed it.
@@ -1834,12 +1958,49 @@ class Workflow:
                         # interrupt_run can use the journal projection directly;
                         # a second projection failure must not strand RUNNING.
                         pass
-                    self.interrupt_run(generation,reason)
+                    cleanup_confirmed=False
+                    try:
+                        try:
+                            self.interrupt_run(generation, reason,
+                                               executor_launched=False)
+                        except WorkflowError as terminal_error:
+                            # A manual interruption may have won while the
+                            # workflow was rebuilding its RUN_STARTED
+                            # projection.  It is still eligible for this
+                            # execute-owned cleanup.
+                            state = self._replayed()[1]
+                            record = state["generations"].get(str(generation))
+                            if (not record or
+                                    record.get("status") != "INTERRUPTED"):
+                                raise terminal_error
+                    finally:
+                        # No post-start executor launch has happened yet.
+                        # Release the prepared execution before granting any
+                        # quiescence authority, even if terminalization
+                        # failed.
+                        abandon = getattr(
+                            executor, "abandon_prepared_execution", None)
+                        try:
+                            cleanup_confirmed = (
+                                abandon is not None and
+                                abandon(prepared) is True
+                            )
+                        except BaseException:
+                            cleanup_confirmed = False
+                        preparation_owned=False
+                    if cleanup_confirmed:
+                        self._confirm_executor_quiescence(
+                            generation, execution_id)
                 except BaseException as terminal_error:
                     raise _RunTerminalError(reason) from terminal_error
                 raise post_start_error
             running= self.base/"running"/x["action"]/accepted.name
             started=True; telemetry_failed=False
+            # Keep the pre-launch state distinct from a returned executor.
+            # In particular, post_start_prepare() and artifact publication
+            # still own the prepared executor resources through the workflow.
+            executor_launched=False
+            executor_quiescent=False
             try:
                 try:
                     self._publish_context(context_path,context)
@@ -1863,11 +2024,21 @@ class Workflow:
                     launch["sandbox"] = executor.sandbox_descriptor()
                 if snapshot: launch["policy_snapshot"]=snapshot
                 self._observe(observer,launch)
+                # This lexical boundary is the point at which run_execution
+                # owns launch and teardown.  A failure above it is known to
+                # have left the executor unlaunched.
+                executor_launched=True
+                executor_quiescent=False
                 result=executor.run_execution(prepared)
-                # run_execution has synchronously assumed cleanup ownership
-                # before it can return.  Keep the workflow fallback active
-                # until that call has crossed the boundary: an interrupt
-                # delivered before the executor enters still belongs here.
+                quiescence_check=getattr(
+                    executor, "execution_returned_quiescent", None)
+                if quiescence_check is None or (
+                        quiescence_check(prepared, result) is not True):
+                    raise WorkflowError("EXECUTOR_QUIESCENCE_UNCONFIRMED")
+                # The explicit contract is reached only after a normal
+                # return.  Any exception or shutdown failure remains behind
+                # the admission barrier.
+                executor_quiescent=True
                 preparation_owned = False
                 if getattr(result, "execution_input_sha256", None) != effective_input:
                     raise WorkflowError("EXECUTION_INPUT_HASH_MISMATCH")
@@ -1880,20 +2051,20 @@ class Workflow:
                 except OSError as error:
                     telemetry_failed=True
                     _write_json(report_dir/"result.json",{**result_payload,"telemetry_status":"failed","telemetry_error":str(error)})
-                    self.interrupt_run(generation,"TELEMETRY_WRITE_FAILURE",result.__dict__)
+                    self._interrupt_after_executor_return(generation,"TELEMETRY_WRITE_FAILURE",execution_id,result.__dict__)
                     started=False
                     raise WorkflowError(f"TELEMETRY_WRITE_FAILURE: {error}") from error
                 if result.timed_out:
-                    self.interrupt_run(generation,"EXECUTOR_TIMEOUT",result.__dict__)
+                    self._interrupt_after_executor_return(generation,"EXECUTOR_TIMEOUT",execution_id,result.__dict__)
                     raise WorkflowError("EXECUTOR_TIMEOUT")
                 if result.exit_code != 0:
                     reason="REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else f"EXECUTOR_EXIT_{result.exit_code}"
-                    self.interrupt_run(generation,reason,result.__dict__)
+                    self._interrupt_after_executor_return(generation,reason,execution_id,result.__dict__)
                     raise WorkflowError(reason)
                 try:
                     observed_metadata=self._validate_observed_session(s,snapshot,result) if snapshot else {}
                 except WorkflowError as error:
-                    self.interrupt_run(generation,str(error),result.__dict__)
+                    self._interrupt_after_executor_return(generation,str(error),execution_id,result.__dict__)
                     started=False
                     result_payload["session_validation_error"]=str(error)
                     _write_json(report_dir/"result.json",result_payload)
@@ -1916,7 +2087,11 @@ class Workflow:
                 return self.complete_run(generation,envelope)
             except BaseException as error:
                 if isinstance(error,_RunTerminalError): raise
-                if isinstance(error, WorkflowError) and (str(error).startswith("EXECUTOR_EXIT_") or str(error)=="EXECUTOR_TIMEOUT" or str(error) in SESSION_VALIDATION_ERRORS): raise
+                if (executor_launched and isinstance(error, WorkflowError) and
+                        (str(error).startswith("EXECUTOR_EXIT_") or
+                         str(error) == "EXECUTOR_TIMEOUT" or
+                         str(error) in SESSION_VALIDATION_ERRORS)):
+                    raise
                 stdout=report_dir/"stdout.log"; stderr=report_dir/"stderr.log"
                 if started:
                     failed_result=locals().get("result")
@@ -1924,7 +2099,62 @@ class Workflow:
                     interrupt_reason=("REUSE_SESSION_UNAVAILABLE" if snapshot and snapshot.get("session_mode")=="reuse" else
                                       ("KEYBOARD_INTERRUPT" if isinstance(error,KeyboardInterrupt) else f"EXECUTOR_FAILURE: {error}"))
                     try:
-                        projected = self.interrupt_run(generation,interrupt_reason,executor_result)
+                        if not executor_launched:
+                            # No executor process was entered.  Abandon the
+                            # preparation before granting any quiescence
+                            # authority, and consume workflow cleanup
+                            # ownership even when the executor cannot prove
+                            # that cleanup succeeded.
+                            cleanup_confirmed = False
+                            try:
+                                try:
+                                    projected = self.interrupt_run(
+                                        generation, interrupt_reason,
+                                        executor_launched=False)
+                                except WorkflowError as terminal_error:
+                                    # A manual interruption may have won the
+                                    # race while post-start preparation was
+                                    # still synchronous.  It is still
+                                    # eligible for this execute-owned cleanup.
+                                    state = self._replayed()[1]
+                                    record = state["generations"].get(
+                                        str(generation))
+                                    if (not record or
+                                            record.get("status") !=
+                                            "INTERRUPTED"):
+                                        raise terminal_error
+                                    projected = state
+                            finally:
+                                # Cleanup is attempted even if terminalization
+                                # itself fails.  Its result is the only
+                                # possible pre-launch quiescence proof.
+                                abandon = getattr(
+                                    executor,
+                                    "abandon_prepared_execution",
+                                    None)
+                                try:
+                                    cleanup_confirmed = (
+                                        abandon is not None and
+                                        abandon(prepared) is True
+                                    )
+                                except BaseException:
+                                    # A failed cleanup is deliberately not a
+                                    # quiescence proof.  Preserve the
+                                    # original pre-launch failure while the
+                                    # admission barrier remains in force.
+                                    cleanup_confirmed = False
+                                # The authoritative cleanup attempt above
+                                # owns this preparation, including when
+                                # terminalization itself fails.
+                                preparation_owned = False
+                            if cleanup_confirmed:
+                                projected = (
+                                    self._confirm_executor_quiescence(
+                                        generation, execution_id))
+                        elif executor_quiescent:
+                            projected = self._interrupt_after_executor_return(generation,interrupt_reason,execution_id,executor_result)
+                        else:
+                            projected = self.interrupt_run(generation,interrupt_reason,executor_result)
                         # Preserve every non-Exception BaseException exactly once
                         # its interruption has been durably journaled.  Projection
                         # is secondary and must not determine its public outcome.
@@ -2121,11 +2351,46 @@ class Workflow:
                 current=self._state()
                 if current!=s:
                     last=events[-1] if events else None
-                    recoverable={"RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED","PROMPT_CANCELLED"}
+                    recoverable={"RUN_STARTED","RUN_COMPLETED","RUN_INTERRUPTED",
+                                 "EXECUTOR_QUIESCENCE_CONFIRMED","PROMPT_CANCELLED"}
                     if not last or last["event"] not in recoverable: raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
-                    transaction_id=last["payload"]["transaction_id"]
+                    transaction_event=last
+                    if last["event"]=="EXECUTOR_QUIESCENCE_CONFIRMED":
+                        transaction_event=next((e for e in reversed(events[:-1])
+                                                if e["event"]=="RUN_INTERRUPTED" and
+                                                e["payload"].get("generation")==last["payload"]["generation"]),None)
+                        if transaction_event is None:
+                            raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
+                        # The normal projection gap has the cached
+                        # interruption state immediately before confirmation.
+                        # A cache from before RUN_INTERRUPTED, or one already
+                        # containing confirmation, is not recoverable here.
+                        expected_cached=replay_journal(
+                            [e for e in events if e["seq"] < last["seq"]])
+                        # Also accept the exact prefix before the interruption
+                        # transaction.  This covers a terminal projection
+                        # failure followed by the confirmation projection
+                        # failure, without accepting arbitrary stale state.
+                        interrupted_prepare=next(
+                            (e for e in events
+                             if e["event"] == "TRANSITION_PREPARED" and
+                             e["payload"].get("transaction_id") ==
+                             transaction_event["payload"]["transaction_id"]),
+                            None)
+                        before_interruption=(
+                            replay_journal(
+                                [e for e in events
+                                 if interrupted_prepare is not None and
+                                 e["seq"] < interrupted_prepare["seq"]])
+                            if interrupted_prepare is not None else None)
+                        if current!=expected_cached and current!=before_interruption:
+                            raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
+                    transaction_id=transaction_event["payload"]["transaction_id"]
                     prepared=next((e for e in events if e["event"]=="TRANSITION_PREPARED" and e["payload"]["transaction_id"]==transaction_id),None)
-                    if prepared is None or current!=replay_journal([e for e in events if e["seq"]<prepared["seq"]]):
+                    if prepared is None or (
+                            last["event"] != "EXECUTOR_QUIESCENCE_CONFIRMED" and
+                            current!=replay_journal(
+                                [e for e in events if e["seq"]<prepared["seq"]])):
                         raise WorkflowError("STATE_STALE_OR_TAMPERED: run rebuild-state")
                 self._validate_historical_provenance(events)
                 self._recover_interruption_artifacts(s)

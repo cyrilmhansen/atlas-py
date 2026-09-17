@@ -87,6 +87,9 @@ class Executor(Protocol):
     def prepare_execution(self, spec: ExecutionSpec) -> PreparedExecution: ...
     def post_start_prepare(self, prepared: PreparedExecution) -> PreparedExecution: ...
     def run_execution(self, prepared: PreparedExecution) -> ExecutionResult: ...
+    def execution_returned_quiescent(self, prepared: PreparedExecution,
+                                     result: ExecutionResult) -> bool: ...
+    def abandon_prepared_execution(self, prepared: PreparedExecution) -> bool: ...
 
 def new_execution_id(): return str(uuid.uuid4())
 
@@ -115,6 +118,12 @@ class FakeExecutor:
         return PreparedExecution(spec, "fake", ("fake-executor",), "fake/1", envelope, spec.policy_snapshot)
     def post_start_prepare(self, prepared):
         return prepared
+    def execution_returned_quiescent(self, prepared, result):
+        """No executor-owned work remains after the fake returns."""
+        return True
+    def abandon_prepared_execution(self, prepared):
+        """The fake has no executor-owned preparation to abandon."""
+        return True
     def run_execution(self, prepared):
         self.launched += 1
         if self.delay: time.sleep(self.delay)
