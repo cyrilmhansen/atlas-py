@@ -1219,6 +1219,13 @@ class Workflow:
                     "sandbox_mode","network_access","web_search","apps_enabled","session_storage",
                     "repository_visibility","codex_profile","codex_binary_sha256",
                     "codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
+            if (
+                key == "repository_visibility"
+                and snapshot.get(key) == "full"
+                and key not in target_snapshot
+                and key not in target
+            ):
+                continue
             incompatible = incompatible or target_snapshot.get(key)!=snapshot.get(key)
         # Integrity of the later thread lineage is authoritative over every
         # ordinary stale/policy fallback decision.
