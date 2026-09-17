@@ -152,9 +152,14 @@ def main(argv=None):
                    help="status history count (non-negative integer or all)")
     p.add_argument("--detail", choices=["compact", "normal", "full"], default="normal",
                    help="status history detail level")
+    # This is prompt/admission authority only, never a dispatch override.
+    p.add_argument("--repository-visibility", choices=["full", "closed"],
+                   default=None, help="prompt repository visibility (prompt-create only)")
     p.add_argument("--context-plan", help="explicit /1 or /2 JSON plan for dispatch or context-plan-check")
     a=p.parse_args(argv)
     try:
+        if a.repository_visibility is not None and a.command != "prompt-create":
+            raise WorkflowError("--repository-visibility is only valid for prompt-create")
         if a.context_plan and a.command not in {"dispatch", "context-plan-check"}:
             raise WorkflowError("--context-plan is only valid for dispatch or context-plan-check")
         if a.command == "context-plan-example":
@@ -176,7 +181,8 @@ def main(argv=None):
             if isinstance(body, str): body = body.encode("utf-8")
             path, prompt = w.prompt_create(a.checkpoint, a.action, body,
                                            a.session_mode, a.reuse_execution_id,
-                                           a.network_access, a.compute_profile)
+                                           a.network_access, a.compute_profile,
+                                           a.repository_visibility or "full")
             print(f"g{prompt.generation} · prompt created")
             print(path)
         elif a.command=="ingest": w.ingest()

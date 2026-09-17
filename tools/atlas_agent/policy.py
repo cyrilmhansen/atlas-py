@@ -232,6 +232,14 @@ def _snapshot_base(policy, prompt, action, profile, network_access, *, historica
         "max_hot_reuse_hops": limits["max_hot_reuse_hops"],
         "max_reuse_generation_gap": limits["max_reuse_generation_gap"],
     }
+    if policy["schema"] == POLICY_SCHEMA:
+        snapshot["repository_visibility"] = getattr(
+            prompt, "repository_visibility", "full")
+        if snapshot["repository_visibility"] == "closed":
+            # Closed execution intentionally has no reusable Codex session
+            # state. Make that policy authority rather than an executor-only
+            # suppression of patch_review's normal persist default.
+            snapshot["session_storage"] = "ephemeral"
     if cfg["executor"] == "codex" and "required_toolchains" in cfg:
         snapshot.update({
             "required_toolchains": list(cfg["required_toolchains"]),
@@ -287,6 +295,12 @@ def resolve_policy(policy, prompt, *, for_new_execution=False, historical=False)
         # also request historical resolution.
         validate_policy(policy)
     action = prompt.action
+    visibility = getattr(prompt, "repository_visibility", "full")
+    if visibility not in {"full", "closed"}:
+        raise PolicyError("POLICY_RESOLUTION_MISMATCH", "repository visibility")
+    if visibility == "closed" and (
+            action != "patch_review" or prompt.session_mode != "fresh"):
+        raise PolicyError("REPOSITORY_VISIBILITY_FORBIDDEN", action)
     cfg = policy["profiles"].get(action)
     if cfg is None:
         raise PolicyError("POLICY_PROFILE_UNKNOWN", action)
@@ -353,7 +367,7 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
     if snapshot_schema == SNAPSHOT_SCHEMA:
         optional |= {
             "capability_plan_sha256", "capability_archive_path",
-            "capability_archive_sha256",
+            "capability_archive_sha256", "repository_visibility",
         }
     elif snapshot_schema == HISTORICAL_SNAPSHOT_SCHEMA:
         # /3 is the historical capability-aware format.  Its capability
@@ -457,6 +471,15 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
         expected_executor = "manual" if snapshot["action"] == "checkpoint" else "codex"
         if snapshot["executor"] != expected_executor:
             raise PolicyError("POLICY_SCHEMA_INVALID", "snapshot authority")
+        visibility = snapshot.get("repository_visibility", "full")
+        if visibility not in {"full", "closed"}:
+            raise PolicyError("POLICY_SCHEMA_INVALID", "repository visibility")
+        if visibility == "closed" and (
+                snapshot["action"] != "patch_review" or
+                snapshot["session_mode"] != "fresh" or
+                snapshot.get("session_mode_requested", snapshot["session_mode"]) != "fresh" or
+                snapshot.get("session_storage") != "ephemeral"):
+            raise PolicyError("POLICY_SCHEMA_INVALID", "closed repository visibility")
         # The compute profile is only allowed to select model and reasoning
         # effort.  All of the remaining execution controls belong to the
         # action profile and are therefore checked independently here.
@@ -472,7 +495,9 @@ def validate_snapshot(snapshot, *, for_new_execution=False):
                 "sandbox_mode": "read-only",
                 "network_access": False,
                 "session_modes": {"fresh", "reuse"},
-                "session_storage": "persist",
+                "session_storage": (
+                    "ephemeral" if visibility == "closed" else "persist"
+                ),
                 "codex_profile": ("atlas-sol-local",),
             },
             "state_audit": {

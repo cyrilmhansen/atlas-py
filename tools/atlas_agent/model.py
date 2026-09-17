@@ -22,6 +22,7 @@ class Prompt:
     network_access: bool | None = None
     reuse_execution_id: str | None = None
     compute_profile: str | None = None
+    repository_visibility: str = "full"
     prompt_schema: str = PROMPT_SCHEMA
 
     @property

@@ -34,7 +34,7 @@ def parse_prompt(raw: bytes) -> Prompt:
     elif schema == PROMPT_SCHEMA_V2:
         allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode", "network_access", "reuse_execution_id"}
     elif schema == PROMPT_SCHEMA_V3:
-        allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode", "network_access", "reuse_execution_id", "compute_profile"}
+        allowed = {"schema", "generation", "parent", "checkpoint", "action", "expected_head", "session_mode", "network_access", "reuse_execution_id", "compute_profile", "repository_visibility"}
     else:
         raise PromptError("UNSUPPORTED_SCHEMA", str(schema))
     unknown = set(data) - allowed
@@ -64,6 +64,7 @@ def parse_prompt(raw: bytes) -> Prompt:
     network_access = None
     reuse_execution_id = None
     compute_profile = None
+    repository_visibility = "full"
     if schema in {PROMPT_SCHEMA_V2, PROMPT_SCHEMA_V3}:
         if type(data["network_access"]) is not bool:
             raise PromptError("BAD_NETWORK_ACCESS", "network_access must be bool")
@@ -80,6 +81,16 @@ def parse_prompt(raw: bytes) -> Prompt:
             if data["action"] == "checkpoint":
                 raise PromptError("COMPUTE_PROFILE_FORBIDDEN",
                                   "checkpoints cannot select a compute profile")
+            repository_visibility = data.get("repository_visibility", "full")
+            if repository_visibility not in {"full", "closed"}:
+                raise PromptError("BAD_REPOSITORY_VISIBILITY",
+                                  "repository_visibility must be full or closed")
+            if repository_visibility == "closed" and data["action"] != "patch_review":
+                raise PromptError("REPOSITORY_VISIBILITY_FORBIDDEN",
+                                  "closed visibility is only supported for patch_review")
+            if repository_visibility == "closed" and data["session_mode"] != "fresh":
+                raise PromptError("CLOSED_SESSION_REUSE_FORBIDDEN",
+                                  "closed visibility requires a fresh session")
     head = data["expected_head"]
     if not isinstance(head, str) or not re.fullmatch(r"[0-9a-fA-F]{40,64}", head):
         raise PromptError("BAD_EXPECTED_HEAD", "expected_head must be a Git object id")
@@ -87,4 +98,4 @@ def parse_prompt(raw: bytes) -> Prompt:
     body_start=end+close_len
     if text[body_start:body_start+2]=="\r\n": body_start+=2
     elif text[body_start:body_start+1]=="\n": body_start+=1
-    return Prompt(raw, digest, generation, parent, data["checkpoint"], data["action"], head.lower(), data["session_mode"], text[body_start:], network_access, reuse_execution_id, compute_profile, schema)
+    return Prompt(raw, digest, generation, parent, data["checkpoint"], data["action"], head.lower(), data["session_mode"], text[body_start:], network_access, reuse_execution_id, compute_profile, repository_visibility, schema)

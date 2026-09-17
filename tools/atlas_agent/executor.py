@@ -47,6 +47,9 @@ class ExecutionSpec:
     input_mode: str | None = None
     expected_input_sha256: str | None = None
     capability_plan: object | None = None
+    # Controller repository authority is deliberately distinct from the cwd
+    # exposed to Codex.  None preserves the historical full-repository path.
+    executor_workdir: Path | None = None
 
 @dataclass(frozen=True)
 class PreparedExecution:

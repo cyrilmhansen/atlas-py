@@ -133,7 +133,8 @@ def replay_journal(events):
                 if type(p.get("generation")) is not int or p["generation"] != max([int(x) for x in state["generations"]],default=0)+1: raise WorkflowError("JOURNAL_GENERATION_SEQUENCE")
                 if (p["generation"]==1 and p["parent"]!="genesis") or (p["generation"]>1 and p["parent"]!=p["generation"]-1): raise WorkflowError("JOURNAL_PARENTAGE")
                 g=str(p["generation"]); rec={"generation":p["generation"],"parent":p["parent"],"prompt_sha256":p["prompt_sha256"],"checkpoint":p["checkpoint"],"action":p["action"],"session_mode":p.get("session_mode"),"expected_head":p.get("expected_head"),"witness":p["witness"],"status":"ACCEPTED"}
-                for key in ("prompt_schema", "network_access", "reuse_execution_id"):
+                for key in ("prompt_schema", "network_access", "reuse_execution_id",
+                            "repository_visibility"):
                     if key in p: rec[key]=p[key]
                 state["generations"][g]=rec; state["parentage"][g]=p["parent"]; state["prompt_hashes"][g]=p["prompt_sha256"]; state["lifecycle"][g]="ACCEPTED"; state["checkpoint_action"][g]={"checkpoint":p["checkpoint"],"action":p["action"]}; state["latest_repository_witness"]=p["witness"]; continue
             if e["event"]=="PROMPT_CANCELLED":
@@ -675,6 +676,12 @@ class Workflow:
             for key,value in base.items():
                 if historical_schema == "atlas-agent-policy/1" and key in {"required_toolchains", "writable_caches"}:
                     continue
+                # Current snapshots created before closed review existed did
+                # not spell the then-only value. Their accepted prompt also
+                # lacks the positive provenance marker.
+                if (key == "repository_visibility" and value == "full" and
+                        key not in snapshot and key not in record):
+                    continue
                 if key not in {"session_mode","session_mode_requested",
                                "session_mode_resolved","reuse_fallback_reason",
                                "reused_from_execution_id","requested_thread_id",
@@ -757,10 +764,13 @@ class Workflow:
             for d in DIRS: (self.base/d).mkdir(parents=True,exist_ok=True)
             w=witness(self.root,self.allowed); self.journal.append("WORKFLOW_INITIALIZED",repository_root=str(self.root),head=w["head"],branch=w["branch"],witness=w,validation_epoch=2); self._save(replay_journal(self.journal.read()))
     def prompt_create(self, checkpoint, action, body, session_mode="fresh",
-                      reuse_execution_id=None, network_access=False, compute_profile=None):
+                      reuse_execution_id=None, network_access=False, compute_profile=None,
+                      repository_visibility="full"):
         """Create, but do not admit, one validated candidate in the inbox."""
         if not isinstance(body, bytes):
             raise WorkflowError("PROMPT_BODY_MUST_BE_BYTES")
+        if repository_visibility not in {"full", "closed"}:
+            raise WorkflowError("BAD_REPOSITORY_VISIBILITY")
         with lock(self.base/"lock"):
             _, state = self._preflight(require_state=True)
             if not state["initialized"]:
@@ -773,6 +783,8 @@ class Workflow:
             # json's quoting is also valid TOML basic-string quoting and
             # prevents operator input from becoming header syntax.
             quote = lambda value: json.dumps(value, ensure_ascii=False)
+            if repository_visibility == "closed" and compute_profile is None:
+                compute_profile = "action-default"
             header = (
                 "+++\n"
                 f"schema = {quote(PROMPT_SCHEMA_V3 if compute_profile is not None else PROMPT_SCHEMA_V2)}\n"
@@ -786,6 +798,8 @@ class Workflow:
             )
             if compute_profile is not None:
                 header += f"compute_profile = {quote(compute_profile)}\n"
+                if repository_visibility != "full":
+                    header += f"repository_visibility = {quote(repository_visibility)}\n"
             if reuse_execution_id is not None:
                 header += f"reuse_execution_id = {quote(reuse_execution_id)}\n"
             raw = header.encode("utf-8") + b"+++\n" + body
@@ -937,6 +951,8 @@ class Workflow:
                     if p.prompt_schema != "atlas-agent-prompt/1":
                         payload["network_access"] = p.network_access
                         if p.reuse_execution_id is not None: payload["reuse_execution_id"]=p.reuse_execution_id
+                    if p.prompt_schema == "atlas-agent-prompt/3":
+                        payload["repository_visibility"] = p.repository_visibility
                     move_transaction(self.base,self.journal,source,self.base/"accepted"/p.canonical_name,digest,"PROMPT_ACCEPTED",payload)
                     state=replay_journal(self.journal.read())
                 except (PromptError,WorkflowError) as e: self._reject(source,digest,getattr(e,"code",str(e)),str(e)); state=replay_journal(self.journal.read())
@@ -1147,6 +1163,13 @@ class Workflow:
                     if (target_policy.get("schema") == "atlas-agent-policy/1" and
                             key in {"required_toolchains", "writable_caches"}):
                         continue
+                    # Pre-closed current snapshots did not carry this
+                    # defaulted field.  Do not make historical reuse depend
+                    # on the newly added presentation of "full".
+                    if (key == "repository_visibility" and value == "full" and
+                            key not in target_snapshot and
+                            key not in target):
+                        continue
                     if key not in {"session_mode","session_mode_requested",
                                    "session_mode_resolved","reuse_fallback_reason",
                                    "reused_from_execution_id","requested_thread_id",
@@ -1193,7 +1216,9 @@ class Workflow:
         )
         for key in ("action","profile","executor","requested_model","requested_reasoning_effort",
                     "requested_compute_profile","resolved_compute_profile",
-                    "sandbox_mode","network_access","web_search","apps_enabled","session_storage","codex_profile","codex_binary_sha256","codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
+                    "sandbox_mode","network_access","web_search","apps_enabled","session_storage",
+                    "repository_visibility","codex_profile","codex_binary_sha256",
+                    "codex_config_sha256","codex_catalog_sha256","codex_profile_sha256"):
             incompatible = incompatible or target_snapshot.get(key)!=snapshot.get(key)
         # Integrity of the later thread lineage is authoritative over every
         # ordinary stale/policy fallback decision.
@@ -1345,7 +1370,8 @@ class Workflow:
                         raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH") from error
                     immutable={"action","checkpoint","profile","executor","requested_model",
                                "requested_reasoning_effort","sandbox_mode","network_access",
-                               "web_search","apps_enabled","session_storage","policy_config_sha256"}
+                               "web_search","apps_enabled","session_storage","policy_config_sha256",
+                               "repository_visibility"}
                     if any(supplied.get(key)!=derived.get(key) for key in immutable):
                         raise WorkflowError("SESSION_PLAN_PROVENANCE_MISMATCH")
                     # Capability authority is controller-derived.  A launcher
@@ -1776,6 +1802,14 @@ class Workflow:
                 capability_archive_path = None
                 parent_context, context_info = self._parent_context(s, generation)
                 derived_context = b""
+                if (snapshot and snapshot.get("repository_visibility") == "closed"
+                        and not isinstance(pvc_context, PvcContextComposition)):
+                    raise WorkflowError("CLOSED_INTEGRATED_CONTEXT_REQUIRED")
+                if (snapshot and snapshot.get("repository_visibility") == "closed"
+                        and getattr(type(executor),
+                                    "supports_closed_repository_visibility",
+                                    False) is not True):
+                    raise WorkflowError("CLOSED_REPOSITORY_EXECUTOR_REQUIRED")
                 if pvc_context is not None:
                     if not isinstance(pvc_context, (PvcContextSelection,
                                                     PvcContextComposition)):
@@ -1795,6 +1829,22 @@ class Workflow:
                                       else _stage_integrated_context(pvc_context, prompt.body))
                     except PvcContextError as error:
                         raise WorkflowError(str(error)) from error
+                    if (snapshot and
+                            snapshot.get("repository_visibility") == "closed"):
+                        # Integrated staging has already supplied or verified
+                        # the exact TASK. Closed review additionally requires
+                        # the authenticated review DIFF; never reconstruct it
+                        # from the repository at this boundary.
+                        categories = {
+                            contribution.category
+                            for contribution in staged_pvc.contributions
+                        }
+                        if "TASK" not in categories:
+                            raise WorkflowError(
+                                "CLOSED_INTEGRATED_TASK_REQUIRED")
+                        if "DIFF" not in categories:
+                            raise WorkflowError(
+                                "CLOSED_INTEGRATED_DIFF_REQUIRED")
                     derived_context = staged_pvc.framing.encode("utf-8")
                 context = derived_context + parent_context
                 context_sha256=hashlib.sha256(context).hexdigest()

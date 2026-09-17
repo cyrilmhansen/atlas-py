@@ -444,8 +444,8 @@ class Journal:
             "WORKFLOW_INITIALIZED":{"repository_root","head","branch","witness","validation_epoch"},
             "PROMPT_RECEIVED":{"prompt_sha256","source"},
             "PROMPT_REJECTED":{"transaction_id","source","destination","prompt_sha256","reason_code","reason"},
-            "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id"},
-            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","executor_result","fallback_artifacts","acquired_untracked","quiescence_protocol","executor_launched"},
+            "PROMPT_ACCEPTED":{"transaction_id","source","destination","generation","parent","prompt_sha256","action","checkpoint","session_mode","expected_head","witness","prompt_schema","network_access","reuse_execution_id","repository_visibility"},
+            "TRANSITION_PREPARED":{"transaction_id","logical_event","source","destination","prompt_sha256","generation","parent","action","checkpoint","session_mode","expected_head","witness","result","reason","reason_code","execution","prompt_schema","network_access","reuse_execution_id","repository_visibility","executor_result","fallback_artifacts","acquired_untracked","quiescence_protocol","executor_launched"},
             "RUN_STARTED":{"transaction_id","source","destination","generation","prompt_sha256","action","execution","witness","network_access","quiescence_protocol"},
             "RUN_COMPLETED":{"transaction_id","source","destination","generation","prompt_sha256","action","result","witness","execution","acquired_untracked"},
             "RUN_INTERRUPTED":{"transaction_id","source","destination","generation","prompt_sha256","action","reason","execution","result","executor_result","fallback_artifacts","witness","acquired_untracked","executor_launched"},
@@ -487,6 +487,7 @@ class Journal:
             if "prompt_schema" in p and p["prompt_schema"] not in {"atlas-agent-prompt/1", "atlas-agent-prompt/2", "atlas-agent-prompt/3"}: raise JournalError(f"prompt schema invalid at line {n}")
             if "network_access" in p and type(p["network_access"]) is not bool: raise JournalError(f"prompt network invalid at line {n}")
             if "reuse_execution_id" in p and (type(p["reuse_execution_id"]) is not str or not p["reuse_execution_id"]): raise JournalError(f"prompt reuse target invalid at line {n}")
+            if "repository_visibility" in p and p["repository_visibility"] not in {"full", "closed"}: raise JournalError(f"prompt repository visibility invalid at line {n}")
         if event=="RUN_COMPLETED" and type(p["result"]) is not dict: raise JournalError(f"result invalid at line {n}")
         if event=="RUN_INTERRUPTED" and "executor_launched" in p and type(p["executor_launched"]) is not bool:
             raise JournalError(f"executor launch state invalid at line {n}")

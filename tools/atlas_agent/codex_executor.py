@@ -33,6 +33,7 @@ class CodexExecutor:
     # Native Codex does not provide Atlas cross-execution isolation: its
     # sandbox runs under the same UID and can reach sibling /tmp homes.
     native_isolation_guaranteed = False
+    supports_closed_repository_visibility = False
     SHUTDOWN_GRACE_SECONDS=5
     SHUTDOWN_KILL_SECONDS=5
     def __init__(self, executable="codex", model=None, sandbox="read-only", ephemeral=True,
@@ -663,7 +664,8 @@ class CodexExecutor:
         argv += ["exec","resume"] if reuse else ["exec"]
         argv += ["--json"]
         if not reuse:
-            argv += ["-C",str(spec.repository_root)]
+            argv += ["-C",str(getattr(spec, "executor_workdir", None)
+                              or spec.repository_root)]
         if reuse:
             argv += ["-c",f'sandbox_mode="{self.sandbox}"']
         else:
@@ -1087,7 +1089,8 @@ class CodexExecutor:
                     self._validate_runtime_identity(prepared.policy_snapshot)
                     proc=subprocess.Popen(
                         launch_command,
-                        cwd=spec.repository_root,
+                        cwd=(getattr(spec, "executor_workdir", None)
+                             or spec.repository_root),
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
                         stderr=stderr,

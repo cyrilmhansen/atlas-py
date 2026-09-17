@@ -348,6 +348,7 @@ class ScratchStore:
 class AtlasBubblewrapExecutor(CodexExecutor):
     supports_authoritative_pvc_context = True
     native_isolation_guaranteed = True
+    supports_closed_repository_visibility = True
     """Codex executor whose remote execution environment is Atlas/bwrap."""
 
     SANDBOX_VERSION = "atlas-bwrap/1"
@@ -530,8 +531,17 @@ class AtlasBubblewrapExecutor(CodexExecutor):
     def _mount_command(self, spec, scratch: Path, runtime_path: Path | int,
                        listen="ws://127.0.0.1:0", effective_config: Path | None = None) -> list[str]:
         root = spec.repository_root.resolve()
-        if self.sandbox == "workspace-write":
+        closed = (spec.policy_snapshot or {}).get("repository_visibility") == "closed"
+        workdir = (spec.executor_workdir or root).resolve()
+        if closed and (workdir.parent != scratch.resolve() or
+                       workdir.name != "workspace"):
+            raise AtlasSandboxError("ATLAS_CLOSED_WORKDIR_INVALID")
+        if closed:
+            self._validate_closed_repository_topology(spec, root, scratch)
+        if self.sandbox == "workspace-write" and not closed:
             self._validate_writable_namespace(root)
+        # Closed mode does not mount Git metadata, but it still requires the
+        # same ordinary-repository topology as full mode.
         git_dir = self._git_dir(root)
         mode = "read-only" if self.sandbox == "read-only" else "read-write"
         if isinstance(listen, int): listen=f"ws://127.0.0.1:{listen}"
@@ -548,16 +558,19 @@ class AtlasBubblewrapExecutor(CodexExecutor):
                 "--dir", "/home/atlas", "--chmod", "0700", "/home/atlas",
                 "--dir", "/home/atlas/.codex", "--chmod", "0700", "/home/atlas/.codex",
                 "--dir", "/var", "--dir", "/var/tmp",
-                # The run itself is the disk-backed /var/tmp.  Never bind
-                # the store root: control and sibling runs are authority.
-                "--bind", str(scratch), "/var/tmp",
+                # The private run is the only disk-backed execution storage.
+                # Closed mode mounts it at its authenticated host pathname so
+                # outer Codex and the guest use one cwd without projecting the
+                # repository. Full mode retains the historical /var/tmp view.
+                *(["--dir", str(scratch.parent), "--bind", str(scratch), str(scratch)]
+                  if closed else ["--bind", str(scratch), "/var/tmp"]),
                 "--bind", str(scratch), "/home/atlas/.codex",
                 "--dir", "/opt",
                 "--ro-bind", str(runtime_path), "/opt/atlas-codex",
                 "--clearenv", "--setenv", "HOME", "/home/atlas", "--setenv", "CODEX_HOME", "/home/atlas/.codex",
                 "--setenv", "TMPDIR", "/tmp", "--setenv", "TMP", "/tmp",
                 "--setenv", "TEMP", "/tmp", "--setenv", "PATH", "/usr/bin:/bin",
-                "--chdir", str(root)]
+                "--chdir", str(workdir)]
         plan = getattr(spec, "capability_plan", None)
         if plan is not None:
             for mount in plan.mounts:
@@ -595,13 +608,47 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             prompts = self.codex_home / "atlas-agent-prompts"
             if prompts.is_dir():
                 args += ["--ro-bind", str(prompts), "/home/atlas/.codex/atlas-agent-prompts"]
-        args += ["--ro-bind" if mode == "read-only" else "--bind", str(root), str(root)]
+        if not closed:
+            args += ["--ro-bind" if mode == "read-only" else "--bind", str(root), str(root)]
         # This nested readonly bind is the important implementation guard.
-        if mode == "read-write":
+        if mode == "read-write" and not closed:
             args += ["--ro-bind", str(git_dir), str(root / ".git")]
         args += ["--", "/opt/atlas-codex", "exec-server", "--listen", listen,
                  "--environment-id", f"atlas-{spec.execution_id}", "--exit-on-stdin-close"]
         return args
+
+    @staticmethod
+    def _closed_paths_overlap(left: Path, right: Path) -> bool:
+        """Whether either host pathname can contain the other."""
+        return left == right or left in right.parents or right in left.parents
+
+    def _validate_closed_repository_topology(self, spec, root: Path,
+                                             scratch: Path) -> None:
+        """Reject host mounts which could make closed repository data visible.
+
+        Closed mode has one deliberately small topology: the four static
+        system binds, the private run bind, and already-authorized capability
+        binds. This is an admission check, not a mount projection framework.
+        """
+        repository_paths = [root, root / ".git"]
+        exposed = [
+            Path("/usr"), Path("/lib"), Path("/lib64"), Path("/etc"),
+            scratch,
+        ]
+        plan = getattr(spec, "capability_plan", None)
+        if plan is not None:
+            exposed.extend(mount.host_root for mount in plan.mounts)
+            exposed.extend(cache.backing for cache in plan.caches)
+        try:
+            repository_paths = [path.resolve() for path in repository_paths]
+            exposed = [Path(path).resolve() for path in exposed]
+        except (OSError, RuntimeError, TypeError) as error:
+            raise AtlasSandboxError(
+                "ATLAS_CLOSED_NAMESPACE_TOPOLOGY_INVALID") from error
+        if any(self._closed_paths_overlap(repository_path, host_path)
+               for repository_path in repository_paths
+               for host_path in exposed):
+            raise AtlasSandboxError("ATLAS_CLOSED_REPOSITORY_MOUNT_OVERLAP")
 
     def _validate_writable_namespace(self, repository_root: Path) -> None:
         """Reject a workspace bind which contains controller authority."""
@@ -741,7 +788,8 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             self._runtime_state = None
             self._auth_target = None
             self._auth_identity = None
-            if snapshot.get("session_storage") == "persist":
+            if (snapshot.get("session_storage") == "persist" and
+                    snapshot.get("repository_visibility") != "closed"):
                 # This is Atlas-owned mutable state, deliberately beside (not
                 # inside) the qualified home.  It retains Codex sessions and
                 # other normal runtime state without making the operator HOME
@@ -1151,6 +1199,20 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             except Exception as error:
                 self._release_capability_locks()
                 raise AtlasSandboxError("ATLAS_CACHE_PREPARATION_FAILED") from error
+        closed = (spec.policy_snapshot or {}).get("repository_visibility") == "closed"
+        if closed:
+            if spec.action != "patch_review" or (spec.policy_snapshot or {}).get("session_mode") != "fresh":
+                raise AtlasSandboxError("ATLAS_CLOSED_VISIBILITY_AUTHORITY_INVALID")
+            # Acquire the workdir as part of the same scratch authority whose
+            # teardown is already guarded by executor quiescence.
+            self.scratch_store.ensure_root()
+            self._validate_disk_scratch()
+            scratch = self._prepare_scratch(spec)
+            workdir = scratch / "workspace"
+            workdir.mkdir(mode=0o700)
+            spec = replace(spec, executor_workdir=workdir)
+            self._validate_closed_repository_topology(
+                spec, spec.repository_root.resolve(), scratch)
         prepared = super().prepare_execution(spec)
         if spec.action in {"patch_review", "state_audit"} and self.network_access:
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_NETWORK_MISMATCH")
@@ -1165,9 +1227,10 @@ class AtlasBubblewrapExecutor(CodexExecutor):
         expected={"patch_review":"read-only","state_audit":"read-only","implementation":"workspace-write"}
         if spec.action in expected and self.sandbox != expected[spec.action]:
             raise AtlasSandboxError("ATLAS_SANDBOX_ACTION_MODE_MISMATCH")
-        self.scratch_store.ensure_root()
-        self._validate_disk_scratch()
-        self._prepare_scratch(spec)
+        if not closed:
+            self.scratch_store.ensure_root()
+            self._validate_disk_scratch()
+            self._prepare_scratch(spec)
         native = _native_codex(self.executable)
         if native is None:
             raise AtlasSandboxError("ATLAS_SANDBOX_CODEX_IDENTITY_MISMATCH")
@@ -1178,9 +1241,17 @@ class AtlasBubblewrapExecutor(CodexExecutor):
             "requested_network_access": self.network_access, "resolved_network_access": self.network_access,
             "user_namespace": "bwrap-default", "pid_namespace": True, "ipc_namespace": True,
             "mount_roles": ["usr-ro", "system-layout-ro", "etc-ro", "proc-new", "dev-new",
-                            "tmp-private-tmpfs", "shm-private-tmpfs", "var-tmp-private-disk-scratch",
-                            "home-private-ephemeral", "repository", "git-metadata-ro", "codex-native-ro"],
-            "temporary_storage": {"tmp": "private-tmpfs", "shm": "private-tmpfs", "var_tmp": "private-disk-scratch"},
+                            "tmp-private-tmpfs", "shm-private-tmpfs",
+                            *(["closed-executor-workdir"] if closed else
+                              ["var-tmp-private-disk-scratch", "repository",
+                               "git-metadata-ro"]),
+                            "home-private-ephemeral", "codex-native-ro"],
+            "temporary_storage": {
+                "tmp": "private-tmpfs", "shm": "private-tmpfs",
+                "var_tmp": ("private-empty-directory" if closed else
+                            "private-disk-scratch"),
+                **({"executor_workdir": "private-disk-scratch"} if closed else {}),
+            },
             "bwrap": self.bwrap, "bwrap_version": bwrap_version,
             "codex_executable": str(_native_codex(self.executable)), "codex_version": prepared.version,
             "scratch_backing_class": self._filesystem_class(self.scratch_store.root),
